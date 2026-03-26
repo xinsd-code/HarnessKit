@@ -16,8 +16,8 @@ export function ExtensionFilters() {
           className={clsx(
             "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
             kindFilter === kind
-              ? "bg-zinc-700 text-zinc-100"
-              : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800"
+              ? "bg-zinc-300 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100"
+              : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800"
           )}
         >
           {kind ?? "All"}

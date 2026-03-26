@@ -28,12 +28,12 @@ export default function OverviewPage() {
           label="Issues"
           value={stats.critical_issues + stats.high_issues}
           icon={<AlertTriangle size={18} />}
-          className={stats.critical_issues > 0 ? "border-red-900/50" : undefined}
+          className={stats.critical_issues > 0 ? "border-red-400 dark:border-red-900/50" : undefined}
         />
       </div>
 
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-        <h3 className="text-sm font-medium text-zinc-400">Total Extensions</h3>
+      <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-6 dark:border-zinc-800 dark:bg-zinc-900/50">
+        <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Total Extensions</h3>
         <p className="mt-1 text-4xl font-bold">{stats.total_extensions}</p>
         <p className="mt-1 text-sm text-zinc-500">
           {stats.skill_count} skills · {stats.mcp_count} mcp · {stats.plugin_count} plugins · {stats.hook_count} hooks

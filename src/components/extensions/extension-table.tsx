@@ -26,7 +26,7 @@ const columns = [
   }),
   col.accessor("agents", {
     header: "Agent",
-    cell: (info) => <span className="text-zinc-400">{info.getValue().join(", ")}</span>,
+    cell: (info) => <span className="text-zinc-500 dark:text-zinc-400">{info.getValue().join(", ")}</span>,
   }),
   col.accessor("permissions", {
     header: "Permissions",
@@ -37,7 +37,7 @@ const columns = [
     header: "Score",
     cell: (info) => {
       const val = info.getValue();
-      return val != null ? <TrustBadge score={val} size="sm" /> : <span className="text-zinc-600">--</span>;
+      return val != null ? <TrustBadge score={val} size="sm" /> : <span className="text-zinc-400 dark:text-zinc-600">--</span>;
     },
   }),
   col.accessor("enabled", {
@@ -48,7 +48,7 @@ const columns = [
       return (
         <button
           onClick={() => toggle(ext.id, !ext.enabled)}
-          className={ext.enabled ? "text-green-400 text-xs" : "text-red-400 text-xs"}
+          className={ext.enabled ? "text-green-500 dark:text-green-400 text-xs" : "text-red-500 dark:text-red-400 text-xs"}
         >
           {ext.enabled ? "enabled" : "disabled"}
         </button>
@@ -69,15 +69,15 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
   });
 
   return (
-    <div className="rounded-xl border border-zinc-800 overflow-hidden">
+    <div className="rounded-xl border border-zinc-200 overflow-hidden dark:border-zinc-800">
       <table className="w-full">
-        <thead className="bg-zinc-900/80">
+        <thead className="bg-zinc-100 dark:bg-zinc-900/80">
           {table.getHeaderGroups().map((hg) => (
             <tr key={hg.id}>
               {hg.headers.map((header) => (
                 <th
                   key={header.id}
-                  className="px-4 py-3 text-left text-xs font-medium text-zinc-400 cursor-pointer select-none"
+                  className="px-4 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 cursor-pointer select-none"
                   onClick={header.column.getToggleSortingHandler()}
                 >
                   {flexRender(header.column.columnDef.header, header.getContext())}
@@ -86,9 +86,9 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
             </tr>
           ))}
         </thead>
-        <tbody className="divide-y divide-zinc-800/50">
+        <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800/50">
           {table.getRowModel().rows.map((row) => (
-            <tr key={row.id} className="hover:bg-zinc-900/30 transition-colors">
+            <tr key={row.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/30 transition-colors">
               {row.getVisibleCells().map((cell) => (
                 <td key={cell.id} className="px-4 py-3 text-sm">
                   {flexRender(cell.column.columnDef.cell, cell.getContext())}
