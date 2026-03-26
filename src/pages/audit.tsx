@@ -1,10 +1,9 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuditStore } from "@/stores/audit-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { RefreshCw, ChevronRight, CircleCheck, CircleAlert } from "lucide-react";
 
-// All 12 audit rules with human-readable labels and severity
 const AUDIT_RULES = [
   { id: "prompt-injection", label: "Prompt Injection", severity: "Critical", deduction: 30 },
   { id: "remote-code-execution", label: "Remote Code Execution", severity: "Critical", deduction: 30 },
@@ -33,6 +32,7 @@ function severityBadgeClass(severity: string): string {
 export default function AuditPage() {
   const { results, loading, runAudit } = useAuditStore();
   const { extensions, fetch: fetchExtensions } = useExtensionStore();
+  const [openId, setOpenId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchExtensions();
@@ -84,58 +84,54 @@ export default function AuditPage() {
 
       <div className="space-y-3">
         {results.map((result) => {
+          const isOpen = openId === result.extension_id;
           const failedRuleIds = new Set(result.findings.map((f) => f.rule_id));
 
           return (
-            <details key={result.extension_id} className="group rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/50">
-              <summary className="flex cursor-pointer items-center justify-between px-4 py-3 list-none">
+            <div key={result.extension_id} className="rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/50">
+              <button
+                onClick={() => setOpenId(isOpen ? null : result.extension_id)}
+                className="flex w-full cursor-pointer items-center justify-between px-4 py-3"
+              >
                 <div className="flex items-center gap-3">
-                  <ChevronRight size={16} className="text-zinc-400 transition-transform group-open:rotate-90" />
+                  <ChevronRight size={16} className={`text-zinc-400 transition-transform ${isOpen ? "rotate-90" : ""}`} />
                   <span className="font-medium">{nameMap.get(result.extension_id) ?? result.extension_id}</span>
                 </div>
                 <TrustBadge score={result.trust_score} size="sm" />
-              </summary>
-              <div className="border-t border-zinc-200 px-4 py-3 dark:border-zinc-800">
-                <div className="grid gap-2">
-                  {AUDIT_RULES.map((rule) => {
-                    const failed = failedRuleIds.has(rule.id);
-                    return (
-                      <div
-                        key={rule.id}
-                        className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm"
-                      >
-                        {failed ? (
-                          <CircleAlert size={16} className="shrink-0 text-red-500 dark:text-red-400" />
-                        ) : (
-                          <CircleCheck size={16} className="shrink-0 text-green-500 dark:text-green-400" />
-                        )}
-                        <span className={`flex-1 ${failed ? "text-zinc-700 dark:text-zinc-300" : "text-zinc-400 dark:text-zinc-500"}`}>{rule.label}</span>
-                        {failed ? (
-                          <>
-                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
-                              {rule.severity}
-                            </span>
-                            <span className="w-12 text-right font-mono text-xs text-red-500 dark:text-red-400">-{rule.deduction}</span>
-                          </>
-                        ) : (
-                          <span className="font-mono text-xs text-green-500 dark:text-green-400">Pass</span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-                {result.findings.length > 0 && (
-                  <div className="mt-3 border-t border-zinc-200 pt-3 dark:border-zinc-800">
-                    <p className="mb-2 text-xs font-medium text-zinc-500">Details</p>
-                    {result.findings.map((f, i) => (
-                      <p key={i} className="text-xs text-zinc-500 dark:text-zinc-400">
-                        {f.message}
-                      </p>
-                    ))}
+              </button>
+              {isOpen && (
+                <div className="border-t border-zinc-200 px-4 py-3 dark:border-zinc-800">
+                  <div className="grid gap-2">
+                    {AUDIT_RULES.map((rule) => {
+                      const failed = failedRuleIds.has(rule.id);
+                      return (
+                        <div
+                          key={rule.id}
+                          className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm"
+                        >
+                          {failed ? (
+                            <CircleAlert size={16} className="shrink-0 text-red-500 dark:text-red-400" />
+                          ) : (
+                            <CircleCheck size={16} className="shrink-0 text-green-500 dark:text-green-400" />
+                          )}
+                          <span className={`flex-1 ${failed ? "text-zinc-700 dark:text-zinc-300" : "text-zinc-400 dark:text-zinc-500"}`}>{rule.label}</span>
+                          {failed ? (
+                            <>
+                              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
+                                {rule.severity}
+                              </span>
+                              <span className="w-12 text-right font-mono text-xs text-red-500 dark:text-red-400">-{rule.deduction}</span>
+                            </>
+                          ) : (
+                            <span className="font-mono text-xs text-green-500 dark:text-green-400">Pass</span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                )}
-              </div>
-            </details>
+                </div>
+              )}
+            </div>
           );
         })}
       </div>
