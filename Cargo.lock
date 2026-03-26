@@ -1525,6 +1525,7 @@ dependencies = [
  "clap",
  "colored",
  "comfy-table",
+ "dirs",
  "hk-core",
  "serde",
  "serde_json",
@@ -1552,6 +1553,7 @@ dependencies = [
 name = "hk-desktop"
 version = "0.1.0"
 dependencies = [
+ "dirs",
  "hk-core",
  "serde",
  "serde_json",
