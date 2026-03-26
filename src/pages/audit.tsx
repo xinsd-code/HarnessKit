@@ -1,13 +1,27 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useAuditStore } from "@/stores/audit-store";
+import { useExtensionStore } from "@/stores/extension-store";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { severityColor } from "@/lib/types";
-import { Shield, RefreshCw } from "lucide-react";
+import { RefreshCw, ChevronRight } from "lucide-react";
 
 export default function AuditPage() {
   const { results, loading, runAudit } = useAuditStore();
+  const { extensions, fetch: fetchExtensions } = useExtensionStore();
 
-  useEffect(() => { runAudit(); }, [runAudit]);
+  useEffect(() => {
+    fetchExtensions();
+    runAudit();
+  }, [fetchExtensions, runAudit]);
+
+  // Build id → name lookup
+  const nameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const ext of extensions) {
+      map.set(ext.id, ext.name);
+    }
+    return map;
+  }, [extensions]);
 
   const totalFindings = results.reduce((sum, r) => sum + r.findings.length, 0);
 
@@ -47,26 +61,31 @@ export default function AuditPage() {
       <div className="space-y-3">
         {results.map((result) => (
           <details key={result.extension_id} className="group rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/50">
-            <summary className="flex cursor-pointer items-center justify-between px-4 py-3">
+            <summary className="flex cursor-pointer items-center justify-between px-4 py-3 list-none">
               <div className="flex items-center gap-3">
-                <Shield size={16} className="text-zinc-400 dark:text-zinc-500" />
-                <span className="font-medium">{result.extension_id}</span>
-                <span className="text-xs text-zinc-500">{result.findings.length} findings</span>
+                <ChevronRight size={16} className="text-zinc-400 transition-transform group-open:rotate-90" />
+                <span className="font-medium">{nameMap.get(result.extension_id) ?? result.extension_id}</span>
+                <span className="text-xs text-zinc-500">
+                  {result.findings.length} {result.findings.length === 1 ? "finding" : "findings"}
+                </span>
               </div>
               <TrustBadge score={result.trust_score} size="sm" />
             </summary>
-            <div className="border-t border-zinc-200 px-4 py-3 space-y-2 dark:border-zinc-800">
+            <div className="border-t border-zinc-200 px-4 py-3 space-y-3 dark:border-zinc-800">
               {result.findings.length === 0 && (
                 <p className="text-sm text-green-500 dark:text-green-400">No issues found</p>
               )}
               {result.findings.map((f, i) => (
-                <div key={i} className="flex items-start gap-3 text-sm">
-                  <span className={`font-mono text-xs font-bold ${severityColor(f.severity)}`}>
+                <div key={i} className="flex items-start gap-3 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
+                  <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 font-mono text-xs font-bold ${severityColor(f.severity)}`}>
                     {f.severity.toUpperCase()}
                   </span>
-                  <div>
-                    <p className="text-zinc-700 dark:text-zinc-200">{f.message}</p>
-                    {f.location && <p className="text-xs text-zinc-500">{f.location}</p>}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">{f.message}</p>
+                    <div className="mt-1 flex items-center gap-3 text-xs text-zinc-500">
+                      <span>Rule: {f.rule_id}</span>
+                      {f.location && <span>Location: {f.location}</span>}
+                    </div>
                   </div>
                 </div>
               ))}
