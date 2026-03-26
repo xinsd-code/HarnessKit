@@ -7,9 +7,14 @@ interface UIState {
   setTheme: (theme: "dark" | "light") => void;
 }
 
+const storedTheme = (typeof localStorage !== "undefined" && localStorage.getItem("hk-theme")) as "dark" | "light" | null;
+
 export const useUIStore = create<UIState>((set) => ({
   sidebarOpen: true,
-  theme: "dark",
+  theme: storedTheme ?? "dark",
   toggleSidebar() { set((s) => ({ sidebarOpen: !s.sidebarOpen })); },
-  setTheme(theme) { set({ theme }); },
+  setTheme(theme) {
+    localStorage.setItem("hk-theme", theme);
+    set({ theme });
+  },
 }));

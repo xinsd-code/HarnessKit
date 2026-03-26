@@ -5,15 +5,15 @@ import { TrustBadge } from "@/components/shared/trust-badge";
 import { RefreshCw, ChevronRight, CircleCheck, CircleAlert } from "lucide-react";
 
 const AUDIT_RULES = [
-  { id: "prompt-injection", label: "Prompt Injection", severity: "Critical", deduction: 30 },
-  { id: "remote-code-execution", label: "Remote Code Execution", severity: "Critical", deduction: 30 },
-  { id: "credential-theft", label: "Credential Theft", severity: "Critical", deduction: 30 },
-  { id: "plaintext-secrets", label: "Plaintext Secrets", severity: "Critical", deduction: 30 },
-  { id: "safety-bypass", label: "Safety Bypass", severity: "Critical", deduction: 30 },
+  { id: "prompt-injection", label: "Prompt Injection", severity: "Critical", deduction: 25 },
+  { id: "rce", label: "Remote Code Execution", severity: "Critical", deduction: 25 },
+  { id: "credential-theft", label: "Credential Theft", severity: "Critical", deduction: 25 },
+  { id: "plaintext-secrets", label: "Plaintext Secrets", severity: "Critical", deduction: 25 },
+  { id: "safety-bypass", label: "Safety Bypass", severity: "Critical", deduction: 25 },
   { id: "dangerous-commands", label: "Dangerous Commands", severity: "High", deduction: 15 },
   { id: "broad-permissions", label: "Broad Permissions", severity: "High", deduction: 15 },
   { id: "untrusted-source", label: "Untrusted Source", severity: "Medium", deduction: 8 },
-  { id: "supply-chain-risk", label: "Supply Chain Risk", severity: "Medium", deduction: 8 },
+  { id: "supply-chain", label: "Supply Chain Risk", severity: "Medium", deduction: 8 },
   { id: "outdated", label: "Outdated (90+ days)", severity: "Low", deduction: 3 },
   { id: "unknown-source", label: "Unknown Source", severity: "Low", deduction: 3 },
   { id: "duplicate-conflict", label: "Duplicate / Conflict", severity: "Low", deduction: 3 },
@@ -36,8 +36,9 @@ export default function AuditPage() {
 
   useEffect(() => {
     fetchExtensions();
-    runAudit();
-  }, [fetchExtensions, runAudit]);
+    // Only auto-run audit if we have no cached results
+    if (results.length === 0) runAudit();
+  }, [fetchExtensions, runAudit, results.length]);
 
   const nameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -77,6 +78,12 @@ export default function AuditPage() {
       </div>
 
       <div className="space-y-3">
+        {loading && results.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 text-zinc-500">
+            <RefreshCw size={24} className="animate-spin" />
+            <p className="mt-3 text-sm">Running security audit...</p>
+          </div>
+        )}
         {results.map((result) => {
           const isOpen = openId === result.extension_id;
           const failedRuleIds = new Set(result.findings.map((f) => f.rule_id));

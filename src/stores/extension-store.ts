@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Extension, ExtensionKind } from "@/lib/types";
+import type { Extension, ExtensionKind, UpdateStatus } from "@/lib/types";
 import { api } from "@/lib/invoke";
 
 interface ExtensionState {
@@ -11,6 +11,10 @@ interface ExtensionState {
   selectedId: string | null;
   selectedIds: Set<string>;
   sortBy: "installed_at" | "name" | "trust_score";
+  updateStatuses: Map<string, UpdateStatus>;
+  allTags: string[];
+  tagFilter: string | null;
+  categoryFilter: string | null;
   fetch: () => Promise<void>;
   setKindFilter: (kind: ExtensionKind | null) => void;
   setAgentFilter: (agent: string | null) => void;
@@ -20,9 +24,16 @@ interface ExtensionState {
   selectAll: () => void;
   clearSelection: () => void;
   setSortBy: (sort: "installed_at" | "name" | "trust_score") => void;
+  setTagFilter: (tag: string | null) => void;
+  setCategoryFilter: (category: string | null) => void;
+  fetchTags: () => Promise<void>;
+  updateTags: (id: string, tags: string[]) => Promise<void>;
+  updateCategory: (id: string, category: string | null) => Promise<void>;
+  deployToAgent: (id: string, targetAgent: string) => Promise<void>;
   toggle: (id: string, enabled: boolean) => Promise<void>;
   batchToggle: (enabled: boolean) => Promise<void>;
   batchDelete: () => Promise<void>;
+  checkUpdates: () => Promise<void>;
   filtered: () => Extension[];
 }
 
@@ -35,6 +46,10 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   selectedId: null,
   selectedIds: new Set(),
   sortBy: "installed_at",
+  updateStatuses: new Map(),
+  allTags: [],
+  tagFilter: null,
+  categoryFilter: null,
   async fetch() {
     set({ loading: true });
     const extensions = await api.listExtensions(
@@ -42,6 +57,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       get().agentFilter ?? undefined,
     );
     set({ extensions, loading: false });
+    get().fetchTags();
   },
   setKindFilter(kind) { set({ kindFilter: kind }); get().fetch(); },
   setAgentFilter(agent) { set({ agentFilter: agent }); get().fetch(); },
@@ -58,6 +74,29 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   },
   clearSelection() { set({ selectedIds: new Set() }); },
   setSortBy(sortBy) { set({ sortBy }); },
+  setTagFilter(tag) { set({ tagFilter: tag }); },
+  setCategoryFilter(category) { set({ categoryFilter: category }); },
+  async fetchTags() {
+    const allTags = await api.getAllTags();
+    set({ allTags });
+  },
+  async updateTags(id, tags) {
+    await api.updateTags(id, tags);
+    set((s) => ({
+      extensions: s.extensions.map((e) => e.id === id ? { ...e, tags } : e),
+    }));
+    get().fetchTags();
+  },
+  async updateCategory(id, category) {
+    await api.updateCategory(id, category);
+    set((s) => ({
+      extensions: s.extensions.map((e) => e.id === id ? { ...e, category } : e),
+    }));
+  },
+  async deployToAgent(id, targetAgent) {
+    await api.deployToAgent(id, targetAgent);
+    get().fetch();
+  },
   async toggle(id, enabled) {
     await api.toggleExtension(id, enabled);
     get().fetch();
@@ -76,15 +115,33 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     set({ selectedIds: new Set() });
     get().fetch();
   },
+  async checkUpdates() {
+    const results = await api.checkUpdates();
+    const map = new Map<string, UpdateStatus>();
+    for (const [id, status] of results) {
+      map.set(id, status);
+    }
+    set({ updateStatuses: map });
+  },
   filtered() {
-    const { extensions, searchQuery } = get();
-    if (!searchQuery.trim()) return extensions;
-    const q = searchQuery.toLowerCase();
-    return extensions.filter(
-      (e) =>
-        e.name.toLowerCase().includes(q) ||
-        e.description.toLowerCase().includes(q) ||
-        e.agents.some((a) => a.toLowerCase().includes(q))
-    );
+    const { extensions, searchQuery, tagFilter, categoryFilter } = get();
+    let result = extensions;
+    if (categoryFilter) {
+      result = result.filter((e) => e.category === categoryFilter);
+    }
+    if (tagFilter) {
+      result = result.filter((e) => e.tags.includes(tagFilter));
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (e) =>
+          e.name.toLowerCase().includes(q) ||
+          e.description.toLowerCase().includes(q) ||
+          e.agents.some((a) => a.toLowerCase().includes(q)) ||
+          e.tags.some((t) => t.toLowerCase().includes(q))
+      );
+    }
+    return result;
   },
 }));

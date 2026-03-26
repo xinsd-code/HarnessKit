@@ -13,6 +13,7 @@ pub struct Extension {
     pub source: Source,
     pub agents: Vec<String>,
     pub tags: Vec<String>,
+    pub category: Option<String>,
     pub permissions: Vec<Permission>,
     pub enabled: bool,
     pub trust_score: Option<u8>,
@@ -182,6 +183,16 @@ impl TrustTier {
             Self::Critical => "Critical",
         }
     }
+}
+
+// --- Update Status ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum UpdateStatus {
+    UpToDate,
+    UpdateAvailable { remote_hash: String },
+    Error { message: String },
 }
 
 // --- Agent Info ---

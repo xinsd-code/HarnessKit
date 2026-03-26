@@ -47,7 +47,17 @@ const columns = [
   }),
   col.accessor("name", {
     header: "Name",
-    cell: (info) => <span className="font-medium">{info.getValue()}</span>,
+    cell: (info) => {
+      const ext = info.row.original;
+      const status = useExtensionStore.getState().updateStatuses.get(ext.id);
+      const hasUpdate = status?.status === "update_available";
+      return (
+        <span className="font-medium">
+          {info.getValue()}
+          {hasUpdate && <span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-blue-500" title="Update available" />}
+        </span>
+      );
+    },
   }),
   col.accessor("kind", {
     header: "Kind",

@@ -262,7 +262,7 @@ impl AuditRule for BroadPermissions {
         if input.kind != ExtensionKind::Mcp { return vec![]; }
         let mut findings = Vec::new();
         let all_args = input.mcp_args.join(" ");
-        if all_args.contains("--host") && all_args.contains("*") || all_args.contains("0.0.0.0") {
+        if all_args.contains("--host") && (all_args.contains("*") || all_args.contains("0.0.0.0")) {
             findings.push(AuditFinding {
                 rule_id: self.id().into(),
                 severity: self.severity(),

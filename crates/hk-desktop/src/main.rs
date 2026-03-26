@@ -23,6 +23,17 @@ fn main() {
             commands::scan_and_sync,
             commands::delete_extension,
             commands::get_extension_content,
+            commands::check_updates,
+            commands::install_from_git,
+            commands::update_tags,
+            commands::get_all_tags,
+            commands::update_category,
+            commands::search_marketplace,
+            commands::trending_marketplace,
+            commands::fetch_skill_preview,
+            commands::fetch_skill_audit,
+            commands::install_from_marketplace,
+            commands::deploy_to_agent,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

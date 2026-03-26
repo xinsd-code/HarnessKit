@@ -11,6 +11,7 @@ export interface Extension {
   source: Source;
   agents: string[];
   tags: string[];
+  category: string | null;
   permissions: Permission[];
   enabled: boolean;
   trust_score: number | null;
@@ -46,10 +47,20 @@ export interface AuditFinding {
   location: string;
 }
 
+export type UpdateStatus =
+  | { status: "up_to_date" }
+  | { status: "update_available"; remote_hash: string }
+  | { status: "error"; message: string };
+
 export interface AgentInfo {
   name: string;
   detected: boolean;
   extension_count: number;
+}
+
+export interface ExtensionContent {
+  content: string;
+  path: string | null;
 }
 
 export interface DashboardStats {
@@ -63,6 +74,34 @@ export interface DashboardStats {
   medium_issues: number;
   low_issues: number;
   updates_available: number;
+}
+
+export interface MarketplaceItem {
+  id: string;
+  name: string;
+  description: string;
+  /** For skills: GitHub "owner/repo". For MCP: Smithery qualified name. */
+  source: string;
+  /** Skill ID within the repo (for subdirectory lookup) */
+  skill_id: string;
+  kind: "skill" | "mcp";
+  installs: number;
+  icon_url: string | null;
+  verified: boolean;
+  categories: string[];
+}
+
+export interface SkillAuditInfo {
+  ath: AuditPartner | null;
+  socket: AuditPartner | null;
+  snyk: AuditPartner | null;
+}
+
+export interface AuditPartner {
+  risk: string | null;
+  score: number | null;
+  alerts: number | null;
+  analyzedAt: string | null;
 }
 
 export function trustTier(score: number): TrustTier {

@@ -47,13 +47,15 @@ impl Store {
             CREATE INDEX IF NOT EXISTS idx_audit_results_ext ON audit_results(extension_id);
             "
         )?;
+        // Migration: add category column for existing databases
+        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN category TEXT", []);
         Ok(())
     }
 
     pub fn insert_extension(&self, ext: &Extension) -> Result<()> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            "INSERT OR REPLACE INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 ext.id,
                 ext.kind.as_str(),
@@ -67,6 +69,7 @@ impl Store {
                 ext.trust_score.map(|s| s as i32),
                 ext.installed_at.to_rfc3339(),
                 ext.updated_at.to_rfc3339(),
+                ext.category,
             ],
         )?;
         Ok(())
@@ -74,7 +77,7 @@ impl Store {
 
     pub fn get_extension(&self, id: &str) -> Result<Option<Extension>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at
+            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category
              FROM extensions WHERE id = ?1"
         )?;
         let mut rows = stmt.query_map(params![id], |row| Ok(self.row_to_extension(row)))?;
@@ -87,7 +90,7 @@ impl Store {
     }
 
     pub fn list_extensions(&self, kind: Option<ExtensionKind>, agent: Option<&str>) -> Result<Vec<Extension>> {
-        let mut sql = "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at FROM extensions WHERE 1=1".to_string();
+        let mut sql = "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category FROM extensions WHERE 1=1".to_string();
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
         if let Some(k) = kind {
@@ -125,6 +128,35 @@ impl Store {
         self.conn.execute(
             "UPDATE extensions SET trust_score = ?1 WHERE id = ?2",
             params![score as i32, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_tags(&self, id: &str, tags: &[String]) -> Result<()> {
+        self.conn.execute(
+            "UPDATE extensions SET tags_json = ?1 WHERE id = ?2",
+            params![serde_json::to_string(tags)?, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_all_tags(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare("SELECT DISTINCT tags_json FROM extensions WHERE tags_json != '[]'")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut all_tags = std::collections::BTreeSet::new();
+        for row in rows {
+            let json: String = row?;
+            if let Ok(tags) = serde_json::from_str::<Vec<String>>(&json) {
+                for tag in tags { all_tags.insert(tag); }
+            }
+        }
+        Ok(all_tags.into_iter().collect())
+    }
+
+    pub fn update_category(&self, id: &str, category: Option<&str>) -> Result<()> {
+        self.conn.execute(
+            "UPDATE extensions SET category = ?1 WHERE id = ?2",
+            params![category, id],
         )?;
         Ok(())
     }
@@ -186,6 +218,7 @@ impl Store {
             source: serde_json::from_str(&source_json)?,
             agents: serde_json::from_str(&agents_json)?,
             tags: serde_json::from_str(&tags_json)?,
+            category: row.get::<_, Option<String>>(12).ok().flatten(),
             permissions: serde_json::from_str(&permissions_json)?,
             enabled: row.get::<_, i32>(8)? != 0,
             trust_score: row.get::<_, Option<i32>>(9)?.map(|s| s as u8),
@@ -223,6 +256,7 @@ mod tests {
             },
             agents: vec!["claude".into()],
             tags: vec!["test".into()],
+            category: None,
             permissions: vec![Permission::FileSystem {
                 paths: vec!["/tmp".into()],
             }],
@@ -342,5 +376,47 @@ mod tests {
         store.update_trust_score(&ext.id, 85).unwrap();
         let fetched = store.get_extension(&ext.id).unwrap().unwrap();
         assert_eq!(fetched.trust_score, Some(85));
+    }
+
+    #[test]
+    fn test_update_tags() {
+        let (store, _dir) = test_store();
+        let ext = sample_extension();
+        store.insert_extension(&ext).unwrap();
+        store.update_tags(&ext.id, &["security".into(), "audit".into()]).unwrap();
+        let fetched = store.get_extension(&ext.id).unwrap().unwrap();
+        assert_eq!(fetched.tags, vec!["security", "audit"]);
+    }
+
+    #[test]
+    fn test_get_all_tags() {
+        let (store, _dir) = test_store();
+        let mut ext1 = sample_extension();
+        ext1.tags = vec!["security".into(), "audit".into()];
+        store.insert_extension(&ext1).unwrap();
+
+        let mut ext2 = sample_extension();
+        ext2.id = uuid::Uuid::new_v4().to_string();
+        ext2.tags = vec!["audit".into(), "testing".into()];
+        store.insert_extension(&ext2).unwrap();
+
+        let tags = store.get_all_tags().unwrap();
+        assert_eq!(tags, vec!["audit", "security", "testing"]);
+    }
+
+    #[test]
+    fn test_update_category() {
+        let (store, _dir) = test_store();
+        let ext = sample_extension();
+        store.insert_extension(&ext).unwrap();
+        assert_eq!(store.get_extension(&ext.id).unwrap().unwrap().category, None);
+
+        store.update_category(&ext.id, Some("Security")).unwrap();
+        let fetched = store.get_extension(&ext.id).unwrap().unwrap();
+        assert_eq!(fetched.category, Some("Security".to_string()));
+
+        store.update_category(&ext.id, None).unwrap();
+        let fetched = store.get_extension(&ext.id).unwrap().unwrap();
+        assert_eq!(fetched.category, None);
     }
 }

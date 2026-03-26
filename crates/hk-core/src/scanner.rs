@@ -39,6 +39,7 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
                 (name, String::new())
             });
 
+        let category = infer_category(&name, &content);
         extensions.push(Extension {
             id: stable_id(&name, "skill", agent_name),
             kind: ExtensionKind::Skill,
@@ -47,6 +48,7 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
             source: detect_source(&path, true),
             agents: vec![agent_name.to_string()],
             tags: vec![],
+            category,
             permissions: infer_skill_permissions(&content),
             enabled: true,
             trust_score: None,
@@ -78,6 +80,7 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             source: Source { origin: SourceOrigin::Agent, url: None, version: None, commit_hash: None },
             agents: vec![adapter.name().to_string()],
             tags: vec![],
+            category: None,
             permissions,
             enabled: true,
             trust_score: None,
@@ -99,6 +102,7 @@ pub fn scan_hooks(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             source: Source { origin: SourceOrigin::Agent, url: None, version: None, commit_hash: None },
             agents: vec![adapter.name().to_string()],
             tags: vec![],
+            category: None,
             permissions: vec![Permission::Shell { commands: vec![hook.command] }],
             enabled: true,
             trust_score: None,
@@ -120,6 +124,29 @@ pub fn scan_all(adapters: &[Box<dyn AgentAdapter>]) -> Vec<Extension> {
         all.extend(scan_hooks(adapter.as_ref()));
     }
     all
+}
+
+/// Infer a category for a skill based on its name and content
+fn infer_category(name: &str, content: &str) -> Option<String> {
+    let text = format!("{} {}", name, content).to_lowercase();
+    let rules: &[(&str, &[&str])] = &[
+        ("Testing", &["test", "spec", "assert", "mock", "fixture", "coverage", "jest", "pytest", "vitest", "cypress"]),
+        ("Security", &["security", "auth", "permission", "encrypt", "credential", "vulnerability", "audit", "pentest"]),
+        ("DevOps", &["docker", "kubernetes", "k8s", "ci/cd", "deploy", "terraform", "ansible", "nginx", "aws", "gcp", "azure", "infra"]),
+        ("Data", &["database", "sql", "csv", "json", "data", "analytics", "pandas", "spark", "etl", "migration"]),
+        ("Design", &["css", "tailwind", "ui", "ux", "design", "figma", "layout", "responsive", "animation", "svg"]),
+        ("Finance", &["finance", "payment", "stripe", "invoice", "accounting", "tax", "budget", "trading"]),
+        ("Education", &["learn", "tutorial", "teach", "course", "quiz", "flashcard", "study", "education"]),
+        ("Writing", &["write", "blog", "article", "documentation", "markdown", "content", "copywriting", "grammar", "proofread"]),
+        ("Research", &["research", "paper", "arxiv", "citation", "literature", "survey", "experiment"]),
+        ("Productivity", &["todo", "task", "calendar", "schedule", "workflow", "automate", "organize", "template"]),
+        ("Coding", &["code", "programming", "refactor", "debug", "lint", "compile", "build", "api", "frontend", "backend", "react", "rust", "python", "typescript", "javascript"]),
+    ];
+    for (category, keywords) in rules {
+        let matches = keywords.iter().filter(|kw| text.contains(**kw)).count();
+        if matches >= 2 { return Some(category.to_string()); }
+    }
+    None
 }
 
 // --- Helpers ---
@@ -156,7 +183,7 @@ fn detect_source(path: &Path, agent_managed: bool) -> Source {
             origin: SourceOrigin::Git,
             url: read_git_remote(&dir),
             version: None,
-            commit_hash: None,
+            commit_hash: read_git_commit_hash(&dir),
         };
     }
     while dir.pop() {
@@ -165,13 +192,28 @@ fn detect_source(path: &Path, agent_managed: bool) -> Source {
                 origin: SourceOrigin::Git,
                 url: read_git_remote(&dir),
                 version: None,
-                commit_hash: None,
+                commit_hash: read_git_commit_hash(&dir),
             };
         }
     }
     // Extensions found via agent adapters are agent-managed, not unknown
     let origin = if agent_managed { SourceOrigin::Agent } else { SourceOrigin::Local };
     Source { origin, url: None, version: None, commit_hash: None }
+}
+
+fn read_git_commit_hash(repo_dir: &Path) -> Option<String> {
+    let head = std::fs::read_to_string(repo_dir.join(".git/HEAD")).ok()?;
+    let head = head.trim();
+    if let Some(ref_path) = head.strip_prefix("ref: ") {
+        // HEAD points to a branch ref — read the actual commit hash
+        std::fs::read_to_string(repo_dir.join(".git").join(ref_path))
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    } else {
+        // Detached HEAD — the hash is directly in HEAD
+        Some(head.to_string()).filter(|s| !s.is_empty())
+    }
 }
 
 fn read_git_remote(repo_dir: &Path) -> Option<String> {
@@ -262,5 +304,35 @@ mod tests {
         assert_eq!(extensions.len(), 1);
         assert_eq!(extensions[0].name, "github");
         assert_eq!(extensions[0].kind, ExtensionKind::Mcp);
+    }
+
+    #[test]
+    fn test_infer_category_security() {
+        let cat = infer_category("auth-checker", "Check security permissions for the auth module");
+        assert_eq!(cat, Some("Security".to_string()));
+    }
+
+    #[test]
+    fn test_infer_category_testing() {
+        let cat = infer_category("test-runner", "Run jest tests and check assert results");
+        assert_eq!(cat, Some("Testing".to_string()));
+    }
+
+    #[test]
+    fn test_infer_category_coding() {
+        let cat = infer_category("refactor-helper", "Helps refactor code and debug issues");
+        assert_eq!(cat, Some("Coding".to_string()));
+    }
+
+    #[test]
+    fn test_infer_category_none() {
+        let cat = infer_category("my-tool", "A generic tool that does stuff");
+        assert_eq!(cat, None);
+    }
+
+    #[test]
+    fn test_infer_category_devops() {
+        let cat = infer_category("deploy-tool", "Deploy to kubernetes using docker containers");
+        assert_eq!(cat, Some("DevOps".to_string()));
     }
 }

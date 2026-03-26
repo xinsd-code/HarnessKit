@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Extension, AgentInfo, DashboardStats, AuditResult } from "./types";
+import type { Extension, ExtensionContent, AgentInfo, DashboardStats, AuditResult, UpdateStatus, MarketplaceItem, SkillAuditInfo } from "./types";
 
 export const api = {
   listExtensions(kind?: string, agent?: string): Promise<Extension[]> {
@@ -30,7 +30,51 @@ export const api = {
     return invoke("delete_extension", { id });
   },
 
-  getExtensionContent(id: string): Promise<string> {
+  getExtensionContent(id: string): Promise<ExtensionContent> {
     return invoke("get_extension_content", { id });
+  },
+
+  checkUpdates(): Promise<[string, UpdateStatus][]> {
+    return invoke("check_updates");
+  },
+
+  installFromGit(url: string): Promise<string> {
+    return invoke("install_from_git", { url });
+  },
+
+  updateTags(id: string, tags: string[]): Promise<void> {
+    return invoke("update_tags", { id, tags });
+  },
+
+  getAllTags(): Promise<string[]> {
+    return invoke("get_all_tags");
+  },
+
+  updateCategory(id: string, category: string | null): Promise<void> {
+    return invoke("update_category", { id, category });
+  },
+
+  searchMarketplace(query: string, kind: string, limit?: number): Promise<MarketplaceItem[]> {
+    return invoke("search_marketplace", { query, kind, limit });
+  },
+
+  trendingMarketplace(kind: string, limit?: number): Promise<MarketplaceItem[]> {
+    return invoke("trending_marketplace", { kind, limit });
+  },
+
+  fetchSkillPreview(source: string, skillId: string): Promise<string> {
+    return invoke("fetch_skill_preview", { source, skillId });
+  },
+
+  fetchSkillAudit(source: string, skillId: string): Promise<SkillAuditInfo | null> {
+    return invoke("fetch_skill_audit", { source, skillId });
+  },
+
+  installFromMarketplace(source: string, skillId: string): Promise<string> {
+    return invoke("install_from_marketplace", { source, skillId });
+  },
+
+  deployToAgent(id: string, targetAgent: string): Promise<string> {
+    return invoke("deploy_to_agent", { id, targetAgent });
   },
 };
