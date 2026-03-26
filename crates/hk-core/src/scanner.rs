@@ -44,7 +44,7 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
             kind: ExtensionKind::Skill,
             name,
             description,
-            source: detect_source(&path),
+            source: detect_source(&path, true),
             agents: vec![agent_name.to_string()],
             tags: vec![],
             permissions: infer_skill_permissions(&content),
@@ -141,8 +141,18 @@ fn parse_skill_frontmatter(content: &str) -> Option<(String, String)> {
     Some((name?, description.unwrap_or_default()))
 }
 
-fn detect_source(path: &Path) -> Source {
+fn detect_source(path: &Path, agent_managed: bool) -> Source {
+    // Check the path itself and all parent directories for .git
     let mut dir = path.to_path_buf();
+    // Check current path first (the skill directory itself may be a git clone)
+    if dir.join(".git").exists() {
+        return Source {
+            origin: SourceOrigin::Git,
+            url: read_git_remote(&dir),
+            version: None,
+            commit_hash: None,
+        };
+    }
     while dir.pop() {
         if dir.join(".git").exists() {
             return Source {
@@ -153,7 +163,9 @@ fn detect_source(path: &Path) -> Source {
             };
         }
     }
-    Source { origin: SourceOrigin::Local, url: None, version: None, commit_hash: None }
+    // Extensions found via agent adapters are agent-managed, not unknown
+    let origin = if agent_managed { SourceOrigin::Agent } else { SourceOrigin::Local };
+    Source { origin, url: None, version: None, commit_hash: None }
 }
 
 fn read_git_remote(repo_dir: &Path) -> Option<String> {

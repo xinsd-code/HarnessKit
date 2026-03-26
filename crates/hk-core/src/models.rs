@@ -68,6 +68,7 @@ pub struct Source {
 pub enum SourceOrigin {
     Git,
     Registry,
+    Agent,
     Local,
 }
 
@@ -76,6 +77,7 @@ impl SourceOrigin {
         match self {
             Self::Git => "git",
             Self::Registry => "registry",
+            Self::Agent => "agent",
             Self::Local => "local",
         }
     }
@@ -257,6 +259,7 @@ mod tests {
     fn test_source_origin_display() {
         assert_eq!(SourceOrigin::Git.as_str(), "git");
         assert_eq!(SourceOrigin::Registry.as_str(), "registry");
+        assert_eq!(SourceOrigin::Agent.as_str(), "agent");
         assert_eq!(SourceOrigin::Local.as_str(), "local");
     }
 }

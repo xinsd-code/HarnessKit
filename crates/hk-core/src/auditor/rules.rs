@@ -365,11 +365,12 @@ impl AuditRule for UnknownSource {
     fn id(&self) -> &str { "unknown-source" }
     fn severity(&self) -> Severity { Severity::Low }
     fn check(&self, input: &AuditInput) -> Vec<AuditFinding> {
+        // Only flag truly local/unknown extensions — not agent-managed or git-tracked ones
         if input.source.origin == SourceOrigin::Local && input.source.url.is_none() {
             vec![AuditFinding {
                 rule_id: self.id().into(),
                 severity: self.severity(),
-                message: "Local extension with no git source tracking".into(),
+                message: "Extension has no known source — not installed via an agent or tracked in git".into(),
                 location: input.file_path.clone(),
             }]
         } else {

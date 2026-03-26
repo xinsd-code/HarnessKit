@@ -109,14 +109,16 @@ export default function AuditPage() {
                         ) : (
                           <CircleCheck size={16} className="shrink-0 text-green-500 dark:text-green-400" />
                         )}
-                        <span className="flex-1 text-zinc-700 dark:text-zinc-300">{rule.label}</span>
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
-                          {rule.severity}
-                        </span>
+                        <span className={`flex-1 ${failed ? "text-zinc-700 dark:text-zinc-300" : "text-zinc-400 dark:text-zinc-500"}`}>{rule.label}</span>
                         {failed ? (
-                          <span className="w-12 text-right font-mono text-xs text-red-500 dark:text-red-400">-{rule.deduction}</span>
+                          <>
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
+                              {rule.severity}
+                            </span>
+                            <span className="w-12 text-right font-mono text-xs text-red-500 dark:text-red-400">-{rule.deduction}</span>
+                          </>
                         ) : (
-                          <span className="w-12 text-right font-mono text-xs text-green-500 dark:text-green-400">Pass</span>
+                          <span className="font-mono text-xs text-green-500 dark:text-green-400">Pass</span>
                         )}
                       </div>
                     );
