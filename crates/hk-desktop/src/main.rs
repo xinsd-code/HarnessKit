@@ -21,6 +21,8 @@ fn main() {
             commands::toggle_extension,
             commands::run_audit,
             commands::scan_and_sync,
+            commands::delete_extension,
+            commands::get_extension_content,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

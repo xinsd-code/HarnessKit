@@ -124,6 +124,12 @@ pub fn scan_all(adapters: &[Box<dyn AgentAdapter>]) -> Vec<Extension> {
 
 // --- Helpers ---
 
+/// Extract the skill name from a SKILL.md file (public for use in commands)
+pub fn parse_skill_name(path: &Path) -> Option<String> {
+    let content = std::fs::read_to_string(path).ok()?;
+    parse_skill_frontmatter(&content).map(|(name, _)| name)
+}
+
 fn parse_skill_frontmatter(content: &str) -> Option<(String, String)> {
     if !content.starts_with("---") { return None; }
     let rest = &content[3..];

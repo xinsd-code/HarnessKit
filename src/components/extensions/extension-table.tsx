@@ -16,6 +16,35 @@ import { useExtensionStore } from "@/stores/extension-store";
 const col = createColumnHelper<Extension>();
 
 const columns = [
+  col.display({
+    id: "select",
+    header: () => {
+      const { selectedIds, selectAll, clearSelection, filtered } = useExtensionStore.getState();
+      const allSelected = filtered().length > 0 && selectedIds.size === filtered().length;
+      return (
+        <input
+          type="checkbox"
+          checked={allSelected}
+          onChange={() => allSelected ? clearSelection() : selectAll()}
+          className="rounded"
+        />
+      );
+    },
+    cell: (info) => {
+      const ext = info.row.original;
+      const { selectedIds, toggleSelected } = useExtensionStore.getState();
+      return (
+        <input
+          type="checkbox"
+          checked={selectedIds.has(ext.id)}
+          onChange={(e) => { e.stopPropagation(); toggleSelected(ext.id); }}
+          onClick={(e) => e.stopPropagation()}
+          className="rounded"
+        />
+      );
+    },
+    size: 40,
+  }),
   col.accessor("name", {
     header: "Name",
     cell: (info) => <span className="font-medium">{info.getValue()}</span>,
@@ -47,7 +76,7 @@ const columns = [
       const toggle = useExtensionStore.getState().toggle;
       return (
         <button
-          onClick={() => toggle(ext.id, !ext.enabled)}
+          onClick={(e) => { e.stopPropagation(); toggle(ext.id, !ext.enabled); }}
           className={ext.enabled ? "text-green-500 dark:text-green-400 text-xs" : "text-red-500 dark:text-red-400 text-xs"}
         >
           {ext.enabled ? "enabled" : "disabled"}
@@ -59,6 +88,7 @@ const columns = [
 
 export function ExtensionTable({ data }: { data: Extension[] }) {
   const [sorting, setSorting] = useState<SortingState>([]);
+  const { selectedId, setSelectedId } = useExtensionStore();
   const table = useReactTable({
     data,
     columns,
@@ -79,6 +109,7 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
                   key={header.id}
                   className="px-4 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 cursor-pointer select-none"
                   onClick={header.column.getToggleSortingHandler()}
+                  style={header.column.getSize() ? { width: header.column.getSize() } : undefined}
                 >
                   {flexRender(header.column.columnDef.header, header.getContext())}
                 </th>
@@ -88,7 +119,15 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
         </thead>
         <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800/50">
           {table.getRowModel().rows.map((row) => (
-            <tr key={row.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/30 transition-colors">
+            <tr
+              key={row.id}
+              onClick={() => setSelectedId(row.original.id === selectedId ? null : row.original.id)}
+              className={`cursor-pointer transition-colors ${
+                row.original.id === selectedId
+                  ? "bg-zinc-100 dark:bg-zinc-800/50"
+                  : "hover:bg-zinc-50 dark:hover:bg-zinc-900/30"
+              }`}
+            >
               {row.getVisibleCells().map((cell) => (
                 <td key={cell.id} className="px-4 py-3 text-sm">
                   {flexRender(cell.column.columnDef.cell, cell.getContext())}

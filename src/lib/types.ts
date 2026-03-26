@@ -1,5 +1,5 @@
 export type ExtensionKind = "skill" | "mcp" | "plugin" | "hook";
-export type SourceOrigin = "git" | "registry" | "local";
+export type SourceOrigin = "git" | "registry" | "agent" | "local";
 export type Severity = "Critical" | "High" | "Medium" | "Low";
 export type TrustTier = "Safe" | "LowRisk" | "HighRisk" | "Critical";
 

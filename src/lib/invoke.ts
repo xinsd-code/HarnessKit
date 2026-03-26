@@ -25,4 +25,12 @@ export const api = {
   scanAndSync(): Promise<number> {
     return invoke("scan_and_sync");
   },
+
+  deleteExtension(id: string): Promise<void> {
+    return invoke("delete_extension", { id });
+  },
+
+  getExtensionContent(id: string): Promise<string> {
+    return invoke("get_extension_content", { id });
+  },
 };
