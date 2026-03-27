@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useMarketplaceStore } from "@/stores/marketplace-store";
 import { useAgentStore } from "@/stores/agent-store";
-import { Search, Download, X, Loader2, Shield, ShieldCheck, ShieldAlert, TrendingUp, BadgeCheck, Server, Package } from "lucide-react";
+import { InstallDialog } from "@/components/extensions/install-dialog";
+import { Search, Download, X, Loader2, Shield, ShieldCheck, ShieldAlert, TrendingUp, BadgeCheck, Server, Package, GitBranch } from "lucide-react";
 import type { MarketplaceItem, SkillAuditInfo } from "@/lib/types";
 import { clsx } from "clsx";
 
@@ -90,6 +91,7 @@ export default function MarketplacePage() {
   const { agents, fetch: fetchAgents } = useAgentStore();
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [showInstall, setShowInstall] = useState(false);
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
   useEffect(() => { loadTrending(); }, [loadTrending]);
@@ -113,7 +115,16 @@ export default function MarketplacePage() {
     <div className="flex gap-4">
       <div className="flex-1 space-y-4 min-w-0">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Marketplace</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-semibold">Marketplace</h2>
+            <button
+              onClick={() => setShowInstall(true)}
+              className="flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground hover:bg-accent"
+            >
+              <GitBranch size={12} />
+              Install from Git
+            </button>
+          </div>
           <div className="flex rounded-lg border border-border">
             <button
               onClick={() => setTab("skill")}
@@ -284,6 +295,7 @@ export default function MarketplacePage() {
           )}
         </div>
       )}
+      {showInstall && <InstallDialog onClose={() => setShowInstall(false)} />}
     </div>
   );
 }

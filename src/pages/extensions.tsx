@@ -1,22 +1,17 @@
 import { useEffect, useState } from "react";
 import { useExtensionStore } from "@/stores/extension-store";
-import { useAgentStore } from "@/stores/agent-store";
 import { ExtensionTable } from "@/components/extensions/extension-table";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
 import { ExtensionDetail } from "@/components/extensions/extension-detail";
-import { InstallDialog } from "@/components/extensions/install-dialog";
 import { RefreshCw } from "lucide-react";
 
 export default function ExtensionsPage() {
   const { loading, fetch, filtered, selectedId, selectedIds, batchToggle, batchDelete, clearSelection, checkUpdates } = useExtensionStore();
-  const { fetch: fetchAgents } = useAgentStore();
   const data = filtered();
   const batchMode = selectedIds.size > 0;
-  const [showInstall, setShowInstall] = useState(false);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
 
   useEffect(() => { fetch(); }, [fetch]);
-  useEffect(() => { fetchAgents(); }, [fetchAgents]);
 
   return (
     <div className="flex gap-4">
@@ -24,12 +19,6 @@ export default function ExtensionsPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h2 className="text-xl font-semibold">Extensions</h2>
-            <button
-              onClick={() => setShowInstall(true)}
-              className="rounded-lg bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90"
-            >
-              Install
-            </button>
             <button
               onClick={() => { setCheckingUpdates(true); checkUpdates().finally(() => setCheckingUpdates(false)); }}
               disabled={checkingUpdates}
@@ -57,7 +46,6 @@ export default function ExtensionsPage() {
         )}
       </div>
       {selectedId && <ExtensionDetail />}
-      {showInstall && <InstallDialog onClose={() => setShowInstall(false)} />}
     </div>
   );
 }

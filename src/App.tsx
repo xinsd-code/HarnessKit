@@ -1,7 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { HashRouter, Routes, Route } from "react-router-dom";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AppShell } from "./components/layout/app-shell";
-import { useUIStore } from "./stores/ui-store";
+import { useUIStore, resolveMode } from "./stores/ui-store";
 import { useExtensionStore } from "./stores/extension-store";
 import { useAuditStore } from "./stores/audit-store";
 import { api } from "./lib/invoke";
@@ -18,25 +19,42 @@ export default function App() {
   const fetchExtensions = useExtensionStore((s) => s.fetch);
   const loadCachedAudit = useAuditStore((s) => s.loadCached);
 
-  // Background scan — when complete, refresh extension store so pages show fresh data
+  // Track resolved dark/light (reacts to OS changes when mode === "system")
+  const [resolved, setResolved] = useState<"dark" | "light">(() => resolveMode(mode));
+
+  useEffect(() => {
+    setResolved(resolveMode(mode));
+
+    if (mode !== "system") return;
+
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => setResolved(mq.matches ? "dark" : "light");
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [mode]);
+
+  // Background scan
   useEffect(() => {
     api.scanAndSync()
-      .catch(() => { /* scan failed — continue with existing data */ })
+      .catch(() => {})
       .then(() => {
         fetchExtensions();
         loadCachedAudit();
       });
   }, [fetchExtensions, loadCachedAudit]);
 
+  // Apply theme + dark class to <html>, and sync window appearance for vibrancy
   useEffect(() => {
     const root = document.documentElement;
     root.setAttribute("data-theme", themeName);
-    if (mode === "dark") {
+    if (resolved === "dark") {
       root.classList.add("dark");
     } else {
       root.classList.remove("dark");
     }
-  }, [themeName, mode]);
+    // Force macOS vibrancy to match — "light" | "dark" | null (system)
+    getCurrentWindow().setTheme(mode === "system" ? null : resolved).catch(() => {});
+  }, [themeName, mode, resolved]);
 
   return (
     <HashRouter>

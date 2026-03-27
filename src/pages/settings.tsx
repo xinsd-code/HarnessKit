@@ -40,8 +40,7 @@ function groupByKind(extensions: Extension[]): Record<string, Extension[]> {
 
 const THEME_OPTIONS: { value: ThemeName; label: string; colors: [string, string, string] }[] = [
   { value: "tiesen", label: "Tiesen", colors: ["oklch(0.5144 0.1605 267.4400)", "oklch(0.9851 0 0)", "oklch(0 0 0)"] },
-  { value: "astrovista", label: "AstroVista", colors: ["oklch(0.6420 0.1691 38.5815)", "oklch(0.4138 0.0846 259.8759)", "oklch(0.2178 0 0)"] },
-  { value: "claude", label: "Claude", colors: ["oklch(0.6171 0.1375 39.0427)", "oklch(0.9665 0.0067 97.3521)", "oklch(0.2679 0.0036 106.6427)"] },
+{ value: "claude", label: "Claude", colors: ["oklch(0.6171 0.1375 39.0427)", "oklch(0.9665 0.0067 97.3521)", "oklch(0.2679 0.0036 106.6427)"] },
   { value: "lightgreen", label: "Light Green", colors: ["oklch(0.8871 0.2122 128.5041)", "oklch(0.3717 0.0392 257.2870)", "oklch(0.1288 0.0406 264.6952)"] },
 ];
 
@@ -129,7 +128,7 @@ export default function SettingsPage() {
         {/* Theme selector */}
         <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
           <span className="text-sm font-medium">Theme</span>
-          <div className="mt-3 grid grid-cols-4 gap-3">
+          <div className="mt-3 grid grid-cols-3 gap-3">
             {THEME_OPTIONS.map((t) => (
               <button
                 key={t.value}
@@ -160,28 +159,22 @@ export default function SettingsPage() {
         <div className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
           <span className="text-sm">Mode</span>
           <div className="flex rounded-lg border border-border">
-            <button
-              onClick={() => setMode("light")}
-              className={clsx(
-                "rounded-l-lg px-3 py-1 text-xs font-medium transition-colors",
-                mode === "light"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-accent"
-              )}
-            >
-              Light
-            </button>
-            <button
-              onClick={() => setMode("dark")}
-              className={clsx(
-                "rounded-r-lg px-3 py-1 text-xs font-medium transition-colors",
-                mode === "dark"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-accent"
-              )}
-            >
-              Dark
-            </button>
+            {(["system", "light", "dark"] as const).map((m, i) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={clsx(
+                  "px-3 py-1 text-xs font-medium transition-colors",
+                  i === 0 && "rounded-l-lg",
+                  i === 2 && "rounded-r-lg",
+                  mode === m
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-accent"
+                )}
+              >
+                {m === "system" ? "System" : m === "light" ? "Light" : "Dark"}
+              </button>
+            ))}
           </div>
         </div>
       </section>
