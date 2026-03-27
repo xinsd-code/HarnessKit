@@ -57,6 +57,8 @@ impl Store {
         )?;
         // Migration: add category column for existing databases
         let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN category TEXT", []);
+        // Migration: add last_used_at column for skill usage tracking
+        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN last_used_at TEXT", []);
         // Migration: hidden_extensions table for surviving re-scans
         self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS hidden_extensions (id TEXT PRIMARY KEY)"
@@ -69,8 +71,8 @@ impl Store {
     /// Preserves user-set fields: enabled, tags, category, trust_score.
     pub fn insert_extension(&self, ext: &Extension) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+            "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
              ON CONFLICT(id) DO UPDATE SET
                name = excluded.name,
                description = excluded.description,
@@ -78,7 +80,8 @@ impl Store {
                agents_json = excluded.agents_json,
                permissions_json = excluded.permissions_json,
                updated_at = excluded.updated_at,
-               category = extensions.category",
+               category = extensions.category,
+               last_used_at = excluded.last_used_at",
             params![
                 ext.id,
                 ext.kind.as_str(),
@@ -93,6 +96,7 @@ impl Store {
                 ext.installed_at.to_rfc3339(),
                 ext.updated_at.to_rfc3339(),
                 ext.category,
+                ext.last_used_at.map(|dt| dt.to_rfc3339()),
             ],
         )?;
         Ok(())
@@ -100,7 +104,7 @@ impl Store {
 
     pub fn get_extension(&self, id: &str) -> Result<Option<Extension>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category
+            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at
              FROM extensions WHERE id = ?1"
         )?;
         let mut rows = stmt.query_map(params![id], |row| Ok(self.row_to_extension(row)))?;
@@ -113,7 +117,7 @@ impl Store {
     }
 
     pub fn list_extensions(&self, kind: Option<ExtensionKind>, agent: Option<&str>) -> Result<Vec<Extension>> {
-        let mut sql = "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category FROM extensions WHERE 1=1".to_string();
+        let mut sql = "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at FROM extensions WHERE 1=1".to_string();
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
         if let Some(k) = kind {
@@ -296,6 +300,7 @@ impl Store {
         let permissions_json: String = row.get(7)?;
         let installed_at_str: String = row.get(10)?;
         let updated_at_str: String = row.get(11)?;
+        let last_used_at_str: Option<String> = row.get::<_, Option<String>>(13).ok().flatten();
 
         Ok(Extension {
             id: row.get(0)?,
@@ -313,6 +318,7 @@ impl Store {
                 .with_timezone(&Utc),
             updated_at: DateTime::parse_from_rfc3339(&updated_at_str)?
                 .with_timezone(&Utc),
+            last_used_at: last_used_at_str.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
         })
     }
 }
@@ -351,6 +357,7 @@ mod tests {
             trust_score: None,
             installed_at: Utc::now(),
             updated_at: Utc::now(),
+            last_used_at: None,
         }
     }
 

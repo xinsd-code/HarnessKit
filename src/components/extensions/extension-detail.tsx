@@ -3,7 +3,8 @@ import { useExtensionStore } from "@/stores/extension-store";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { api } from "@/lib/invoke";
-import { X, File, Globe, Terminal, Database, Key, Calendar, GitBranch, ArrowDownCircle, CheckCircle, FolderOpen, Download, Loader2 } from "lucide-react";
+import { X, File, Globe, Terminal, Database, Key, Calendar, Clock, GitBranch, ArrowDownCircle, CheckCircle, FolderOpen, Download, Loader2 } from "lucide-react";
+import { formatRelativeTime } from "@/lib/types";
 import { tagColor, CATEGORIES } from "@/components/extensions/extension-filters";
 import { useAgentStore } from "@/stores/agent-store";
 import type { Permission } from "@/lib/types";
@@ -81,6 +82,10 @@ export function ExtensionDetail() {
         <div className="flex items-center gap-2 text-muted-foreground">
           <Calendar size={14} />
           <span>Installed {formatDate(ext.installed_at)}</span>
+        </div>
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Clock size={14} />
+          <span>Last used {ext.kind === "skill" ? (ext.last_used_at ? formatRelativeTime(ext.last_used_at) : "Never") : "—"}</span>
         </div>
         {ext.source.origin === "git" && ext.source.url && (
           <div className="flex items-center gap-2 text-muted-foreground">

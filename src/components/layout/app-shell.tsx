@@ -40,14 +40,14 @@ export function AppShell() {
   return (
     <div className="h-screen overflow-hidden text-foreground">
       {/* Frosted glass surface */}
-      <div className="flex h-full bg-sidebar/40 backdrop-blur-xl backdrop-saturate-150">
+      <div className="flex h-full bg-sidebar/25 backdrop-blur-xl backdrop-saturate-150">
         <Sidebar />
 
         {/* py+pr padding exposes frosted surface on top / right / bottom */}
         <div className="flex-1 flex flex-col min-w-0 py-2.5 pr-2.5">
           <main
             ref={mainRef}
-            className="flex-1 overflow-auto rounded-xl bg-background/75 p-6"
+            className="flex-1 overflow-auto rounded-xl bg-background/60 p-6"
           >
             <Outlet />
           </main>

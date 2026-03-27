@@ -17,6 +17,7 @@ export interface Extension {
   trust_score: number | null;
   installed_at: string;
   updated_at: string;
+  last_used_at: string | null;
 }
 
 export interface Source {
@@ -140,4 +141,17 @@ export function severityColor(severity: Severity): string {
     case "Medium": return "text-orange-400";
     case "Low": return "text-muted-foreground";
   }
+}
+
+export function formatRelativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHour = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHour / 24);
+
+  if (diffDay > 30) return `${Math.floor(diffDay / 30)}mo ago`;
+  if (diffDay > 0) return `${diffDay}d ago`;
+  if (diffHour > 0) return `${diffHour}h ago`;
+  if (diffMin > 0) return `${diffMin}m ago`;
+  return "Just now";
 }

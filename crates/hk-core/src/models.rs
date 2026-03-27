@@ -19,6 +19,7 @@ pub struct Extension {
     pub trust_score: Option<u8>,
     pub installed_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub last_used_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

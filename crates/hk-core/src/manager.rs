@@ -237,6 +237,7 @@ mod tests {
             trust_score: None,
             installed_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
+            last_used_at: None,
         };
         store.insert_extension(&ext).unwrap();
 
@@ -265,6 +266,7 @@ mod tests {
             trust_score: None,
             installed_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
+            last_used_at: None,
         };
         store.insert_extension(&ext).unwrap();
 

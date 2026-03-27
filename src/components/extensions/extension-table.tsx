@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-table";
 import { useState } from "react";
 import type { Extension } from "@/lib/types";
+import { formatRelativeTime } from "@/lib/types";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { PermissionTags } from "@/components/shared/permission-tags";
 import { TrustBadge } from "@/components/shared/trust-badge";
@@ -77,6 +78,20 @@ const columns = [
     cell: (info) => {
       const val = info.getValue();
       return val != null ? <TrustBadge score={val} size="sm" /> : <span className="text-muted-foreground">--</span>;
+    },
+  }),
+  col.accessor("last_used_at", {
+    header: "Last Used",
+    cell: (info) => {
+      const ext = info.row.original;
+      if (ext.kind !== "skill") {
+        return <span className="text-muted-foreground">—</span>;
+      }
+      const val = info.getValue();
+      if (!val) {
+        return <span className="text-muted-foreground">Unused</span>;
+      }
+      return <span className="text-muted-foreground">{formatRelativeTime(val)}</span>;
     },
   }),
   col.accessor("enabled", {
