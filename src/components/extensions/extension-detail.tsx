@@ -171,7 +171,7 @@ export function ExtensionDetail() {
         if (otherAgents.length === 0) return null;
         return (
           <div className="mt-4">
-            <h4 className="mb-2 text-xs font-medium text-muted-foreground">Deploy to Agent</h4>
+            <h4 className="mb-2 text-xs font-medium text-muted-foreground" title="Copy this extension's configuration to another agent on your machine">Deploy to Agent</h4>
             <div className="flex flex-wrap gap-1.5">
               {otherAgents.map((agent) => (
                 <button

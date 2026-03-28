@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useUIStore } from "@/stores/ui-store";
 import type { ThemeName } from "@/stores/ui-store";
 import { useProjectStore } from "@/stores/project-store";
+import { useAgentStore } from "@/stores/agent-store";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { FolderOpen, Plus, Trash2, Loader2, ChevronDown, ChevronRight, Check } from "lucide-react";
 import { clsx } from "clsx";
@@ -58,6 +59,8 @@ export default function SettingsPage() {
     selectProject,
   } = useProjectStore();
 
+  const { agents, fetch: fetchAgents } = useAgentStore();
+
   const [adding, setAdding] = useState(false);
   const [discoveredProjects, setDiscoveredProjects] = useState<DiscoveredProject[] | null>(null);
   const [discoveredSelected, setDiscoveredSelected] = useState<Set<string>>(new Set());
@@ -75,6 +78,13 @@ export default function SettingsPage() {
   useEffect(() => {
     loadProjects();
   }, [loadProjects]);
+
+  useEffect(() => {
+    fetchAgents();
+  }, [fetchAgents]);
+
+  const agentNames = ["claude", "cursor", "codex", "gemini", "antigravity", "copilot"] as const;
+  const agentMap = new Map(agents.map((a) => [a.name.toLowerCase(), a]));
 
   const existingPaths = new Set(projects.map((p) => p.path));
 
@@ -200,19 +210,30 @@ export default function SettingsPage() {
       <section className="space-y-4 border-t border-border pt-8">
         <h3 className="text-sm font-medium text-muted-foreground">Agent Paths</h3>
         <p className="text-xs text-muted-foreground">
-          HarnessKit auto-detects agent directories. Override paths here if needed.
+          Auto-detected paths shown below. Custom path overrides coming soon.
         </p>
-        {["claude", "cursor", "codex", "gemini", "antigravity", "copilot"].map((agent) => (
-          <div key={agent} className="flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
-            <span className="w-28 text-sm font-medium capitalize text-foreground">{agent}</span>
-            <input
-              type="text"
-              placeholder="Auto-detected"
-              aria-label={`${agent} config path`}
-              className="flex-1 rounded-md border border-border bg-muted px-3 py-1 text-sm placeholder:text-muted-foreground transition-colors duration-200 focus:border-ring focus:ring-1 focus:ring-ring focus:outline-none"
-            />
-          </div>
-        ))}
+        {agentNames.map((agent) => {
+          const info = agentMap.get(agent);
+          const isDetected = info?.detected ?? false;
+          return (
+            <div key={agent} className="flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
+              <span className="w-28 text-sm font-medium capitalize text-foreground">{agent}</span>
+              <input
+                type="text"
+                readOnly
+                value={isDetected ? "Detected" : ""}
+                placeholder="Not detected"
+                aria-label={`${agent} config path`}
+                className="flex-1 rounded-md border border-border bg-muted px-3 py-1 text-sm placeholder:text-muted-foreground opacity-60 cursor-not-allowed"
+              />
+              {isDetected && (
+                <span className="shrink-0 text-xs font-medium text-primary">
+                  {info!.extension_count} extension{info!.extension_count !== 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+          );
+        })}
       </section>
 
       {/* Projects */}

@@ -3,18 +3,18 @@ import { LayoutDashboard, Package, Shield, Bot, Settings, ShoppingBag } from "lu
 import { clsx } from "clsx";
 
 const mainNavItems = [
-  { to: "/", icon: LayoutDashboard, label: "Overview" },
-  { to: "/extensions", icon: Package, label: "Extensions" },
-  { to: "/marketplace", icon: ShoppingBag, label: "Marketplace" },
-  { to: "/audit", icon: Shield, label: "Audit" },
-  { to: "/agents", icon: Bot, label: "Agents" },
+  { to: "/", icon: LayoutDashboard, label: "Overview", shortcut: "\u23181" },
+  { to: "/extensions", icon: Package, label: "Extensions", shortcut: "\u23182" },
+  { to: "/marketplace", icon: ShoppingBag, label: "Marketplace", shortcut: "\u23183" },
+  { to: "/audit", icon: Shield, label: "Audit", shortcut: "\u23184" },
+  { to: "/agents", icon: Bot, label: "Agents", shortcut: "\u23185" },
 ];
 
 const utilityNavItems = [
-  { to: "/settings", icon: Settings, label: "Settings" },
+  { to: "/settings", icon: Settings, label: "Settings", shortcut: "\u2318," },
 ];
 
-function SidebarLink({ to, icon: Icon, label }: { to: string; icon: React.ElementType; label: string }) {
+function SidebarLink({ to, icon: Icon, label, shortcut }: { to: string; icon: React.ElementType; label: string; shortcut?: string }) {
   return (
     <NavLink
       key={to}
@@ -48,6 +48,15 @@ function SidebarLink({ to, icon: Icon, label }: { to: string; icon: React.Elemen
             )}
           />
           {label}
+          {/* Keyboard shortcut hint — hidden when active to reduce clutter */}
+          {shortcut && !isActive && (
+            <span
+              className="ml-auto text-[10px] font-mono text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+              aria-hidden="true"
+            >
+              {shortcut}
+            </span>
+          )}
         </>
       )}
     </NavLink>

@@ -7,18 +7,18 @@ import type { Severity } from "@/lib/types";
 import { RefreshCw, ChevronRight, CircleAlert, Shield, Check, Eye } from "lucide-react";
 
 const AUDIT_RULES = [
-  { id: "prompt-injection", label: "Prompt Injection", severity: "Critical" as Severity, deduction: 25 },
-  { id: "rce", label: "Remote Code Execution", severity: "Critical" as Severity, deduction: 25 },
-  { id: "credential-theft", label: "Credential Theft", severity: "Critical" as Severity, deduction: 25 },
-  { id: "plaintext-secrets", label: "Plaintext Secrets", severity: "Critical" as Severity, deduction: 25 },
-  { id: "safety-bypass", label: "Safety Bypass", severity: "Critical" as Severity, deduction: 25 },
-  { id: "dangerous-commands", label: "Dangerous Commands", severity: "High" as Severity, deduction: 15 },
-  { id: "broad-permissions", label: "Broad Permissions", severity: "High" as Severity, deduction: 15 },
-  { id: "untrusted-source", label: "Untrusted Source", severity: "Medium" as Severity, deduction: 8 },
-  { id: "supply-chain", label: "Supply Chain Risk", severity: "Medium" as Severity, deduction: 8 },
-  { id: "outdated", label: "Outdated (90+ days)", severity: "Low" as Severity, deduction: 3 },
-  { id: "unknown-source", label: "Unknown Source", severity: "Low" as Severity, deduction: 3 },
-  { id: "duplicate-conflict", label: "Duplicate / Conflict", severity: "Low" as Severity, deduction: 3 },
+  { id: "prompt-injection", label: "Prompt Injection", severity: "Critical" as Severity, deduction: 25, description: "Extension content could manipulate the AI agent's behavior" },
+  { id: "rce", label: "Remote Code Execution", severity: "Critical" as Severity, deduction: 25, description: "Extension could execute arbitrary code on your machine" },
+  { id: "credential-theft", label: "Credential Theft", severity: "Critical" as Severity, deduction: 25, description: "Extension may attempt to access stored credentials" },
+  { id: "plaintext-secrets", label: "Plaintext Secrets", severity: "Critical" as Severity, deduction: 25, description: "API keys or tokens found in plain text" },
+  { id: "safety-bypass", label: "Safety Bypass", severity: "Critical" as Severity, deduction: 25, description: "Extension attempts to disable agent safety features" },
+  { id: "dangerous-commands", label: "Dangerous Commands", severity: "High" as Severity, deduction: 15, description: "Extension uses potentially harmful shell commands" },
+  { id: "broad-permissions", label: "Broad Permissions", severity: "High" as Severity, deduction: 15, description: "Extension requests more access than it needs" },
+  { id: "untrusted-source", label: "Untrusted Source", severity: "Medium" as Severity, deduction: 8, description: "Extension comes from an unverified source" },
+  { id: "supply-chain", label: "Supply Chain Risk", severity: "Medium" as Severity, deduction: 8, description: "Dependencies may introduce security risks" },
+  { id: "outdated", label: "Outdated (90+ days)", severity: "Low" as Severity, deduction: 3, description: "Extension hasn't been updated in over 90 days" },
+  { id: "unknown-source", label: "Unknown Source", severity: "Low" as Severity, deduction: 3, description: "Extension origin cannot be determined" },
+  { id: "duplicate-conflict", label: "Duplicate / Conflict", severity: "Low" as Severity, deduction: 3, description: "Multiple extensions with overlapping functionality" },
 ] as const;
 
 function severityBadgeClass(severity: string): string {
@@ -126,23 +126,28 @@ export default function AuditPage() {
 
       {/* Compact summary row */}
       {results.length > 0 && (
-        <p className="text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">{results.length}</span> extensions scanned
-          {avgScore !== null && (
-            <>
-              {" · Avg score "}
-              <span className={`font-medium ${avgColor}`}>{avgScore}</span>
-              {avgTier && (
-                <span className={`${avgColor}`}> ({avgTier === "LowRisk" ? "Low Risk" : avgTier === "HighRisk" ? "High Risk" : avgTier})</span>
-              )}
-            </>
-          )}
-          {withFindings > 0 ? (
-            <> · <span className="font-medium text-foreground">{withFindings}</span> need attention</>
-          ) : (
-            <> · All clean</>
-          )}
-        </p>
+        <>
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{results.length}</span> extensions scanned
+            {avgScore !== null && (
+              <>
+                {" · Avg score "}
+                <span className={`font-medium ${avgColor}`}>{avgScore}</span>
+                {avgTier && (
+                  <span className={`${avgColor}`}> ({avgTier === "LowRisk" ? "Low Risk" : avgTier === "HighRisk" ? "High Risk" : avgTier})</span>
+                )}
+              </>
+            )}
+            {withFindings > 0 ? (
+              <> · <span className="font-medium text-foreground">{withFindings}</span> need attention</>
+            ) : (
+              <> · All clean</>
+            )}
+          </p>
+          <p className="text-xs text-muted-foreground -mt-4">
+            Trust scores (0–100) reflect 12 security checks. 80+ is safe, 60–79 is low risk, 40–59 needs review, below 40 is critical.
+          </p>
+        </>
       )}
 
       {/* Cross-extension findings summary */}
@@ -160,6 +165,7 @@ export default function AuditPage() {
                   {items.map(({ rule, extensionNames }) => (
                     <div
                       key={rule.id}
+                      title={rule.description}
                       className="flex items-start gap-2.5 py-1 text-sm"
                     >
                       <span className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
@@ -192,13 +198,13 @@ export default function AuditPage() {
               <RefreshCw size={18} className="animate-spin text-muted-foreground" />
               <p className="text-sm font-medium text-foreground">Running security audit...</p>
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">Scanning your extensions for vulnerabilities.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Scanning your extensions for security issues.</p>
           </div>
         )}
         {!loading && results.length === 0 && (
           <div className="py-12 px-6" aria-live="polite" role="status">
             <h3 className="text-lg font-semibold text-foreground">No audit results</h3>
-            <p className="mt-1 text-sm text-muted-foreground">Run a security audit to scan your extensions for vulnerabilities.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Run a security audit to scan your extensions for security issues.</p>
             <button
               onClick={runAudit}
               className="mt-4 flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
@@ -260,6 +266,7 @@ export default function AuditPage() {
                       {failedRules.map((rule) => (
                         <div
                           key={rule.id}
+                          title={rule.description}
                           className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors duration-150 hover:bg-muted/30"
                         >
                           <CircleAlert size={16} className="shrink-0 text-destructive" />
@@ -277,6 +284,7 @@ export default function AuditPage() {
                           {AUDIT_RULES.filter(r => !failedRuleIds.has(r.id)).map((rule) => (
                             <div
                               key={rule.id}
+                              title={rule.description}
                               className="flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-muted-foreground"
                             >
                               <Check size={14} className="shrink-0 text-primary/60" />

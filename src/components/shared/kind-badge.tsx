@@ -15,9 +15,16 @@ const kindLabel: Record<ExtensionKind, string> = {
   hook: "hook",
 };
 
+const kindTitle: Record<ExtensionKind, string> = {
+  skill: "Reusable prompt instructions for AI agents",
+  mcp: "Model Context Protocol server — extends agent capabilities",
+  plugin: "Agent-specific plugin extension",
+  hook: "Shell command triggered by agent events",
+};
+
 export function KindBadge({ kind }: { kind: ExtensionKind }) {
   return (
-    <span className={clsx("rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset transition-colors duration-150", kindStyles[kind])}>
+    <span title={kindTitle[kind]} className={clsx("rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset transition-colors duration-150", kindStyles[kind])}>
       {kindLabel[kind]}
     </span>
   );

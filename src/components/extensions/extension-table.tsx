@@ -6,7 +6,8 @@ import {
   useReactTable,
   type SortingState,
 } from "@tanstack/react-table";
-import { useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
 import type { Extension } from "@/lib/types";
 import { formatRelativeTime } from "@/lib/types";
 import { KindBadge } from "@/components/shared/kind-badge";
@@ -118,8 +119,10 @@ const columns = [
 
 export function ExtensionTable({ data }: { data: Extension[] }) {
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
   const { selectedId, setSelectedId, searchQuery, kindFilter, tagFilter, categoryFilter } = useExtensionStore();
   const hasFilters = !!(searchQuery || kindFilter || tagFilter || categoryFilter);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
   const table = useReactTable({
     data,
     columns,
@@ -129,8 +132,55 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
     getSortedRowModel: getSortedRowModel(),
   });
 
+  const rows = table.getRowModel().rows;
+
+  const onTableKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (rows.length === 0) return;
+
+      switch (e.key) {
+        case "ArrowDown": {
+          e.preventDefault();
+          setFocusedRowIndex((prev) =>
+            prev === null ? 0 : Math.min(prev + 1, rows.length - 1)
+          );
+          break;
+        }
+        case "ArrowUp": {
+          e.preventDefault();
+          setFocusedRowIndex((prev) =>
+            prev === null ? rows.length - 1 : Math.max(prev - 1, 0)
+          );
+          break;
+        }
+        case "Enter": {
+          e.preventDefault();
+          if (focusedRowIndex !== null && rows[focusedRowIndex]) {
+            const id = rows[focusedRowIndex].original.id;
+            setSelectedId(id === selectedId ? null : id);
+          }
+          break;
+        }
+        case "Escape": {
+          e.preventDefault();
+          setFocusedRowIndex(null);
+          setSelectedId(null);
+          break;
+        }
+      }
+    },
+    [rows, focusedRowIndex, selectedId, setSelectedId]
+  );
+
   return (
-    <div className="rounded-xl border border-border overflow-hidden shadow-sm">
+    <div
+      ref={tableContainerRef}
+      className="rounded-xl border border-border overflow-hidden shadow-sm outline-none"
+      tabIndex={0}
+      onKeyDown={onTableKeyDown}
+      role="grid"
+      aria-label="Extensions table"
+    >
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-muted/20">
@@ -145,20 +195,31 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
                     style={header.column.getSize() ? { width: header.column.getSize() } : undefined}
                   >
                     {flexRender(header.column.columnDef.header, header.getContext())}
+                    {header.column.getIsSorted() === "asc" && (
+                      <ChevronUp size={12} className="ml-1 inline text-foreground" />
+                    )}
+                    {header.column.getIsSorted() === "desc" && (
+                      <ChevronDown size={12} className="ml-1 inline text-foreground" />
+                    )}
+                    {!header.column.getIsSorted() && header.column.getCanSort() && (
+                      <ChevronUp size={12} className="ml-1 inline text-muted-foreground/30" />
+                    )}
                   </th>
                 ))}
               </tr>
             ))}
           </thead>
           <tbody className="divide-y divide-border">
-            {table.getRowModel().rows.map((row) => (
+            {rows.map((row, index) => (
               <tr
                 key={row.id}
                 onClick={() => setSelectedId(row.original.id === selectedId ? null : row.original.id)}
                 className={`cursor-pointer transition-colors duration-150 ${
                   row.original.id === selectedId
                     ? "bg-accent"
-                    : "hover:bg-muted/30"
+                    : index === focusedRowIndex
+                      ? "bg-muted/30 outline-2 outline-primary/30 outline-offset-[-2px]"
+                      : "hover:bg-muted/30"
                 }`}
               >
                 {row.getVisibleCells().map((cell) => (
