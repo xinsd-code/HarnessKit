@@ -87,7 +87,7 @@ export default function AgentsPage() {
 
       <div className="flex flex-col sm:flex-row gap-6">
         {/* Agent sidebar */}
-        <div className="w-full sm:w-64 space-y-2">
+        <div className="w-full sm:w-64 sm:sticky sm:top-0 sm:self-start space-y-2">
           <h3 className="text-sm font-medium text-muted-foreground mb-1 border-b border-border pb-2">
             Agents
           </h3>
