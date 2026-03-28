@@ -23,6 +23,7 @@ import { KindBadge } from "@/components/shared/kind-badge";
 import { Hint } from "@/components/shared/hint";
 import type { DashboardStats, Extension, AuditResult } from "@/lib/types";
 import { trustTier, formatRelativeTime } from "@/lib/types";
+import { AgentCard } from "@/components/shared/agent-card";
 
 // ---------------------------------------------------------------------------
 // Needs-attention logic
@@ -289,6 +290,11 @@ export default function OverviewPage() {
 
   const enabledAgentCount = useMemo(() => agents.filter((a) => a.enabled).length, [agents]);
 
+  const enabledAgents = useMemo(
+    () => agents.filter((a) => a.enabled).sort((a, b) => b.extension_count - a.extension_count),
+    [agents],
+  );
+
   const attentionItems = useMemo(
     () => deriveAttentionItems(visibleExtensions, auditResults),
     [visibleExtensions, auditResults],
@@ -360,6 +366,18 @@ export default function OverviewPage() {
             </>
           )}
         </h2>
+        {/* Agent mascot cards */}
+        {enabledAgents.length > 0 && (
+          <div className="flex flex-wrap gap-3 pt-2">
+            {enabledAgents.map((agent) => (
+              <AgentCard
+                key={agent.name}
+                agent={agent}
+                onClick={() => navigate("/agents")}
+              />
+            ))}
+          </div>
+        )}
         {stats.total_extensions > 0 ? (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             {stats.skill_count > 0 && (
