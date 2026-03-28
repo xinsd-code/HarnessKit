@@ -111,10 +111,10 @@ export default function MarketplacePage() {
   const handleInstall = async (item: MarketplaceItem, targetAgent?: string) => {
     setError(null);
     try {
-      await install(item, targetAgent);
+      const result = await install(item, targetAgent);
       const key = `${item.id}:${targetAgent ?? ""}`;
       setInstalled((prev) => new Set(prev).add(key));
-      toast.success(`${item.name} installed`);
+      toast.success(result.was_update ? `${item.name} updated` : `${item.name} installed`);
       // Trigger flash animation
       if (!prefersReducedMotion()) {
         setJustInstalled((prev) => new Set(prev).add(key));
@@ -208,8 +208,8 @@ export default function MarketplacePage() {
       </div>
 
       {/* Scrollable content */}
-      <div className="flex flex-1 min-h-0 flex-col md:flex-row gap-4">
-      <div className="flex-1 min-w-0 overflow-y-auto space-y-4 pb-6">
+      <div className="relative flex-1 min-h-0">
+      <div className="absolute inset-0 overflow-y-auto space-y-4 pb-4">
         {error && <p className="text-sm text-destructive">{humanizeError(error)}</p>}
 
         {showTrending && !trendingLoading && trending.length > 0 && (
@@ -247,13 +247,15 @@ export default function MarketplacePage() {
 
       {/* Detail Panel */}
       {selectedItem && (
+        <div className="absolute right-0 top-0 bottom-0 w-96 z-10">
         <div
           ref={detailPanelRef}
           tabIndex={-1}
           onWheel={(e) => e.stopPropagation()}
-          className="animate-slide-in-right w-full md:w-96 md:shrink-0 md:sticky md:top-0 md:self-start md:max-h-[calc(100vh-3rem)] overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-5 shadow-sm outline-none"
+          className="animate-slide-in-right flex h-full flex-col rounded-xl border border-border bg-card shadow-sm outline-none"
         >
-          <div className="flex items-start justify-between">
+          {/* Fixed header */}
+          <div className="shrink-0 flex items-start justify-between border-b border-border px-5 py-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 {selectedItem.icon_url && <img src={selectedItem.icon_url} alt={selectedItem.name} loading="lazy" decoding="async" className="h-6 w-6 rounded" />}
@@ -263,13 +265,15 @@ export default function MarketplacePage() {
               <p className="mt-1 text-xs text-muted-foreground">{selectedItem.source}</p>
               <p className="mt-1 text-xs text-muted-foreground/70">{formatInstalls(selectedItem.installs)} uses</p>
             </div>
-            <button onClick={closePreview} aria-label="Close details" className="rounded-lg p-1 text-muted-foreground hover:text-foreground">
+            <button onClick={closePreview} aria-label="Close details" className="shrink-0 rounded-lg p-2.5 text-muted-foreground hover:text-foreground">
               <X size={18} />
             </button>
           </div>
 
+          {/* Scrollable body */}
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-4">
           {selectedItem.description && (
-            <p className="mt-3 text-sm text-muted-foreground">{selectedItem.description}</p>
+            <p className="text-sm text-muted-foreground">{selectedItem.description}</p>
           )}
 
           {selectedItem.categories.length > 0 && (
@@ -354,6 +358,8 @@ export default function MarketplacePage() {
               </div>
             </div>
           )}
+          </div>
+        </div>
         </div>
       )}
       </div>

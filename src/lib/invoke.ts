@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Extension, ExtensionContent, AgentInfo, DashboardStats, AuditResult, UpdateStatus, MarketplaceItem, SkillAuditInfo, Project, DiscoveredProject } from "./types";
+import type { Extension, ExtensionContent, AgentInfo, DashboardStats, AuditResult, UpdateStatus, MarketplaceItem, SkillAuditInfo, Project, DiscoveredProject, InstallResult } from "./types";
 
 export const api = {
   listExtensions(kind?: string, agent?: string): Promise<Extension[]> {
@@ -42,7 +42,7 @@ export const api = {
     return invoke("check_updates");
   },
 
-  installFromGit(url: string, targetAgent?: string, skillId?: string): Promise<string> {
+  installFromGit(url: string, targetAgent?: string, skillId?: string): Promise<InstallResult> {
     return invoke("install_from_git", { url, targetAgent, skillId });
   },
 
@@ -74,7 +74,7 @@ export const api = {
     return invoke("fetch_skill_audit", { source, skillId });
   },
 
-  installFromMarketplace(source: string, skillId: string, targetAgent?: string): Promise<string> {
+  installFromMarketplace(source: string, skillId: string, targetAgent?: string): Promise<InstallResult> {
     return invoke("install_from_marketplace", { source, skillId, targetAgent });
   },
 

@@ -1,4 +1,4 @@
-use hk_core::{adapter, auditor::Auditor, deployer, manager, models::*, scanner, store::Store};
+use hk_core::{adapter, auditor::{self, Auditor}, deployer, manager, models::*, scanner, store::Store};
 use chrono::Utc;
 use std::sync::Mutex;
 use tauri::State;
@@ -320,6 +320,60 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), String
     store.delete_extension(&id).map_err(|e| e.to_string())
 }
 
+/// Audit a single extension by name (best-effort, errors silently ignored).
+fn audit_extension_by_name(name: &str, store: &Store, adapters: &[Box<dyn adapter::AgentAdapter>]) {
+    let Ok(extensions) = store.list_extensions(None, None) else { return };
+    let auditor = Auditor::new();
+    for ext in &extensions {
+        if ext.name != name { continue; }
+        let input = match ext.kind {
+            ExtensionKind::Skill => {
+                let mut content = String::new();
+                let mut file_path = ext.name.clone();
+                'outer: for a in adapters {
+                    if !ext.agents.contains(&a.name().to_string()) { continue; }
+                    for skill_dir in a.skill_dirs() {
+                        let Ok(entries) = std::fs::read_dir(&skill_dir) else { continue };
+                        for entry in entries.flatten() {
+                            let path = entry.path();
+                            let skill_file = if path.is_dir() {
+                                path.join("SKILL.md")
+                            } else if path.extension().is_some_and(|e| e == "md") {
+                                path.clone()
+                            } else { continue };
+                            if !skill_file.exists() { continue; }
+                            let sname = scanner::parse_skill_name(&skill_file).unwrap_or_else(||
+                                path.file_stem().unwrap_or_default().to_string_lossy().to_string()
+                            );
+                            if stable_id(&sname, "skill", a.name()) == ext.id {
+                                content = std::fs::read_to_string(&skill_file).unwrap_or_default();
+                                file_path = skill_file.to_string_lossy().to_string();
+                                break 'outer;
+                            }
+                        }
+                    }
+                }
+                auditor::AuditInput {
+                    extension_id: ext.id.clone(),
+                    kind: ext.kind,
+                    name: ext.name.clone(),
+                    content,
+                    source: ext.source.clone(),
+                    file_path,
+                    mcp_command: None,
+                    mcp_args: vec![],
+                    mcp_env: Default::default(),
+                    installed_at: ext.installed_at,
+                    updated_at: ext.updated_at,
+                }
+            }
+            _ => continue, // Only audit skills during install
+        };
+        let result = auditor.audit(&input);
+        let _ = store.insert_audit_result(&result);
+    }
+}
+
 fn fnv1a(data: &[u8]) -> u64 {
     let mut hash: u64 = 0xcbf29ce484222325;
     for &b in data {
@@ -468,22 +522,11 @@ pub fn scan_and_sync(state: State<AppState>) -> Result<usize, String> {
     // Scan filesystem WITHOUT holding the lock — this is the slow part
     let adapters = adapter::all_adapters();
     let extensions = scanner::scan_all(&adapters);
-    let scanned_ids: std::collections::HashSet<String> = extensions.iter().map(|e| e.id.clone()).collect();
     let count = extensions.len();
 
-    // Now lock only for fast DB writes
+    // Lock briefly for a single transactional write (fast — one fsync total)
     let store = state.store.lock().map_err(|e| e.to_string())?;
-    for ext in &extensions {
-        let _ = store.insert_extension(ext);
-    }
-    // Remove stale extensions that no longer exist on disk
-    if let Ok(existing) = store.list_extensions(None, None) {
-        for ext in &existing {
-            if !scanned_ids.contains(&ext.id) {
-                let _ = store.delete_extension(&ext.id);
-            }
-        }
-    }
+    store.sync_extensions(&extensions).map_err(|e| e.to_string())?;
     Ok(count)
 }
 
@@ -508,7 +551,7 @@ pub fn check_updates(state: State<AppState>) -> Result<Vec<(String, UpdateStatus
 }
 
 #[tauri::command]
-pub fn install_from_git(state: State<AppState>, url: String, target_agent: Option<String>, skill_id: Option<String>) -> Result<String, String> {
+pub fn install_from_git(state: State<AppState>, url: String, target_agent: Option<String>, skill_id: Option<String>) -> Result<manager::InstallResult, String> {
     let adapters = adapter::all_adapters();
     let (target_dir, _agent_name) = if let Some(ref agent) = target_agent {
         let a = adapters.iter()
@@ -529,16 +572,17 @@ pub fn install_from_git(state: State<AppState>, url: String, target_agent: Optio
 
     std::fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
     let sid = skill_id.as_deref().filter(|s| !s.is_empty());
-    let name = manager::install_from_git_with_id(&url, &target_dir, sid).map_err(|e| e.to_string())?;
+    let result = manager::install_from_git_with_id(&url, &target_dir, sid).map_err(|e| e.to_string())?;
 
-    // Re-scan to pick up the new extension
+    // Re-scan to pick up the new extension, then audit it
     let store = state.store.lock().map_err(|e| e.to_string())?;
     let extensions = scanner::scan_all(&adapters);
     for ext in &extensions {
         let _ = store.insert_extension(ext);
     }
+    audit_extension_by_name(&result.name, &store, &adapters);
 
-    Ok(name)
+    Ok(result)
 }
 
 // --- Tags & Category commands ---
@@ -592,7 +636,7 @@ pub fn fetch_skill_audit(source: String, skill_id: String) -> Result<Option<hk_c
 }
 
 #[tauri::command]
-pub fn install_from_marketplace(state: State<AppState>, source: String, skill_id: String, target_agent: Option<String>) -> Result<String, String> {
+pub fn install_from_marketplace(state: State<AppState>, source: String, skill_id: String, target_agent: Option<String>) -> Result<manager::InstallResult, String> {
     let adapters = adapter::all_adapters();
     let (target_dir, _agent_name) = if let Some(ref agent) = target_agent {
         let a = adapters.iter()
@@ -612,14 +656,15 @@ pub fn install_from_marketplace(state: State<AppState>, source: String, skill_id
     std::fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
     let git_url = hk_core::marketplace::git_url_for_source(&source);
     let sid = if skill_id.is_empty() { None } else { Some(skill_id.as_str()) };
-    let name = manager::install_from_git_with_id(&git_url, &target_dir, sid).map_err(|e| e.to_string())?;
-    // Re-scan to pick up the new extension
+    let result = manager::install_from_git_with_id(&git_url, &target_dir, sid).map_err(|e| e.to_string())?;
+    // Re-scan to pick up the new extension, then audit it
     let store = state.store.lock().map_err(|e| e.to_string())?;
     let extensions = scanner::scan_all(&adapters);
     for ext in &extensions {
         let _ = store.insert_extension(ext);
     }
-    Ok(name)
+    audit_extension_by_name(&result.name, &store, &adapters);
+    Ok(result)
 }
 
 // --- Cross-agent deploy command ---

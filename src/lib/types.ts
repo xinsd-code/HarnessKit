@@ -61,6 +61,11 @@ export interface AgentInfo {
   enabled: boolean;
 }
 
+export interface InstallResult {
+  name: string;
+  was_update: boolean;
+}
+
 export interface ExtensionContent {
   content: string;
   path: string | null;

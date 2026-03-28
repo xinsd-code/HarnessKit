@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { MarketplaceItem, SkillAuditInfo } from "@/lib/types";
+import type { MarketplaceItem, SkillAuditInfo, InstallResult } from "@/lib/types";
 import { api } from "@/lib/invoke";
 
 type TabKind = "skill" | "mcp";
@@ -23,7 +23,7 @@ interface MarketplaceState {
   loadTrending: () => Promise<void>;
   selectItem: (item: MarketplaceItem) => void;
   closePreview: () => void;
-  install: (item: MarketplaceItem, targetAgent?: string) => Promise<string>;
+  install: (item: MarketplaceItem, targetAgent?: string) => Promise<InstallResult>;
 }
 
 export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
@@ -137,9 +137,9 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
           throw new Error("Could not resolve skill details for this trending item. Try searching for it directly.");
         }
       }
-      const name = await api.installFromMarketplace(source, skill_id, targetAgent);
+      const result = await api.installFromMarketplace(source, skill_id, targetAgent);
       set({ installing: null });
-      return name;
+      return result;
     } catch (e) {
       set({ installing: null });
       throw e;

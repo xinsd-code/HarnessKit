@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { HashRouter, Routes, Route } from "react-router-dom";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AppShell } from "./components/layout/app-shell";
@@ -12,11 +12,15 @@ import AuditPage from "./pages/audit";
 import SettingsPage from "./pages/settings";
 import MarketplacePage from "./pages/marketplace";
 
+/** Minimum interval (ms) between consecutive scan_and_sync calls */
+const SCAN_DEBOUNCE_MS = 5_000;
+
 export default function App() {
   const themeName = useUIStore((s) => s.themeName);
   const mode = useUIStore((s) => s.mode);
   const fetchExtensions = useExtensionStore((s) => s.fetch);
   const loadCachedAudit = useAuditStore((s) => s.loadCached);
+  const lastScanRef = useRef(0);
 
   // Track resolved dark/light (reacts to OS changes when mode === "system")
   const [resolved, setResolved] = useState<"dark" | "light">(() => resolveMode(mode));
@@ -32,14 +36,28 @@ export default function App() {
     return () => mq.removeEventListener("change", onChange);
   }, [mode]);
 
-  // Background scan
+  // Background scan + rescan on window focus
   useEffect(() => {
-    api.scanAndSync()
-      .catch(() => {})
-      .then(() => {
-        fetchExtensions();
-        loadCachedAudit();
-      });
+    const runScan = () => {
+      const now = Date.now();
+      if (now - lastScanRef.current < SCAN_DEBOUNCE_MS) return;
+      lastScanRef.current = now;
+      api.scanAndSync()
+        .catch(() => {})
+        .then(() => {
+          fetchExtensions();
+          loadCachedAudit();
+        });
+    };
+
+    // Initial scan on startup
+    runScan();
+
+    // Re-scan when the window regains focus (catches external installs)
+    const unlisten = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      if (focused) runScan();
+    });
+    return () => { unlisten.then((fn) => fn()); };
   }, [fetchExtensions, loadCachedAudit]);
 
   // Apply theme + dark class to <html>, and sync window appearance for vibrancy

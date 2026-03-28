@@ -91,10 +91,10 @@ export function InstallDialog({ open, onClose }: InstallDialogProps) {
     setLoading(true);
     setError(null);
     try {
-      await api.installFromGit(url.trim(), targetAgent || undefined, skillId.trim() || undefined);
+      const result = await api.installFromGit(url.trim(), targetAgent || undefined, skillId.trim() || undefined);
       await fetch();
       onClose();
-      toast.success("Extension installed");
+      toast.success(result.was_update ? `${result.name} updated` : `${result.name} installed`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       toast.error("Installation failed");

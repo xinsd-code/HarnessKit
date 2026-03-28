@@ -4,6 +4,12 @@ use crate::store::Store;
 use std::path::Path;
 use std::process::Command;
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct InstallResult {
+    pub name: String,
+    pub was_update: bool,
+}
+
 pub struct Manager {
     pub store: Store,
 }
@@ -88,11 +94,11 @@ fn get_remote_head(url: &str) -> Result<String> {
 
 /// Install a skill from a git URL by cloning and copying to the skills directory.
 /// If `skill_id` is provided and non-empty, install only the matching skill subdirectory.
-pub fn install_from_git(url: &str, target_dir: &Path) -> Result<String> {
+pub fn install_from_git(url: &str, target_dir: &Path) -> Result<InstallResult> {
     install_from_git_with_id(url, target_dir, None)
 }
 
-pub fn install_from_git_with_id(url: &str, target_dir: &Path, skill_id: Option<&str>) -> Result<String> {
+pub fn install_from_git_with_id(url: &str, target_dir: &Path, skill_id: Option<&str>) -> Result<InstallResult> {
     let temp = tempfile::tempdir().context("Failed to create temp directory")?;
     let clone_dir = temp.path().join("repo");
 
@@ -111,7 +117,7 @@ pub fn install_from_git_with_id(url: &str, target_dir: &Path, skill_id: Option<&
 
 /// Given an already-cloned repo directory, resolve which skill to install and copy it.
 /// Extracted from `install_from_git_with_id` for testability.
-fn resolve_and_copy_skill(clone_dir: &Path, target_dir: &Path, skill_id: Option<&str>, url: &str) -> Result<String> {
+fn resolve_and_copy_skill(clone_dir: &Path, target_dir: &Path, skill_id: Option<&str>, url: &str) -> Result<InstallResult> {
     let skill_id = skill_id.filter(|s| !s.is_empty());
 
     // If skill_id is specified, look for it in specific paths
@@ -126,8 +132,9 @@ fn resolve_and_copy_skill(clone_dir: &Path, target_dir: &Path, skill_id: Option<
                 let name = crate::scanner::parse_skill_name(&candidate.join("SKILL.md"))
                     .unwrap_or_else(|| sid.to_string());
                 let dest = target_dir.join(&name);
+                let was_update = dest.is_dir();
                 copy_dir_contents(candidate, &dest)?;
-                return Ok(name);
+                return Ok(InstallResult { name, was_update });
             }
         }
         // Fallback: root-level SKILL.md, but only for genuine single-skill repos.
@@ -153,39 +160,39 @@ fn resolve_and_copy_skill(clone_dir: &Path, target_dir: &Path, skill_id: Option<
                 let name = crate::scanner::parse_skill_name(&clone_dir.join("SKILL.md"))
                     .unwrap_or_else(|| sid.to_string());
                 let dest = target_dir.join(&name);
+                let was_update = dest.is_dir();
                 copy_dir_contents(clone_dir, &dest)?;
-                return Ok(name);
+                return Ok(InstallResult { name, was_update });
             }
         }
         anyhow::bail!("Skill '{}' not found in repository. Looked in skills/{0}/, {0}/, and root", sid);
     }
 
     // Generic: look for SKILL.md in root or immediate subdirectories
-    let skill_name = if clone_dir.join("SKILL.md").exists() {
+    if clone_dir.join("SKILL.md").exists() {
         let name = crate::scanner::parse_skill_name(&clone_dir.join("SKILL.md"))
             .unwrap_or_else(|| repo_name_from_url(url));
         let dest = target_dir.join(&name);
+        let was_update = dest.is_dir();
         copy_dir_contents(clone_dir, &dest)?;
-        name
-    } else {
-        let mut found_name = None;
-        if let Ok(entries) = std::fs::read_dir(clone_dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.is_dir() && p.join("SKILL.md").exists() {
-                    let name = crate::scanner::parse_skill_name(&p.join("SKILL.md"))
-                        .unwrap_or_else(|| p.file_name().unwrap_or_default().to_string_lossy().to_string());
-                    let dest = target_dir.join(&name);
-                    copy_dir_contents(&p, &dest)?;
-                    found_name = Some(name);
-                    break;
-                }
+        return Ok(InstallResult { name, was_update });
+    }
+
+    if let Ok(entries) = std::fs::read_dir(clone_dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() && p.join("SKILL.md").exists() {
+                let name = crate::scanner::parse_skill_name(&p.join("SKILL.md"))
+                    .unwrap_or_else(|| p.file_name().unwrap_or_default().to_string_lossy().to_string());
+                let dest = target_dir.join(&name);
+                let was_update = dest.is_dir();
+                copy_dir_contents(&p, &dest)?;
+                return Ok(InstallResult { name, was_update });
             }
         }
-        found_name.ok_or_else(|| anyhow::anyhow!("No SKILL.md found in repository"))?
-    };
+    }
 
-    Ok(skill_name)
+    anyhow::bail!("No SKILL.md found in repository")
 }
 
 fn repo_name_from_url(url: &str) -> String {
@@ -292,9 +299,24 @@ mod tests {
         write_skill_md(&repo.path().join("skills").join("alpha"), "Alpha Skill");
         write_skill_md(&repo.path().join("skills").join("beta"), "Beta Skill");
 
-        let name = super::resolve_and_copy_skill(repo.path(), target.path(), Some("alpha"), "").unwrap();
-        assert_eq!(name, "Alpha Skill");
+        let result = super::resolve_and_copy_skill(repo.path(), target.path(), Some("alpha"), "").unwrap();
+        assert_eq!(result.name, "Alpha Skill");
+        assert!(!result.was_update);
         assert!(target.path().join("Alpha Skill").join("SKILL.md").exists());
+    }
+
+    #[test]
+    fn resolve_skill_reports_was_update_when_dest_exists() {
+        let repo = TempDir::new().unwrap();
+        let target = TempDir::new().unwrap();
+
+        write_skill_md(&repo.path().join("skills").join("alpha"), "Alpha Skill");
+        // Pre-create destination to simulate a previous install
+        std::fs::create_dir_all(target.path().join("Alpha Skill")).unwrap();
+
+        let result = super::resolve_and_copy_skill(repo.path(), target.path(), Some("alpha"), "").unwrap();
+        assert_eq!(result.name, "Alpha Skill");
+        assert!(result.was_update);
     }
 
     #[test]
@@ -305,8 +327,8 @@ mod tests {
         // Skill directly at {skill_id}/
         write_skill_md(&repo.path().join("my-skill"), "My Skill");
 
-        let name = super::resolve_and_copy_skill(repo.path(), target.path(), Some("my-skill"), "").unwrap();
-        assert_eq!(name, "My Skill");
+        let result = super::resolve_and_copy_skill(repo.path(), target.path(), Some("my-skill"), "").unwrap();
+        assert_eq!(result.name, "My Skill");
     }
 
     #[test]
@@ -319,8 +341,8 @@ mod tests {
         // Add a non-skill subdirectory (src/)
         std::fs::create_dir_all(repo.path().join("src")).unwrap();
 
-        let name = super::resolve_and_copy_skill(repo.path(), target.path(), Some("whatever-id"), "").unwrap();
-        assert_eq!(name, "Root Skill");
+        let result = super::resolve_and_copy_skill(repo.path(), target.path(), Some("whatever-id"), "").unwrap();
+        assert_eq!(result.name, "Root Skill");
     }
 
     #[test]
@@ -359,8 +381,8 @@ mod tests {
 
         write_skill_md(repo.path(), "Root Skill");
 
-        let name = super::resolve_and_copy_skill(repo.path(), target.path(), None, "https://github.com/user/repo.git").unwrap();
-        assert_eq!(name, "Root Skill");
+        let result = super::resolve_and_copy_skill(repo.path(), target.path(), None, "https://github.com/user/repo.git").unwrap();
+        assert_eq!(result.name, "Root Skill");
     }
 
     #[test]
@@ -371,8 +393,8 @@ mod tests {
         // No root SKILL.md, one subdirectory with a skill
         write_skill_md(&repo.path().join("my-skill"), "My Skill");
 
-        let name = super::resolve_and_copy_skill(repo.path(), target.path(), None, "").unwrap();
-        assert_eq!(name, "My Skill");
+        let result = super::resolve_and_copy_skill(repo.path(), target.path(), None, "").unwrap();
+        assert_eq!(result.name, "My Skill");
     }
 
     #[test]
@@ -383,8 +405,8 @@ mod tests {
         write_skill_md(repo.path(), "Root Skill");
 
         // Empty string should be treated as None (generic path)
-        let name = super::resolve_and_copy_skill(repo.path(), target.path(), Some(""), "").unwrap();
-        assert_eq!(name, "Root Skill");
+        let result = super::resolve_and_copy_skill(repo.path(), target.path(), Some(""), "").unwrap();
+        assert_eq!(result.name, "Root Skill");
     }
 
     #[test]

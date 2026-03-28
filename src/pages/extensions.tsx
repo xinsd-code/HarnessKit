@@ -93,28 +93,32 @@ export default function ExtensionsPage() {
       </div>
 
       {/* Scrollable content */}
-      <div className="flex flex-1 min-h-0">
-      <div className="flex-1 min-w-0 overflow-y-auto">
-        {loading ? (
-          <div className="rounded-xl border border-border overflow-hidden shadow-sm" aria-live="polite" role="status">
-            <div className="bg-muted/20 px-4 py-3">
-              <div className="h-3 w-20 rounded animate-shimmer" />
-            </div>
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-4 border-t border-border px-4 py-3">
-                <div className="h-4 w-4 rounded animate-shimmer" />
-                <div className="h-3 w-32 rounded animate-shimmer" />
-                <div className="h-3 w-16 rounded animate-shimmer" />
-                <div className="h-3 w-24 rounded animate-shimmer" />
-                <div className="ml-auto h-3 w-14 rounded animate-shimmer" />
+      <div className="relative flex-1 min-h-0">
+        <div className="absolute inset-0 overflow-y-auto pb-4">
+          {loading ? (
+            <div className="rounded-xl border border-border overflow-hidden shadow-sm" aria-live="polite" role="status">
+              <div className="bg-muted/20 px-4 py-3">
+                <div className="h-3 w-20 rounded animate-shimmer" />
               </div>
-            ))}
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-4 border-t border-border px-4 py-3">
+                  <div className="h-4 w-4 rounded animate-shimmer" />
+                  <div className="h-3 w-32 rounded animate-shimmer" />
+                  <div className="h-3 w-16 rounded animate-shimmer" />
+                  <div className="h-3 w-24 rounded animate-shimmer" />
+                  <div className="ml-auto h-3 w-14 rounded animate-shimmer" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <ExtensionTable data={data} />
+          )}
+        </div>
+        {selectedId && (
+          <div className="absolute right-0 top-0 bottom-0 w-96 z-10">
+            <ExtensionDetail />
           </div>
-        ) : (
-          <ExtensionTable data={data} />
         )}
-      </div>
-      {selectedId && <ExtensionDetail />}
       </div>
       {toastDeleteCount !== null && pendingDelete && (
         <Toast
