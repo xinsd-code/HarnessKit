@@ -12,10 +12,10 @@ interface AgentMascotProps {
   clicked?: boolean;
 }
 
-const MASCOT_MAP: Record<string, { component: React.ComponentType<{ size: number }>; className: string; scale: number; offsetY?: number }> = {
+const MASCOT_MAP: Record<string, { component: React.ComponentType<{ size: number }>; className: string; scale: number; offsetY?: number; clipOverflow?: boolean }> = {
   claude: { component: ClaudeMascot, className: "mascot-claude", scale: 1 },
   cursor: { component: CursorMascot, className: "mascot-cursor", scale: 1.15, offsetY: 2 },
-  codex: { component: CodexMascot, className: "mascot-codex", scale: 1.6, offsetY: 3 },
+  codex: { component: CodexMascot, className: "mascot-codex", scale: 0.80, offsetY: -1 },
   gemini: { component: GeminiMascot, className: "mascot-gemini", scale: 1.2 },
 };
 

@@ -122,74 +122,38 @@
 
 /* === Codex (OpenAI) === */
 .mascot-codex .icon-fill { fill: var(--mascot-icon-color); }
-.mascot-codex .limb-line { stroke: var(--mascot-icon-color); stroke-width: 1.3; stroke-linecap: round; fill: none; }
-.mascot-codex .hand, .mascot-codex .foot { fill: var(--mascot-icon-color); }
-.mascot-codex .body-mask { fill: var(--mascot-bg-color); }
-.mascot-codex .body-group { transform-origin: 12px 13px; }
-.mascot-codex .arm-right { transform-origin: 21px 13px; }
-.mascot-codex .arm-left { transform-origin: 3px 13px; }
-.mascot-codex .legs { transform-origin: 12px 23px; }
+.mascot-codex .codex-icon-wrapper svg { display: block; }
 
-.mascot-codex.is-animated .body-group { animation: codex-breathe 2.5s ease-in-out infinite; }
-.mascot-codex.is-animated .arm-right { animation: codex-wave-right 2.5s ease-in-out infinite; }
-.mascot-codex.is-animated .arm-left { animation: codex-wave-left 2.5s ease-in-out infinite; }
+.mascot-codex.is-animated .codex-icon-wrapper { animation: codex-roll 3.5s ease-in-out infinite; }
 
-.mascot-codex.is-clicked { animation: codex-poke 0.7s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
-.mascot-codex.is-clicked .arm-right { animation: codex-surprise-right 0.7s ease-in-out !important; }
-.mascot-codex.is-clicked .arm-left { animation: codex-surprise-left 0.7s ease-in-out !important; }
-.mascot-codex.is-clicked .legs { animation: codex-legs-poke 0.7s ease-in-out !important; }
+.mascot-codex.is-clicked .codex-icon-wrapper { animation: codex-bounce 0.7s cubic-bezier(0.25, 0.46, 0.45, 0.94) !important; }
+.mascot-codex.is-clicked .codex-icon-wrapper svg { animation: codex-squish 0.7s ease-out; }
 
-@keyframes codex-breathe {
-  0%, 100% { transform: scale(1) translateY(0); }
-  50% { transform: scale(1.015) translateY(-0.3px); }
+@keyframes codex-roll {
+  0% { transform: translateX(0) rotate(0deg); }
+  35% { transform: translateX(75px) rotate(270deg); }
+  35.01% { transform: translateX(-75px) rotate(-270deg); }
+  70% { transform: translateX(0) rotate(0deg); }
+  100% { transform: translateX(0) rotate(0deg); }
 }
-@keyframes codex-wave-right {
-  0%, 100% { transform: rotate(0deg); }
-  15% { transform: rotate(-30deg); }
-  30% { transform: rotate(18deg); }
-  45% { transform: rotate(-25deg); }
-  60% { transform: rotate(12deg); }
-  75% { transform: rotate(0deg); }
+@keyframes codex-bounce {
+  0% { transform: translateY(0); }
+  12% { transform: translateY(6px); }
+  35% { transform: translateY(-30px); }
+  52% { transform: translateY(0); }
+  65% { transform: translateY(-10px); }
+  78% { transform: translateY(0); }
+  88% { transform: translateY(-3px); }
+  100% { transform: translateY(0); }
 }
-@keyframes codex-wave-left {
-  0%, 100% { transform: rotate(0deg); }
-  15% { transform: rotate(30deg); }
-  30% { transform: rotate(-18deg); }
-  45% { transform: rotate(25deg); }
-  60% { transform: rotate(-12deg); }
-  75% { transform: rotate(0deg); }
-}
-@keyframes codex-poke {
-  0% { transform: scale(1) rotate(0deg); }
-  10% { transform: scale(1.1, 0.85) rotate(0deg); }
-  25% { transform: scale(0.95, 1.05) rotate(-9deg); }
-  40% { transform: scale(1) rotate(7deg); }
-  55% { transform: scale(1) rotate(-5deg); }
-  70% { transform: scale(1) rotate(3deg); }
-  85% { transform: scale(1) rotate(-1deg); }
-  100% { transform: scale(1) rotate(0deg); }
-}
-@keyframes codex-surprise-right {
-  0% { transform: rotate(0deg); }
-  12% { transform: rotate(10deg); }
-  28% { transform: rotate(-50deg); }
-  50% { transform: rotate(-40deg); }
-  75% { transform: rotate(-10deg); }
-  100% { transform: rotate(0deg); }
-}
-@keyframes codex-surprise-left {
-  0% { transform: rotate(0deg); }
-  12% { transform: rotate(-10deg); }
-  28% { transform: rotate(50deg); }
-  50% { transform: rotate(40deg); }
-  75% { transform: rotate(10deg); }
-  100% { transform: rotate(0deg); }
-}
-@keyframes codex-legs-poke {
-  0%, 100% { transform: scaleY(1); }
-  12% { transform: scaleY(0.6); }
-  28% { transform: scaleY(1.1); }
-  42% { transform: scaleY(0.95); }
+@keyframes codex-squish {
+  0% { transform: scale(1, 1); }
+  12% { transform: scale(1.25, 0.7); }
+  28% { transform: scale(0.85, 1.2); }
+  42% { transform: scale(1.08, 0.92); }
+  56% { transform: scale(0.96, 1.05); }
+  72% { transform: scale(1.02, 0.98); }
+  100% { transform: scale(1, 1); }
 }
 
 /* === Gemini === */
