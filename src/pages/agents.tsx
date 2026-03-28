@@ -68,10 +68,10 @@ export default function AgentsPage() {
   const selectedAgent = agents.find((a) => a.name === selected);
 
   return (
-    <div className="animate-fade-in space-y-6">
-      {/* Page summary */}
+    <div className="animate-fade-in flex flex-col -mb-6" style={{ height: 'calc(100vh - 5.5rem)' }}>
+      {/* Page summary — fixed at top */}
       {agents.length > 0 && (
-        <p className="sticky top-0 z-10 bg-background py-3 text-sm text-muted-foreground">
+        <p className="shrink-0 pb-4 text-sm text-muted-foreground">
           <span className="font-medium text-foreground">{detectedCount}</span>
           {" "}
           {detectedCount === 1 ? "agent" : "agents"} detected
@@ -85,9 +85,9 @@ export default function AgentsPage() {
         </p>
       )}
 
-      <div className="flex flex-col sm:flex-row gap-6">
-        {/* Agent sidebar */}
-        <div className="w-full sm:w-64 sm:sticky sm:top-0 sm:self-start space-y-2">
+      <div className="flex flex-1 min-h-0 flex-col sm:flex-row gap-6">
+        {/* Agent sidebar — independently scrollable */}
+        <div className="w-full sm:w-64 shrink-0 overflow-y-auto space-y-2">
           <h3 className="text-sm font-medium text-muted-foreground mb-1 border-b border-border pb-2">
             Agents
           </h3>
@@ -146,8 +146,8 @@ export default function AgentsPage() {
           </div>
         </div>
 
-        {/* Main content */}
-        <div className="flex-1 min-w-0">
+        {/* Main content — independently scrollable */}
+        <div className="flex-1 min-w-0 overflow-y-auto">
           <h2 className="text-2xl font-bold tracking-tight mb-4">
             {selected ? `${selected} Extensions` : "All Extensions"}
           </h2>
