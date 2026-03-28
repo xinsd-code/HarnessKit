@@ -56,10 +56,10 @@ function ItemRow({ item, selected, onSelect, index }: { item: MarketplaceItem; s
       onClick={onSelect}
       aria-label={`View details for ${item.name}`}
       className={clsx(
-        "animate-fade-in flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition-[background-color,border-color,box-shadow] duration-200",
+        "animate-fade-in flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition-[background-color,border-color,box-shadow,transform] duration-200",
         selected
           ? "border-ring bg-accent shadow-sm"
-          : "border-border bg-card hover:border-ring/50 hover:bg-accent/50 hover:shadow-sm"
+          : "border-border bg-card hover:border-ring/50 hover:bg-accent/50 hover:shadow-sm hover:scale-[1.005]"
       )}
       style={{ animationDelay: `${Math.min(index * 30, 300)}ms` }}
     >

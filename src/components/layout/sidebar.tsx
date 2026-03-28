@@ -22,10 +22,10 @@ function SidebarLink({ to, icon: Icon, label, shortcut }: { to: string; icon: Re
       end={to === "/"}
       className={({ isActive }) =>
         clsx(
-          "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] transition-colors transition-transform duration-200 ease-out",
+          "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] transition-all duration-200 ease-out",
           isActive
-            ? "bg-sidebar-accent/80 text-sidebar-accent-foreground font-semibold"
-            : "text-sidebar-foreground/60 font-medium hover:bg-sidebar-accent/50 hover:text-sidebar-foreground hover:translate-x-1"
+            ? "bg-sidebar-accent/90 text-sidebar-accent-foreground font-semibold"
+            : "text-sidebar-foreground/60 font-medium hover:bg-sidebar-accent/50 hover:text-sidebar-foreground hover:translate-x-1 hover:scale-[1.01]"
         )
       }
     >
@@ -35,7 +35,7 @@ function SidebarLink({ to, icon: Icon, label, shortcut }: { to: string; icon: Re
           <span
             className={clsx(
               "absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-full bg-primary transition-[height,opacity] duration-200",
-              isActive ? "h-4 opacity-100" : "h-0 opacity-0"
+              isActive ? "h-4 opacity-100 shadow-[0_0_6px_var(--primary)]" : "h-0 opacity-0"
             )}
           />
           <Icon

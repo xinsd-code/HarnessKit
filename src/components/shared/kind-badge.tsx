@@ -2,10 +2,10 @@ import { clsx } from "clsx";
 import type { ExtensionKind } from "@/lib/types";
 
 const kindStyles: Record<ExtensionKind, string> = {
-  skill: "bg-primary/10 text-primary ring-primary/20",
-  mcp: "bg-chart-2/10 text-chart-2 ring-chart-2/20",
-  plugin: "bg-chart-3/10 text-chart-3 ring-chart-3/20",
-  hook: "bg-chart-4/10 text-chart-4 ring-chart-4/20",
+  skill: "bg-primary/15 text-primary ring-primary/25",
+  mcp: "bg-chart-2/15 text-chart-2 ring-chart-2/25",
+  plugin: "bg-chart-3/15 text-chart-3 ring-chart-3/25",
+  hook: "bg-chart-4/15 text-chart-4 ring-chart-4/25",
 };
 
 const kindLabel: Record<ExtensionKind, string> = {

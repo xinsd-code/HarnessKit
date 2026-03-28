@@ -223,7 +223,7 @@ export default function AuditPage() {
                 <button
                   key={severity}
                   onClick={() => scrollToSeverity(severity)}
-                  className={`font-medium ${severityTextColor(severity)} hover:underline cursor-pointer transition-colors`}
+                  className={`font-medium ${severityTextColor(severity)} hover:underline hover:scale-[1.05] cursor-pointer transition-all`}
                 >
                   {count} {severity}
                 </button>
@@ -356,7 +356,7 @@ export default function AuditPage() {
                 onClick={() => setOpenId(isOpen ? null : result.extension_id)}
                 aria-expanded={isOpen}
                 aria-label={`${isOpen ? "Collapse" : "Expand"} ${nameMap.get(result.extension_id) ?? result.extension_id} audit results`}
-                className="flex w-full cursor-pointer items-center justify-between rounded-xl px-4 py-3 transition-colors duration-150 hover:bg-muted/50"
+                className="flex w-full cursor-pointer items-center justify-between rounded-xl px-4 py-3 transition-all duration-150 hover:bg-muted/50 hover:shadow-sm"
               >
                 <div className="flex items-center gap-3">
                   <ChevronRight size={16} className={`text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`} />

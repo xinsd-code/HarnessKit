@@ -22,7 +22,7 @@ export function Hint({ id, children, className }: HintProps) {
 
   return (
     <div
-      className={`animate-fade-in flex items-start gap-3 rounded-lg border border-primary/15 bg-primary/8 px-4 py-3 ${className ?? ""}`}
+      className={`animate-fade-in flex items-start gap-3 rounded-lg border border-primary/20 bg-primary/10 px-4 py-3 shadow-sm ${className ?? ""}`}
     >
       <Lightbulb
         size={15}

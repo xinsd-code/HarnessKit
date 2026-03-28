@@ -112,8 +112,8 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
             onClick={(e) => { e.stopPropagation(); toggle(ext.id, !ext.enabled); }}
             aria-label={`Toggle ${ext.name}`}
             className={ext.enabled
-              ? "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-              : "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
+              ? "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-primary/15 text-primary hover:bg-primary/20 transition-colors"
+              : "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-destructive/15 text-destructive hover:bg-destructive/20 transition-colors"
             }
           >
             {ext.enabled ? "enabled" : "disabled"}
@@ -192,7 +192,7 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
     >
       <div className="overflow-x-auto">
         <table className="w-full">
-          <thead className="bg-muted/20">
+          <thead className="bg-muted/30">
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
                 {hg.headers.map((header) => (
@@ -228,7 +228,7 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
                     ? "bg-accent border-l-2 border-l-primary"
                     : index === focusedRowIndex
                       ? "bg-muted/30 outline-2 outline-primary/60 outline-offset-[-2px]"
-                      : "hover:bg-muted/30"
+                      : "hover:bg-muted/40"
                 }`}
               >
                 {row.getVisibleCells().map((cell) => (

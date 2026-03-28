@@ -109,7 +109,7 @@ function AttentionRow({ item, onClick }: { item: AttentionItem; onClick: () => v
   return (
     <button
       onClick={onClick}
-      className="group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 hover:bg-muted/50"
+      className="group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-all duration-150 hover:bg-muted/50 hover:shadow-sm"
     >
       {/* Status indicator */}
       <span
@@ -167,7 +167,7 @@ function QuickAction({
   return (
     <button
       onClick={onClick}
-      className="group flex items-center gap-3 rounded-lg border border-border/60 bg-card/50 px-4 py-3 text-left transition-all duration-200 hover:border-border hover:bg-card hover:shadow-sm"
+      className="group flex items-center gap-3 rounded-lg border border-border/60 bg-card/50 px-4 py-3 text-left transition-all duration-200 hover:border-border hover:bg-card hover:shadow-sm hover:scale-[1.01]"
     >
       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors duration-200 group-hover:bg-primary/10 group-hover:text-primary">
         <Icon size={17} strokeWidth={1.75} />
@@ -432,7 +432,7 @@ export default function OverviewPage() {
               <button
                 key={card.to}
                 onClick={() => navigate(card.to)}
-                className="animate-fade-in group flex flex-col items-start gap-3 rounded-xl border border-border/60 bg-card/50 p-5 text-left transition-shadow duration-200 hover:shadow-md"
+                className="animate-fade-in group flex flex-col items-start gap-3 rounded-xl border border-border/60 bg-card/50 p-5 text-left transition-all duration-200 hover:shadow-md hover:scale-[1.01]"
                 style={{ animationDelay: card.delay }}
               >
                 <span className="flex size-10 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors duration-200 group-hover:bg-primary/10 group-hover:text-primary">

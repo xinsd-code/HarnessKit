@@ -138,7 +138,7 @@ export default function SettingsPage() {
   const grouped = useMemo(() => groupByKind(projectExtensions), [projectExtensions]);
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
+    <div className="flex-1 min-h-0 overflow-y-auto -mb-6"><div className="max-w-4xl mx-auto space-y-8 pb-6">
       <h2 className="text-2xl font-bold tracking-tight">Settings</h2>
 
       {/* Appearance */}
@@ -354,7 +354,7 @@ export default function SettingsPage() {
                     type="button"
                     onClick={() => selectProject(isSelected ? null : project)}
                     className={clsx(
-                      "group flex w-full text-left items-center gap-3 rounded-lg px-4 py-2.5 text-sm cursor-pointer border shadow-sm transition-[color,background-color,border-color,box-shadow] duration-200",
+                      "group flex w-full text-left items-center gap-3 rounded-lg px-4 py-2.5 text-sm cursor-pointer border shadow-sm transition-[color,background-color,border-color,box-shadow,transform] duration-200",
                       isSelected
                         ? "border-ring bg-accent"
                         : "border-border bg-card hover:bg-muted hover:shadow-md"
@@ -416,6 +416,6 @@ export default function SettingsPage() {
           </div>
         )}
       </section>
-    </div>
+    </div></div>
   );
 }
