@@ -32,6 +32,7 @@ export function ExtensionFilters() {
   const { kindFilter, setKindFilter, agentFilter, setAgentFilter, searchQuery, setSearchQuery, allTags, tagFilter, setTagFilter, categoryFilter, setCategoryFilter, filtered } = useExtensionStore();
   const agents = useAgentStore((s) => s.agents);
   const enabledAgents = useMemo(() => agents.filter((a) => a.enabled), [agents]);
+  const resultCount = filtered().length;
 
   return (
     <div className="space-y-2.5">
@@ -53,7 +54,7 @@ export function ExtensionFilters() {
           </button>
         ))}
         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-          {filtered().length} result{filtered().length !== 1 ? "s" : ""}
+          {resultCount} result{resultCount !== 1 ? "s" : ""}
         </span>
         <div className="flex-1" />
         <select

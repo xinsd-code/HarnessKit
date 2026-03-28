@@ -320,11 +320,13 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), String
     store.delete_extension(&id).map_err(|e| e.to_string())
 }
 
-/// Audit a single extension by name (best-effort, errors silently ignored).
-fn audit_extension_by_name(name: &str, store: &Store, adapters: &[Box<dyn adapter::AgentAdapter>]) {
-    let Ok(extensions) = store.list_extensions(None, None) else { return };
+/// Audit a single extension by name (best-effort).
+/// Takes owned extensions list so the caller can release the Mutex before calling this.
+/// Returns audit results to be stored by the caller.
+fn audit_extension_by_name(name: &str, extensions: &[Extension], adapters: &[Box<dyn adapter::AgentAdapter>]) -> Vec<AuditResult> {
     let auditor = Auditor::new();
-    for ext in &extensions {
+    let mut results = Vec::new();
+    for ext in extensions {
         if ext.name != name { continue; }
         let input = match ext.kind {
             ExtensionKind::Skill => {
@@ -367,11 +369,11 @@ fn audit_extension_by_name(name: &str, store: &Store, adapters: &[Box<dyn adapte
                     updated_at: ext.updated_at,
                 }
             }
-            _ => continue, // Only audit skills during install
+            _ => continue,
         };
-        let result = auditor.audit(&input);
-        let _ = store.insert_audit_result(&result);
+        results.push(auditor.audit(&input));
     }
+    results
 }
 
 fn fnv1a(data: &[u8]) -> u64 {
@@ -574,13 +576,23 @@ pub fn install_from_git(state: State<AppState>, url: String, target_agent: Optio
     let sid = skill_id.as_deref().filter(|s| !s.is_empty());
     let result = manager::install_from_git_with_id(&url, &target_dir, sid).map_err(|e| e.to_string())?;
 
-    // Re-scan to pick up the new extension, then audit it
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    // Re-scan and persist — hold lock only for fast DB writes
     let extensions = scanner::scan_all(&adapters);
-    for ext in &extensions {
-        let _ = store.insert_extension(ext);
+    {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        for ext in &extensions {
+            let _ = store.insert_extension(ext);
+        }
+    } // Lock released before slow file I/O
+
+    // Audit the newly installed extension (no lock held)
+    let audit_results = audit_extension_by_name(&result.name, &extensions, &adapters);
+    if !audit_results.is_empty() {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        for r in &audit_results {
+            let _ = store.insert_audit_result(r);
+        }
     }
-    audit_extension_by_name(&result.name, &store, &adapters);
 
     Ok(result)
 }
@@ -657,13 +669,23 @@ pub fn install_from_marketplace(state: State<AppState>, source: String, skill_id
     let git_url = hk_core::marketplace::git_url_for_source(&source);
     let sid = if skill_id.is_empty() { None } else { Some(skill_id.as_str()) };
     let result = manager::install_from_git_with_id(&git_url, &target_dir, sid).map_err(|e| e.to_string())?;
-    // Re-scan to pick up the new extension, then audit it
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    // Re-scan and persist — hold lock only for fast DB writes
     let extensions = scanner::scan_all(&adapters);
-    for ext in &extensions {
-        let _ = store.insert_extension(ext);
+    {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        for ext in &extensions {
+            let _ = store.insert_extension(ext);
+        }
+    } // Lock released before slow file I/O
+
+    // Audit the newly installed extension (no lock held)
+    let audit_results = audit_extension_by_name(&result.name, &extensions, &adapters);
+    if !audit_results.is_empty() {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        for r in &audit_results {
+            let _ = store.insert_audit_result(r);
+        }
     }
-    audit_extension_by_name(&result.name, &store, &adapters);
     Ok(result)
 }
 
