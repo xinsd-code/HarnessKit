@@ -7,7 +7,7 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { Extension } from "@/lib/types";
 import { formatRelativeTime } from "@/lib/types";
 import { KindBadge } from "@/components/shared/kind-badge";
@@ -17,112 +17,111 @@ import { useExtensionStore } from "@/stores/extension-store";
 
 const col = createColumnHelper<Extension>();
 
-const columns = [
-  col.display({
-    id: "select",
-    header: () => {
-      const selectedIds = useExtensionStore(s => s.selectedIds);
-      const selectAll = useExtensionStore(s => s.selectAll);
-      const clearSelection = useExtensionStore(s => s.clearSelection);
-      const filtered = useExtensionStore(s => s.filtered);
-      const allSelected = filtered().length > 0 && selectedIds.size === filtered().length;
-      return (
-        <input
-          type="checkbox"
-          checked={allSelected}
-          onChange={() => allSelected ? clearSelection() : selectAll()}
-          aria-label="Select all extensions"
-          className="rounded border-border accent-primary"
-        />
-      );
-    },
-    cell: (info) => {
-      const ext = info.row.original;
-      const selectedIds = useExtensionStore(s => s.selectedIds);
-      const toggleSelected = useExtensionStore(s => s.toggleSelected);
-      return (
-        <input
-          type="checkbox"
-          checked={selectedIds.has(ext.id)}
-          onChange={(e) => { e.stopPropagation(); toggleSelected(ext.id); }}
-          onClick={(e) => e.stopPropagation()}
-          aria-label={`Select ${ext.name}`}
-          className="rounded border-border accent-primary"
-        />
-      );
-    },
-    size: 40,
-  }),
-  col.accessor("name", {
-    header: "Name",
-    cell: (info) => {
-      const ext = info.row.original;
-      const status = useExtensionStore(s => s.updateStatuses).get(ext.id);
-      const hasUpdate = status?.status === "update_available";
-      return (
-        <span className="font-medium">
-          {info.getValue()}
-          {hasUpdate && <span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-primary" title="Update available" />}
-        </span>
-      );
-    },
-  }),
-  col.accessor("kind", {
-    header: "Kind",
-    cell: (info) => <KindBadge kind={info.getValue()} />,
-  }),
-  col.accessor("agents", {
-    header: "Agent",
-    cell: (info) => <span className="text-muted-foreground">{info.getValue().join(", ")}</span>,
-  }),
-  col.accessor("permissions", {
-    header: "Permissions",
-    cell: (info) => <PermissionTags permissions={info.getValue()} />,
-    enableSorting: false,
-  }),
-  col.accessor("trust_score", {
-    header: "Score",
-    cell: (info) => {
-      const val = info.getValue();
-      return val != null ? <TrustBadge score={val} size="sm" /> : <span className="text-muted-foreground">--</span>;
-    },
-  }),
-  col.accessor("last_used_at", {
-    header: "Last Used",
-    cell: (info) => {
-      const ext = info.row.original;
-      if (ext.kind !== "skill") {
-        return <span className="text-muted-foreground">—</span>;
-      }
-      const val = info.getValue();
-      if (!val) {
-        return <span className="text-muted-foreground">Unused</span>;
-      }
-      return <span className="text-muted-foreground">{formatRelativeTime(val)}</span>;
-    },
-  }),
-  col.accessor("enabled", {
-    header: "Status",
-    cell: (info) => {
-      const ext = info.row.original;
-      const toggle = useExtensionStore(s => s.toggle);
-      return (
-        <button
-          onClick={(e) => { e.stopPropagation(); toggle(ext.id, !ext.enabled); }}
-          aria-label={`Toggle ${ext.name}`}
-          className={ext.enabled
-            ? "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-            : "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
-          }
-        >
-          {ext.enabled ? "enabled" : "disabled"}
-        </button>
-      );
-    },
-  }),
-];
-
 export function ExtensionTable({ data }: { data: Extension[] }) {
+  const columns = useMemo(() => [
+    col.display({
+      id: "select",
+      header: () => {
+        const selectedIds = useExtensionStore(s => s.selectedIds);
+        const selectAll = useExtensionStore(s => s.selectAll);
+        const clearSelection = useExtensionStore(s => s.clearSelection);
+        const filtered = useExtensionStore(s => s.filtered);
+        const allSelected = filtered().length > 0 && selectedIds.size === filtered().length;
+        return (
+          <input
+            type="checkbox"
+            checked={allSelected}
+            onChange={() => allSelected ? clearSelection() : selectAll()}
+            aria-label="Select all extensions"
+            className="rounded border-border accent-primary"
+          />
+        );
+      },
+      cell: (info) => {
+        const ext = info.row.original;
+        const selectedIds = useExtensionStore(s => s.selectedIds);
+        const toggleSelected = useExtensionStore(s => s.toggleSelected);
+        return (
+          <input
+            type="checkbox"
+            checked={selectedIds.has(ext.id)}
+            onChange={(e) => { e.stopPropagation(); toggleSelected(ext.id); }}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`Select ${ext.name}`}
+            className="rounded border-border accent-primary"
+          />
+        );
+      },
+      size: 40,
+    }),
+    col.accessor("name", {
+      header: "Name",
+      cell: (info) => {
+        const ext = info.row.original;
+        const status = useExtensionStore(s => s.updateStatuses).get(ext.id);
+        const hasUpdate = status?.status === "update_available";
+        return (
+          <span className="font-medium">
+            {info.getValue()}
+            {hasUpdate && <span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-primary" title="Update available" />}
+          </span>
+        );
+      },
+    }),
+    col.accessor("kind", {
+      header: "Kind",
+      cell: (info) => <KindBadge kind={info.getValue()} />,
+    }),
+    col.accessor("agents", {
+      header: "Agent",
+      cell: (info) => <span className="text-muted-foreground">{info.getValue().join(", ")}</span>,
+    }),
+    col.accessor("permissions", {
+      header: "Permissions",
+      cell: (info) => <PermissionTags permissions={info.getValue()} />,
+      enableSorting: false,
+    }),
+    col.accessor("trust_score", {
+      header: "Score",
+      cell: (info) => {
+        const val = info.getValue();
+        return val != null ? <TrustBadge score={val} size="sm" /> : <span className="text-muted-foreground">--</span>;
+      },
+    }),
+    col.accessor("last_used_at", {
+      header: "Last Used",
+      cell: (info) => {
+        const ext = info.row.original;
+        if (ext.kind !== "skill") {
+          return <span className="text-muted-foreground">—</span>;
+        }
+        const val = info.getValue();
+        if (!val) {
+          return <span className="text-muted-foreground">Unused</span>;
+        }
+        return <span className="text-muted-foreground">{formatRelativeTime(val)}</span>;
+      },
+    }),
+    col.accessor("enabled", {
+      header: "Status",
+      cell: (info) => {
+        const ext = info.row.original;
+        const toggle = useExtensionStore(s => s.toggle);
+        return (
+          <button
+            onClick={(e) => { e.stopPropagation(); toggle(ext.id, !ext.enabled); }}
+            aria-label={`Toggle ${ext.name}`}
+            className={ext.enabled
+              ? "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+              : "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
+            }
+          >
+            {ext.enabled ? "enabled" : "disabled"}
+          </button>
+        );
+      },
+    }),
+  ], []);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
   const selectedId = useExtensionStore(s => s.selectedId);
@@ -185,7 +184,7 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
   return (
     <div
       ref={tableContainerRef}
-      className="rounded-xl border border-border overflow-hidden shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-0"
+      className="rounded-xl border border-border overflow-hidden shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-0"
       tabIndex={0}
       onKeyDown={onTableKeyDown}
       role="grid"

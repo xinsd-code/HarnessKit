@@ -33,13 +33,21 @@ function PermissionDetail({ perm }: { perm: Permission }) {
 }
 
 export function ExtensionDetail() {
-  const { extensions, selectedId, setSelectedId, toggle, updateStatuses, allTags, updateTags, updateCategory, deployToAgent } = useExtensionStore();
+  const extensions = useExtensionStore(s => s.extensions);
+  const selectedId = useExtensionStore(s => s.selectedId);
+  const setSelectedId = useExtensionStore(s => s.setSelectedId);
+  const toggle = useExtensionStore(s => s.toggle);
+  const updateStatuses = useExtensionStore(s => s.updateStatuses);
+  const allTags = useExtensionStore(s => s.allTags);
+  const updateTags = useExtensionStore(s => s.updateTags);
+  const updateCategory = useExtensionStore(s => s.updateCategory);
+  const deployToAgent = useExtensionStore(s => s.deployToAgent);
   const ext = extensions.find((e) => e.id === selectedId);
   const [content, setContent] = useState<string | null>(null);
   const [dirPath, setDirPath] = useState<string | null>(null);
   const [loadingContent, setLoadingContent] = useState(false);
   const [tagInput, setTagInput] = useState("");
-  const { agents } = useAgentStore();
+  const agents = useAgentStore(s => s.agents);
   const [deploying, setDeploying] = useState<string | null>(null);
 
   useEffect(() => {

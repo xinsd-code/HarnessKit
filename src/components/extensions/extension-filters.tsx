@@ -40,14 +40,14 @@ export function ExtensionFilters() {
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search extensions..."
             aria-label="Search extensions"
-            className="w-full rounded-lg border border-border bg-card py-1.5 pl-9 pr-3 text-sm placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+            className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-3 text-sm placeholder:text-muted-foreground focus:border-ring focus:outline-none"
           />
         </div>
         <select
           value={categoryFilter ?? ""}
           onChange={(e) => setCategoryFilter(e.target.value || null)}
           aria-label="Filter by category"
-          className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground focus:border-ring focus:outline-none"
+          className="rounded-lg border border-border bg-card px-3 py-2 text-xs text-foreground focus:border-ring focus:outline-none"
         >
           <option value="">All Categories</option>
           {CATEGORIES.map((cat) => (
@@ -61,7 +61,7 @@ export function ExtensionFilters() {
               onClick={() => setKindFilter(kind)}
               aria-pressed={kindFilter === kind}
               className={clsx(
-                "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                "rounded-lg px-3 py-2 text-xs font-medium transition-colors",
                 kindFilter === kind
                   ? "bg-primary text-primary-foreground"
                   : "bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground"
