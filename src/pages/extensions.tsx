@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useExtensionStore } from "@/stores/extension-store";
 import { ExtensionTable } from "@/components/extensions/extension-table";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
@@ -8,6 +9,16 @@ import { Toast } from "@/components/shared/toast";
 import { toast } from "@/stores/toast-store";
 
 export default function ExtensionsPage() {
+  const [searchParams] = useSearchParams();
+  const setAgentFilter = useExtensionStore((s) => s.setAgentFilter);
+
+  // Apply ?agent= query param on mount
+  useEffect(() => {
+    const agent = searchParams.get("agent");
+    if (agent) {
+      setAgentFilter(agent);
+    }
+  }, [searchParams, setAgentFilter]);
   const { loading, fetch, selectedId, selectedIds, batchToggle, batchDelete, undoDelete, confirmDelete, pendingDelete, clearSelection, checkUpdates } = useExtensionStore();
   const extensions = useExtensionStore(s => s.extensions);
   const searchQuery = useExtensionStore(s => s.searchQuery);

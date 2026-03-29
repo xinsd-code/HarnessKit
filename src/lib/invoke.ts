@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Extension, ExtensionContent, AgentInfo, DashboardStats, AuditResult, UpdateStatus, MarketplaceItem, SkillAuditInfo, Project, DiscoveredProject, InstallResult, FileEntry } from "./types";
+import type { Extension, ExtensionContent, AgentInfo, AgentDetail, DashboardStats, AuditResult, UpdateStatus, MarketplaceItem, SkillAuditInfo, Project, DiscoveredProject, InstallResult, FileEntry } from "./types";
 
 export const api = {
   listExtensions(kind?: string, agent?: string): Promise<Extension[]> {
@@ -116,5 +116,13 @@ export const api = {
 
   openInSystem(path: string): Promise<void> {
     return invoke("open_in_system", { path });
+  },
+
+  listAgentConfigs(): Promise<AgentDetail[]> {
+    return invoke("list_agent_configs");
+  },
+
+  readConfigFilePreview(path: string, maxLines?: number): Promise<string> {
+    return invoke("read_config_file_preview", { path, maxLines });
   },
 };

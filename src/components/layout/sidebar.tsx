@@ -1,9 +1,10 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Package, Shield, Settings, ShoppingBag } from "lucide-react";
+import { LayoutDashboard, Bot, Package, Shield, Settings, ShoppingBag } from "lucide-react";
 import { clsx } from "clsx";
 
 const mainNavItems = [
   { to: "/", icon: LayoutDashboard, label: "Overview" },
+  { to: "/agents", icon: Bot, label: "Agents" },
   { to: "/extensions", icon: Package, label: "Extensions" },
   { to: "/audit", icon: Shield, label: "Audit" },
   { to: "/marketplace", icon: ShoppingBag, label: "Marketplace" },

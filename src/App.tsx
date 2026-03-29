@@ -7,6 +7,7 @@ import { useExtensionStore } from "./stores/extension-store";
 import { useAuditStore } from "./stores/audit-store";
 import { api } from "./lib/invoke";
 import OverviewPage from "./pages/overview";
+import AgentsPage from "./pages/agents";
 import ExtensionsPage from "./pages/extensions";
 import AuditPage from "./pages/audit";
 import SettingsPage from "./pages/settings";
@@ -78,6 +79,7 @@ export default function App() {
       <Routes>
         <Route element={<AppShell />}>
           <Route index element={<OverviewPage />} />
+          <Route path="agents" element={<AgentsPage />} />
           <Route path="extensions" element={<ExtensionsPage />} />
           <Route path="marketplace" element={<MarketplacePage />} />
           <Route path="audit" element={<AuditPage />} />

@@ -91,6 +91,43 @@ export interface AgentInfo {
   enabled: boolean;
 }
 
+export type ConfigCategory = "rules" | "memory" | "settings" | "ignore";
+
+export type ConfigScope =
+  | { type: "global" }
+  | { type: "project"; name: string; path: string };
+
+export interface AgentConfigFile {
+  path: string;
+  agent: string;
+  category: ConfigCategory;
+  scope: ConfigScope;
+  file_name: string;
+  size_bytes: number;
+  modified_at: string | null;
+}
+
+export interface ExtensionCounts {
+  skill: number;
+  mcp: number;
+  plugin: number;
+  hook: number;
+}
+
+export interface AgentDetail {
+  name: string;
+  detected: boolean;
+  config_files: AgentConfigFile[];
+  extension_counts: ExtensionCounts;
+}
+
+export const CONFIG_CATEGORY_LABELS: Record<ConfigCategory, string> = {
+  rules: "Rules",
+  memory: "Memory",
+  settings: "Settings",
+  ignore: "Ignore",
+};
+
 export interface FileEntry {
   name: string;
   path: string;
