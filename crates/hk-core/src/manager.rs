@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
-use crate::models::{Source, SourceOrigin, UpdateStatus};
+use crate::models::*;
 use crate::store::Store;
-use std::path::Path;
+use crate::{adapter, deployer, scanner};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -20,7 +21,140 @@ impl Manager {
     }
 
     pub fn toggle(&self, id: &str, enabled: bool) -> Result<()> {
-        self.store.set_enabled(id, enabled)
+        let ext = self.store.get_extension(id)?
+            .ok_or_else(|| anyhow::anyhow!("Extension not found: {}", id))?;
+
+        match ext.kind {
+            ExtensionKind::Skill => self.toggle_skill(&ext, enabled)?,
+            ExtensionKind::Mcp => self.toggle_mcp(&ext, enabled)?,
+            ExtensionKind::Hook => self.toggle_hook(&ext, enabled)?,
+            ExtensionKind::Plugin => self.toggle_plugin(&ext, enabled)?,
+        }
+
+        // For skills: toggle all siblings (shared skills in ~/.agents/skills/)
+        if ext.kind == ExtensionKind::Skill {
+            let sibling_ids = self.store.find_siblings_by_source_path(id)?;
+            for sib_id in &sibling_ids {
+                self.store.set_enabled(sib_id, enabled)?;
+            }
+        } else {
+            self.store.set_enabled(id, enabled)?;
+        }
+
+        Ok(())
+    }
+
+    fn toggle_skill(&self, ext: &Extension, enabled: bool) -> Result<()> {
+        let source_path = ext.source_path.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Skill has no source_path"))?;
+        let skill_file = PathBuf::from(source_path);
+        let disabled_file = skill_file.with_file_name("SKILL.md.disabled");
+
+        if enabled {
+            if disabled_file.exists() {
+                std::fs::rename(&disabled_file, &skill_file)
+                    .context("Failed to re-enable skill")?;
+            }
+        } else if skill_file.exists() {
+            std::fs::rename(&skill_file, &disabled_file)
+                .context("Failed to disable skill")?;
+        }
+        Ok(())
+    }
+
+    fn toggle_mcp(&self, ext: &Extension, enabled: bool) -> Result<()> {
+        let adapters = adapter::all_adapters();
+        for adapter in &adapters {
+            if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+            let config_path = adapter.mcp_config_path();
+
+            if enabled {
+                let saved = self.store.get_disabled_config(&ext.id)?
+                    .ok_or_else(|| anyhow::anyhow!("No saved config for MCP server '{}'", ext.name))?;
+                let entry: serde_json::Value = serde_json::from_str(&saved)?;
+                deployer::restore_mcp_server(&config_path, &ext.name, &entry)?;
+                self.store.set_disabled_config(&ext.id, None)?;
+            } else {
+                let entry = deployer::read_mcp_server_config(&config_path, &ext.name)?
+                    .ok_or_else(|| anyhow::anyhow!("MCP server '{}' not found in config", ext.name))?;
+                self.store.set_disabled_config(&ext.id, Some(&entry.to_string()))?;
+                deployer::remove_mcp_server(&config_path, &ext.name)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn toggle_hook(&self, ext: &Extension, enabled: bool) -> Result<()> {
+        let adapters = adapter::all_adapters();
+        // Hook name format: "event:matcher:command"
+        let parts: Vec<&str> = ext.name.splitn(3, ':').collect();
+        if parts.len() < 3 {
+            anyhow::bail!("Invalid hook name format: {}", ext.name);
+        }
+        let (event, matcher_str, command) = (parts[0], parts[1], parts[2]);
+        let matcher = if matcher_str == "*" { None } else { Some(matcher_str) };
+
+        for adapter in &adapters {
+            if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+            let config_path = adapter.hook_config_path();
+
+            if enabled {
+                let saved = self.store.get_disabled_config(&ext.id)?
+                    .ok_or_else(|| anyhow::anyhow!("No saved config for hook '{}'", ext.name))?;
+                let entry: serde_json::Value = serde_json::from_str(&saved)?;
+                deployer::restore_hook(&config_path, event, &entry)?;
+                self.store.set_disabled_config(&ext.id, None)?;
+            } else {
+                let entry = deployer::read_hook_config(&config_path, event, matcher, command)?
+                    .ok_or_else(|| anyhow::anyhow!("Hook '{}' not found in config", ext.name))?;
+                self.store.set_disabled_config(&ext.id, Some(&entry.to_string()))?;
+                deployer::remove_hook(&config_path, event, matcher, command)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn toggle_plugin(&self, ext: &Extension, enabled: bool) -> Result<()> {
+        let adapters = adapter::all_adapters();
+        for adapter in &adapters {
+            if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+
+            if adapter.name() == "claude" {
+                // Claude: config-driven (enabledPlugins in settings.json)
+                let config_path = adapter.mcp_config_path(); // settings.json
+                let plugin_key = &ext.name;
+                if enabled {
+                    let saved = self.store.get_disabled_config(&ext.id)?
+                        .ok_or_else(|| anyhow::anyhow!("No saved config for plugin '{}'", ext.name))?;
+                    let value: serde_json::Value = serde_json::from_str(&saved)?;
+                    deployer::restore_plugin_entry(&config_path, plugin_key, &value)?;
+                    self.store.set_disabled_config(&ext.id, None)?;
+                } else {
+                    let value = deployer::read_plugin_config(&config_path, plugin_key)?
+                        .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found in config", ext.name))?;
+                    self.store.set_disabled_config(&ext.id, Some(&value.to_string()))?;
+                    deployer::remove_plugin_entry(&config_path, plugin_key)?;
+                }
+            } else {
+                // Cursor/Codex: filesystem-driven — rename manifest
+                for plugin in adapter.read_plugins() {
+                    let plugin_id_name = format!("{}:{}", plugin.name, plugin.source);
+                    if scanner::stable_id_for(&plugin_id_name, "plugin", adapter.name()) != ext.id {
+                        continue;
+                    }
+                    if let Some(ref path) = plugin.path {
+                        let manifest = path.join("plugin.json");
+                        let disabled_manifest = path.join("plugin.json.disabled");
+                        if enabled && disabled_manifest.exists() {
+                            std::fs::rename(&disabled_manifest, &manifest)?;
+                        } else if !enabled && manifest.exists() {
+                            std::fs::rename(&manifest, &disabled_manifest)?;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn uninstall(&self, id: &str) -> Result<()> {
@@ -222,7 +356,6 @@ fn copy_dir_contents(src: &Path, dst: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::*;
     use tempfile::TempDir;
 
     #[test]
@@ -230,6 +363,13 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let db_path = dir.path().join("test.db");
         let store = crate::store::Store::open(&db_path).unwrap();
+
+        // Create a fake skill file so toggle_skill can rename it
+        let skill_dir = dir.path().join("skills").join("test");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        let skill_file = skill_dir.join("SKILL.md");
+        std::fs::write(&skill_file, "---\nname: test\n---\n").unwrap();
+
         let ext = Extension {
             id: uuid::Uuid::new_v4().to_string(),
             kind: ExtensionKind::Skill,
@@ -245,7 +385,7 @@ mod tests {
             installed_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             last_used_at: None,
-            source_path: None,
+            source_path: Some(skill_file.to_string_lossy().to_string()),
         };
         store.insert_extension(&ext).unwrap();
 
@@ -253,6 +393,54 @@ mod tests {
         manager.toggle(&ext.id, false).unwrap();
         let fetched = manager.store.get_extension(&ext.id).unwrap().unwrap();
         assert!(!fetched.enabled);
+    }
+
+    #[test]
+    fn test_toggle_skill_renames_file() {
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("test.db");
+        let store = crate::store::Store::open(&db_path).unwrap();
+
+        // Create a fake skill directory
+        let skill_dir = dir.path().join("skills").join("my-skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        let skill_file = skill_dir.join("SKILL.md");
+        std::fs::write(&skill_file, "---\nname: my-skill\n---\n").unwrap();
+
+        let ext = Extension {
+            id: "test-skill-id".into(),
+            kind: ExtensionKind::Skill,
+            name: "my-skill".into(),
+            description: "".into(),
+            source: Source { origin: SourceOrigin::Local, url: None, version: None, commit_hash: None },
+            agents: vec!["claude".into()],
+            tags: vec![],
+            category: None,
+            permissions: vec![],
+            enabled: true,
+            trust_score: None,
+            installed_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            last_used_at: None,
+            source_path: Some(skill_file.to_string_lossy().to_string()),
+        };
+        store.insert_extension(&ext).unwrap();
+
+        let manager = Manager::new(store);
+
+        // Disable
+        manager.toggle("test-skill-id", false).unwrap();
+        assert!(!skill_file.exists(), "SKILL.md should be renamed away");
+        assert!(skill_dir.join("SKILL.md.disabled").exists(), "SKILL.md.disabled should exist");
+        let fetched = manager.store.get_extension("test-skill-id").unwrap().unwrap();
+        assert!(!fetched.enabled);
+
+        // Re-enable
+        manager.toggle("test-skill-id", true).unwrap();
+        assert!(skill_file.exists(), "SKILL.md should be restored");
+        assert!(!skill_dir.join("SKILL.md.disabled").exists());
+        let fetched = manager.store.get_extension("test-skill-id").unwrap().unwrap();
+        assert!(fetched.enabled);
     }
 
     #[test]
