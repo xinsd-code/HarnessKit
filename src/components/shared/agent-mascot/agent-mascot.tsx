@@ -3,6 +3,7 @@ import { ClaudeMascot } from "./claude-mascot";
 import { CursorMascot } from "./cursor-mascot";
 import { CodexMascot } from "./codex-mascot";
 import { GeminiMascot } from "./gemini-mascot";
+import { AntigravityMascot } from "./antigravity-mascot";
 import { FallbackMascot } from "./fallback-mascot";
 
 interface AgentMascotProps {
@@ -12,11 +13,12 @@ interface AgentMascotProps {
   clicked?: boolean;
 }
 
-const MASCOT_MAP: Record<string, { component: React.ComponentType<{ size: number }>; className: string; scale: number; offsetY?: number; clipOverflow?: boolean }> = {
+const MASCOT_MAP: Record<string, { component: React.ComponentType<{ size: number; clicked?: boolean }>; className: string; scale: number; offsetY?: number; passClicked?: boolean }> = {
   claude: { component: ClaudeMascot, className: "mascot-claude", scale: 1 },
   cursor: { component: CursorMascot, className: "mascot-cursor", scale: 1.15, offsetY: 2 },
   codex: { component: CodexMascot, className: "mascot-codex", scale: 0.80, offsetY: -1 },
   gemini: { component: GeminiMascot, className: "mascot-gemini", scale: 1.2 },
+  antigravity: { component: AntigravityMascot, className: "mascot-antigravity", scale: 0.85, passClicked: true },
 };
 
 export function AgentMascot({ name, size = 48, animated = false, clicked = false }: AgentMascotProps) {
@@ -30,7 +32,7 @@ export function AgentMascot({ name, size = 48, animated = false, clicked = false
   return (
     <div className={classes} style={{ width: size, height: size, display: "flex", alignItems: "center", justifyContent: "center", overflow: "visible" }}>
       <div style={{ flexShrink: 0, transform: entry?.offsetY ? `translateY(${entry.offsetY}px)` : undefined }}>
-        <Comp size={renderSize} />
+        <Comp size={renderSize} clicked={entry?.passClicked ? clicked : undefined} />
       </div>
     </div>
   );
