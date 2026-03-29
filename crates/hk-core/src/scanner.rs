@@ -4,7 +4,7 @@ use chrono::Utc;
 use std::path::Path;
 
 /// FNV-1a 64-bit hash — deterministic across Rust versions (unlike DefaultHasher).
-fn fnv1a(data: &[u8]) -> u64 {
+pub fn fnv1a(data: &[u8]) -> u64 {
     let mut hash: u64 = 0xcbf29ce484222325;
     for &b in data {
         hash ^= b as u64;

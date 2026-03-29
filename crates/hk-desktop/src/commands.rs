@@ -91,7 +91,129 @@ pub fn get_dashboard_stats(state: State<AppState>) -> Result<DashboardStats, Str
 #[tauri::command]
 pub fn toggle_extension(state: State<AppState>, id: String, enabled: bool) -> Result<(), String> {
     let store = state.store.lock().map_err(|e| e.to_string())?;
-    store.set_enabled(&id, enabled).map_err(|e| e.to_string())
+
+    let ext = store.get_extension(&id).map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Extension not found: {}", id))?;
+
+    match ext.kind {
+        ExtensionKind::Skill => {
+            toggle_skill_file(&ext, enabled).map_err(|e| e.to_string())?;
+            let sibling_ids = store.find_siblings_by_source_path(&id).map_err(|e| e.to_string())?;
+            for sib_id in &sibling_ids {
+                store.set_enabled(sib_id, enabled).map_err(|e| e.to_string())?;
+            }
+        }
+        ExtensionKind::Mcp => {
+            toggle_mcp_config(&ext, enabled, &store).map_err(|e| e.to_string())?;
+            store.set_enabled(&id, enabled).map_err(|e| e.to_string())?;
+        }
+        ExtensionKind::Hook => {
+            toggle_hook_config(&ext, enabled, &store).map_err(|e| e.to_string())?;
+            store.set_enabled(&id, enabled).map_err(|e| e.to_string())?;
+        }
+        ExtensionKind::Plugin => {
+            toggle_plugin_config(&ext, enabled, &store).map_err(|e| e.to_string())?;
+            store.set_enabled(&id, enabled).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+fn toggle_skill_file(ext: &Extension, enabled: bool) -> anyhow::Result<()> {
+    let source_path = ext.source_path.as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Skill has no source_path"))?;
+    let skill_file = std::path::PathBuf::from(source_path);
+    let disabled_file = skill_file.with_file_name("SKILL.md.disabled");
+    if enabled {
+        if disabled_file.exists() { std::fs::rename(&disabled_file, &skill_file)?; }
+    } else if skill_file.exists() {
+        std::fs::rename(&skill_file, &disabled_file)?;
+    }
+    Ok(())
+}
+
+fn toggle_mcp_config(ext: &Extension, enabled: bool, store: &Store) -> anyhow::Result<()> {
+    let adapters = adapter::all_adapters();
+    for a in &adapters {
+        if !ext.agents.contains(&a.name().to_string()) { continue; }
+        let config_path = a.mcp_config_path();
+        if enabled {
+            let saved = store.get_disabled_config(&ext.id)?
+                .ok_or_else(|| anyhow::anyhow!("No saved config for MCP server '{}'", ext.name))?;
+            let entry: serde_json::Value = serde_json::from_str(&saved)?;
+            deployer::restore_mcp_server(&config_path, &ext.name, &entry)?;
+            store.set_disabled_config(&ext.id, None)?;
+        } else {
+            let entry = deployer::read_mcp_server_config(&config_path, &ext.name)?
+                .ok_or_else(|| anyhow::anyhow!("MCP server '{}' not found in config", ext.name))?;
+            store.set_disabled_config(&ext.id, Some(&entry.to_string()))?;
+            deployer::remove_mcp_server(&config_path, &ext.name)?;
+        }
+    }
+    Ok(())
+}
+
+fn toggle_hook_config(ext: &Extension, enabled: bool, store: &Store) -> anyhow::Result<()> {
+    let adapters = adapter::all_adapters();
+    let parts: Vec<&str> = ext.name.splitn(3, ':').collect();
+    if parts.len() < 3 { anyhow::bail!("Invalid hook name: {}", ext.name); }
+    let (event, matcher_str, command) = (parts[0], parts[1], parts[2]);
+    let matcher = if matcher_str == "*" { None } else { Some(matcher_str) };
+    for a in &adapters {
+        if !ext.agents.contains(&a.name().to_string()) { continue; }
+        let config_path = a.hook_config_path();
+        if enabled {
+            let saved = store.get_disabled_config(&ext.id)?
+                .ok_or_else(|| anyhow::anyhow!("No saved config for hook '{}'", ext.name))?;
+            let entry: serde_json::Value = serde_json::from_str(&saved)?;
+            deployer::restore_hook(&config_path, event, &entry)?;
+            store.set_disabled_config(&ext.id, None)?;
+        } else {
+            let entry = deployer::read_hook_config(&config_path, event, matcher, command)?
+                .ok_or_else(|| anyhow::anyhow!("Hook '{}' not found in config", ext.name))?;
+            store.set_disabled_config(&ext.id, Some(&entry.to_string()))?;
+            deployer::remove_hook(&config_path, event, matcher, command)?;
+        }
+    }
+    Ok(())
+}
+
+fn toggle_plugin_config(ext: &Extension, enabled: bool, store: &Store) -> anyhow::Result<()> {
+    let adapters = adapter::all_adapters();
+    for a in &adapters {
+        if !ext.agents.contains(&a.name().to_string()) { continue; }
+        if a.name() == "claude" {
+            let config_path = a.mcp_config_path();
+            let plugin_key = &ext.name;
+            if enabled {
+                let saved = store.get_disabled_config(&ext.id)?
+                    .ok_or_else(|| anyhow::anyhow!("No saved config for plugin '{}'", ext.name))?;
+                let value: serde_json::Value = serde_json::from_str(&saved)?;
+                deployer::restore_plugin_entry(&config_path, plugin_key, &value)?;
+                store.set_disabled_config(&ext.id, None)?;
+            } else {
+                let value = deployer::read_plugin_config(&config_path, plugin_key)?
+                    .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found in config", ext.name))?;
+                store.set_disabled_config(&ext.id, Some(&value.to_string()))?;
+                deployer::remove_plugin_entry(&config_path, plugin_key)?;
+            }
+        } else {
+            for plugin in a.read_plugins() {
+                let plugin_id_name = format!("{}:{}", plugin.name, plugin.source);
+                if scanner::stable_id_for(&plugin_id_name, "plugin", a.name()) != ext.id { continue; }
+                if let Some(ref path) = plugin.path {
+                    let manifest = path.join("plugin.json");
+                    let disabled_manifest = path.join("plugin.json.disabled");
+                    if enabled && disabled_manifest.exists() {
+                        std::fs::rename(&disabled_manifest, &manifest)?;
+                    } else if !enabled && manifest.exists() {
+                        std::fs::rename(&manifest, &disabled_manifest)?;
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -132,7 +254,7 @@ pub fn run_audit(state: State<AppState>) -> Result<Vec<AuditResult>, String> {
                             let name = scanner::parse_skill_name(&skill_file).unwrap_or_else(||
                                 path.file_stem().unwrap_or_default().to_string_lossy().to_string()
                             );
-                            if stable_id(&name, "skill", a.name()) == ext.id {
+                            if scanner::stable_id_for(&name, "skill", a.name()) == ext.id {
                                 skill_content = std::fs::read_to_string(&skill_file).unwrap_or_default();
                                 skill_path = skill_file.to_string_lossy().to_string();
                                 break 'outer;
@@ -149,7 +271,7 @@ pub fn run_audit(state: State<AppState>) -> Result<Vec<AuditResult>, String> {
                 for a in &adapters {
                     if !ext.agents.contains(&a.name().to_string()) { continue; }
                     for server in a.read_mcp_servers() {
-                        if stable_id(&server.name, "mcp", a.name()) == ext.id {
+                        if scanner::stable_id_for(&server.name, "mcp", a.name()) == ext.id {
                             cmd = Some(server.command);
                             args = server.args;
                             env = server.env;
@@ -222,7 +344,7 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), String
                         let name = scanner::parse_skill_name(&skill_file).unwrap_or_else(||
                             path.file_stem().unwrap_or_default().to_string_lossy().to_string()
                         );
-                        if stable_id(&name, "skill", adapter.name()) == id {
+                        if scanner::stable_id_for(&name, "skill", adapter.name()) == id {
                             if path.is_dir() {
                                 std::fs::remove_dir_all(&path)
                                     .map_err(|e| format!("Failed to delete skill directory: {}", e))?;
@@ -240,7 +362,7 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), String
             for adapter in &adapters {
                 if !ext.agents.contains(&adapter.name().to_string()) { continue; }
                 for server in adapter.read_mcp_servers() {
-                    if stable_id(&server.name, "mcp", adapter.name()) == id {
+                    if scanner::stable_id_for(&server.name, "mcp", adapter.name()) == id {
                         let config_path = adapter.mcp_config_path();
                         deployer::remove_mcp_server(&config_path, &server.name)
                             .map_err(|e| format!("Failed to remove MCP server config: {}", e))?;
@@ -254,7 +376,7 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), String
                 if !ext.agents.contains(&adapter.name().to_string()) { continue; }
                 for hook in adapter.read_hooks() {
                     let hook_name = format!("{}:{}:{}", hook.event, hook.matcher.as_deref().unwrap_or("*"), hook.command);
-                    if stable_id(&hook_name, "hook", adapter.name()) == id {
+                    if scanner::stable_id_for(&hook_name, "hook", adapter.name()) == id {
                         let config_path = adapter.hook_config_path();
                         deployer::remove_hook(&config_path, &hook.event, hook.matcher.as_deref(), &hook.command)
                             .map_err(|e| format!("Failed to remove hook config: {}", e))?;
@@ -267,7 +389,7 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), String
             for adapter in &adapters {
                 if !ext.agents.contains(&adapter.name().to_string()) { continue; }
                 for plugin in adapter.read_plugins() {
-                    if stable_id(&format!("{}:{}", plugin.name, plugin.source), "plugin", adapter.name()) == id {
+                    if scanner::stable_id_for(&format!("{}:{}", plugin.name, plugin.source), "plugin", adapter.name()) == id {
                         if adapter.name() == "claude" {
                             // For Claude: remove from enabledPlugins in settings.json
                             let config_path = adapter.mcp_config_path();
@@ -347,7 +469,7 @@ fn audit_extension_by_name(name: &str, extensions: &[Extension], adapters: &[Box
                             let sname = scanner::parse_skill_name(&skill_file).unwrap_or_else(||
                                 path.file_stem().unwrap_or_default().to_string_lossy().to_string()
                             );
-                            if stable_id(&sname, "skill", a.name()) == ext.id {
+                            if scanner::stable_id_for(&sname, "skill", a.name()) == ext.id {
                                 content = std::fs::read_to_string(&skill_file).unwrap_or_default();
                                 file_path = skill_file.to_string_lossy().to_string();
                                 break 'outer;
@@ -376,19 +498,6 @@ fn audit_extension_by_name(name: &str, extensions: &[Extension], adapters: &[Box
     results
 }
 
-fn fnv1a(data: &[u8]) -> u64 {
-    let mut hash: u64 = 0xcbf29ce484222325;
-    for &b in data {
-        hash ^= b as u64;
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-    hash
-}
-
-fn stable_id(name: &str, kind: &str, agent: &str) -> String {
-    let key = format!("{}:{}:{}", kind, agent, name);
-    format!("{:016x}", fnv1a(key.as_bytes()))
-}
 
 #[derive(serde::Serialize)]
 pub struct ExtensionContent {
@@ -523,7 +632,7 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
                         let name = scanner::parse_skill_name(&skill_file).unwrap_or_else(||
                             path.file_stem().unwrap_or_default().to_string_lossy().to_string()
                         );
-                        if stable_id(&name, "skill", adapter.name()) == id {
+                        if scanner::stable_id_for(&name, "skill", adapter.name()) == id {
                             let dir = if path.is_dir() {
                                 path.to_string_lossy().to_string()
                             } else {
@@ -554,7 +663,7 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
             for adapter in &adapters {
                 if !ext.agents.contains(&adapter.name().to_string()) { continue; }
                 for server in adapter.read_mcp_servers() {
-                    if stable_id(&server.name, "mcp", adapter.name()) == id {
+                    if scanner::stable_id_for(&server.name, "mcp", adapter.name()) == id {
                         let config_path = adapter.mcp_config_path();
                         let mut lines = vec![
                             format!("Command: {}", server.command),
@@ -588,7 +697,7 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
                 if !ext.agents.contains(&adapter.name().to_string()) { continue; }
                 for hook in adapter.read_hooks() {
                     let hook_name = format!("{}:{}:{}", hook.event, hook.matcher.as_deref().unwrap_or("*"), hook.command);
-                    if stable_id(&hook_name, "hook", adapter.name()) == id {
+                    if scanner::stable_id_for(&hook_name, "hook", adapter.name()) == id {
                         let config_path = adapter.hook_config_path();
                         let mut lines = vec![
                             format!("Event: {}", hook.event),
@@ -616,7 +725,7 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
             for adapter in &adapters {
                 if !ext.agents.contains(&adapter.name().to_string()) { continue; }
                 for plugin in adapter.read_plugins() {
-                    if stable_id(&format!("{}:{}", plugin.name, plugin.source), "plugin", adapter.name()) == id {
+                    if scanner::stable_id_for(&format!("{}:{}", plugin.name, plugin.source), "plugin", adapter.name()) == id {
                         let path_str = plugin.path.as_ref()
                             .map(|p| p.to_string_lossy().to_string());
                         return Ok(ExtensionContent {
@@ -840,7 +949,7 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
                         let name = scanner::parse_skill_name(&skill_file).unwrap_or_else(||
                             path.file_stem().unwrap_or_default().to_string_lossy().to_string()
                         );
-                        if stable_id(&name, "skill", adapter.name()) == extension_id {
+                        if scanner::stable_id_for(&name, "skill", adapter.name()) == extension_id {
                             source_path = Some(path);
                             break;
                         }
@@ -866,7 +975,7 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
             for adapter in &adapters {
                 if !ext.agents.contains(&adapter.name().to_string()) { continue; }
                 for server in adapter.read_mcp_servers() {
-                    if stable_id(&server.name, "mcp", adapter.name()) == extension_id {
+                    if scanner::stable_id_for(&server.name, "mcp", adapter.name()) == extension_id {
                         source_entry = Some(server);
                         break;
                     }
@@ -890,7 +999,7 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
                 if !ext.agents.contains(&adapter.name().to_string()) { continue; }
                 for hook in adapter.read_hooks() {
                     let hook_name = format!("{}:{}:{}", hook.event, hook.matcher.as_deref().unwrap_or("*"), hook.command);
-                    if stable_id(&hook_name, "hook", adapter.name()) == extension_id {
+                    if scanner::stable_id_for(&hook_name, "hook", adapter.name()) == extension_id {
                         source_entry = Some(hook);
                         break;
                     }
@@ -942,7 +1051,7 @@ pub fn add_project(state: State<AppState>, path: String) -> Result<Project, Stri
     }
 
     // Generate stable ID from path hash
-    let id = format!("proj-{:016x}", fnv1a(path.as_bytes()));
+    let id = format!("proj-{:016x}", scanner::fnv1a(path.as_bytes()));
 
     let name = project_path.file_name()
         .unwrap_or_default()

@@ -11,6 +11,7 @@ hk-core = { path = "../hk-core" }
 tauri = { version = "2", features = ["macos-private-api"] }
 serde.workspace = true
 serde_json.workspace = true
+anyhow.workspace = true
 chrono.workspace = true
 dirs = "6"
 tauri-plugin-dialog = "2"
