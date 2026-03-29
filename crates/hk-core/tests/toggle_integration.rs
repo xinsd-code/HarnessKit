@@ -1,0 +1,191 @@
+//! Integration test: full enable/disable roundtrip for skills.
+
+use hk_core::models::*;
+use hk_core::scanner::scan_skill_dir;
+use hk_core::store::Store;
+use tempfile::TempDir;
+
+#[test]
+fn test_skill_disable_enable_roundtrip() {
+    let dir = TempDir::new().unwrap();
+    let db_path = dir.path().join("test.db");
+    let store = Store::open(&db_path).unwrap();
+
+    // Set up skill directory
+    let skill_dir = dir.path().join("skills");
+    let my_skill = skill_dir.join("my-skill");
+    std::fs::create_dir_all(&my_skill).unwrap();
+    std::fs::write(
+        my_skill.join("SKILL.md"),
+        "---\nname: my-skill\ndescription: test\n---\nHello",
+    )
+    .unwrap();
+
+    // Phase 1: Initial scan — skill is enabled
+    let exts = scan_skill_dir(&skill_dir, "claude");
+    assert_eq!(exts.len(), 1);
+    assert!(exts[0].enabled);
+    store.sync_extensions(&exts).unwrap();
+
+    let all = store.list_extensions(None, None).unwrap();
+    assert_eq!(all.len(), 1);
+    assert!(all[0].enabled);
+    let ext_id = all[0].id.clone();
+
+    // Phase 2: Disable — rename SKILL.md → SKILL.md.disabled
+    std::fs::rename(
+        my_skill.join("SKILL.md"),
+        my_skill.join("SKILL.md.disabled"),
+    )
+    .unwrap();
+    store.set_enabled(&ext_id, false).unwrap();
+
+    // Phase 3: Re-scan — disabled skill should be found with enabled=false
+    let exts = scan_skill_dir(&skill_dir, "claude");
+    assert_eq!(exts.len(), 1, "Scanner should find disabled skill");
+    assert!(
+        !exts[0].enabled,
+        "Disabled skill should have enabled=false"
+    );
+    assert_eq!(
+        exts[0].id, ext_id,
+        "ID should be stable across enable/disable"
+    );
+    store.sync_extensions(&exts).unwrap();
+
+    let fetched = store.get_extension(&ext_id).unwrap().unwrap();
+    assert!(
+        !fetched.enabled,
+        "Disabled extension should survive re-scan"
+    );
+
+    // Phase 4: Re-enable — rename back
+    std::fs::rename(
+        my_skill.join("SKILL.md.disabled"),
+        my_skill.join("SKILL.md"),
+    )
+    .unwrap();
+    store.set_enabled(&ext_id, true).unwrap();
+
+    // Phase 5: Re-scan — should be enabled again
+    let exts = scan_skill_dir(&skill_dir, "claude");
+    assert_eq!(exts.len(), 1);
+    assert!(exts[0].enabled);
+    store.sync_extensions(&exts).unwrap();
+
+    let fetched = store.get_extension(&ext_id).unwrap().unwrap();
+    assert!(
+        fetched.enabled,
+        "Re-enabled extension should work after scan"
+    );
+}
+
+#[test]
+fn test_disabled_mcp_survives_rescan() {
+    let dir = TempDir::new().unwrap();
+    let db_path = dir.path().join("test.db");
+    let store = Store::open(&db_path).unwrap();
+
+    // Insert MCP extension and disable it (simulating config removal)
+    let ext = Extension {
+        id: "mcp-test".into(),
+        kind: ExtensionKind::Mcp,
+        name: "github".into(),
+        description: "".into(),
+        source: Source {
+            origin: SourceOrigin::Agent,
+            url: None,
+            version: None,
+            commit_hash: None,
+        },
+        agents: vec!["claude".into()],
+        tags: vec![],
+        category: None,
+        permissions: vec![],
+        enabled: true,
+        trust_score: None,
+        installed_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+        last_used_at: None,
+        source_path: None,
+    };
+    store.insert_extension(&ext).unwrap();
+    store.set_enabled("mcp-test", false).unwrap();
+    store
+        .set_disabled_config(
+            "mcp-test",
+            Some(r#"{"command":"npx","args":["-y","@mcp/github"]}"#),
+        )
+        .unwrap();
+
+    // Sync with empty results (MCP removed from config file)
+    store.sync_extensions(&[]).unwrap();
+
+    // Disabled MCP should survive the sync
+    let fetched = store.get_extension("mcp-test").unwrap();
+    assert!(fetched.is_some(), "Disabled MCP should survive sync");
+    let fetched = fetched.unwrap();
+    assert!(!fetched.enabled);
+
+    // Saved config should still be available for re-enable
+    let saved = store.get_disabled_config("mcp-test").unwrap();
+    assert!(saved.is_some(), "Disabled config should survive sync");
+    assert!(saved.unwrap().contains("npx"));
+}
+
+#[test]
+fn test_shared_skill_sibling_detection() {
+    let dir = TempDir::new().unwrap();
+    let db_path = dir.path().join("test.db");
+    let store = Store::open(&db_path).unwrap();
+
+    let shared_path = dir.path().join("agents/skills/shared-skill/SKILL.md");
+
+    // Create two extensions pointing to the same source_path (different agents)
+    let ext1 = Extension {
+        id: "shared-cursor".into(),
+        kind: ExtensionKind::Skill,
+        name: "shared-skill".into(),
+        description: "".into(),
+        source: Source {
+            origin: SourceOrigin::Local,
+            url: None,
+            version: None,
+            commit_hash: None,
+        },
+        agents: vec!["cursor".into()],
+        tags: vec![],
+        category: None,
+        permissions: vec![],
+        enabled: true,
+        trust_score: None,
+        installed_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+        last_used_at: None,
+        source_path: Some(shared_path.to_string_lossy().to_string()),
+    };
+    store.insert_extension(&ext1).unwrap();
+
+    let mut ext2 = ext1.clone();
+    ext2.id = "shared-codex".into();
+    ext2.agents = vec!["codex".into()];
+    store.insert_extension(&ext2).unwrap();
+
+    // Find siblings
+    let siblings = store
+        .find_siblings_by_source_path("shared-cursor")
+        .unwrap();
+    assert_eq!(siblings.len(), 2);
+    assert!(siblings.contains(&"shared-cursor".to_string()));
+    assert!(siblings.contains(&"shared-codex".to_string()));
+
+    // Toggling one should allow toggling all siblings
+    for sib_id in &siblings {
+        store.set_enabled(sib_id, false).unwrap();
+    }
+
+    let e1 = store.get_extension("shared-cursor").unwrap().unwrap();
+    let e2 = store.get_extension("shared-codex").unwrap().unwrap();
+    assert!(!e1.enabled);
+    assert!(!e2.enabled);
+}
