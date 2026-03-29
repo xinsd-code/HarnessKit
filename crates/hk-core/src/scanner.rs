@@ -31,16 +31,22 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
 
     for entry in entries.flatten() {
         let path = entry.path();
-        // Skills can be either: a directory containing SKILL.md, or a standalone .md file
-        let skill_file = if path.is_dir() {
-            path.join("SKILL.md")
+        // Skills can be either: a directory containing SKILL.md (or SKILL.md.disabled), or a standalone .md file
+        let (skill_file, is_disabled) = if path.is_dir() {
+            let enabled_file = path.join("SKILL.md");
+            let disabled_file = path.join("SKILL.md.disabled");
+            if enabled_file.exists() {
+                (enabled_file, false)
+            } else if disabled_file.exists() {
+                (disabled_file, true)
+            } else {
+                continue;
+            }
         } else if path.extension().is_some_and(|ext| ext == "md") {
-            path.clone()
+            (path.clone(), false)
         } else {
             continue;
         };
-
-        if !skill_file.exists() { continue; }
         // Capture atime BEFORE reading content (read_to_string updates atime)
         let last_used = skill_last_used_at(&skill_file);
         let Ok(content) = std::fs::read_to_string(&skill_file) else { continue; };
@@ -62,12 +68,16 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
             tags: vec![],
             category,
             permissions: infer_skill_permissions(&content),
-            enabled: true,
+            enabled: !is_disabled,
             trust_score: None,
             installed_at: file_created_time(&path),
             updated_at: file_modified_time(&path),
             last_used_at: last_used,
-            source_path: Some(skill_file.to_string_lossy().to_string()),
+            source_path: Some(if is_disabled {
+                path.join("SKILL.md").to_string_lossy().to_string()
+            } else {
+                skill_file.to_string_lossy().to_string()
+            }),
         });
     }
     extensions
@@ -974,5 +984,56 @@ mod tests {
         // max_depth=3 should find it
         let deep_result = discover_projects(root.path(), 3);
         assert_eq!(deep_result.len(), 1);
+    }
+
+    #[test]
+    fn test_scan_discovers_disabled_skills() {
+        let dir = TempDir::new().unwrap();
+        let skill_dir = dir.path().join("my-skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md.disabled"),
+            "---\nname: my-skill\ndescription: A test skill\n---\nContent here",
+        ).unwrap();
+
+        let extensions = super::scan_skill_dir(dir.path(), "claude");
+        assert_eq!(extensions.len(), 1);
+        assert_eq!(extensions[0].name, "my-skill");
+        assert!(!extensions[0].enabled, "Disabled skill should have enabled=false");
+    }
+
+    #[test]
+    fn test_disabled_skill_same_id_as_enabled() {
+        let dir = TempDir::new().unwrap();
+        let skill_dir = dir.path().join("my-skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+
+        // Scan as enabled
+        std::fs::write(skill_dir.join("SKILL.md"), "---\nname: my-skill\n---\n").unwrap();
+        let enabled_exts = super::scan_skill_dir(dir.path(), "claude");
+        let enabled_id = enabled_exts[0].id.clone();
+
+        // Rename to disabled
+        std::fs::rename(skill_dir.join("SKILL.md"), skill_dir.join("SKILL.md.disabled")).unwrap();
+        let disabled_exts = super::scan_skill_dir(dir.path(), "claude");
+        let disabled_id = disabled_exts[0].id.clone();
+
+        assert_eq!(enabled_id, disabled_id, "Same skill should produce same ID whether enabled or disabled");
+    }
+
+    #[test]
+    fn test_disabled_skill_source_path_is_enabled_path() {
+        let dir = TempDir::new().unwrap();
+        let skill_dir = dir.path().join("my-skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md.disabled"),
+            "---\nname: my-skill\n---\n",
+        ).unwrap();
+
+        let extensions = super::scan_skill_dir(dir.path(), "claude");
+        assert_eq!(extensions.len(), 1);
+        let source_path = extensions[0].source_path.as_ref().unwrap();
+        assert!(source_path.ends_with("SKILL.md"), "source_path should point to SKILL.md, not SKILL.md.disabled, got: {}", source_path);
     }
 }
