@@ -183,19 +183,35 @@ fn toggle_plugin_config(ext: &Extension, enabled: bool, store: &Store) -> anyhow
     for a in &adapters {
         if !ext.agents.contains(&a.name().to_string()) { continue; }
         if a.name() == "claude" {
+            // Must reconstruct the full "name@source" key used in enabledPlugins.
+            // ext.name is just the name part; the scanner splits "name@source" into separate fields.
             let config_path = a.mcp_config_path();
-            let plugin_key = &ext.name;
+            let plugin_key = {
+                let mut found_key = None;
+                for plugin in a.read_plugins() {
+                    let id_name = format!("{}:{}", plugin.name, plugin.source);
+                    if scanner::stable_id_for(&id_name, "plugin", a.name()) == ext.id {
+                        found_key = Some(if plugin.source.is_empty() {
+                            plugin.name.clone()
+                        } else {
+                            format!("{}@{}", plugin.name, plugin.source)
+                        });
+                        break;
+                    }
+                }
+                found_key.ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found in agent config", ext.name))?
+            };
             if enabled {
                 let saved = store.get_disabled_config(&ext.id)?
                     .ok_or_else(|| anyhow::anyhow!("No saved config for plugin '{}'", ext.name))?;
                 let value: serde_json::Value = serde_json::from_str(&saved)?;
-                deployer::restore_plugin_entry(&config_path, plugin_key, &value)?;
+                deployer::restore_plugin_entry(&config_path, &plugin_key, &value)?;
                 store.set_disabled_config(&ext.id, None)?;
             } else {
-                let value = deployer::read_plugin_config(&config_path, plugin_key)?
+                let value = deployer::read_plugin_config(&config_path, &plugin_key)?
                     .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found in config", ext.name))?;
                 store.set_disabled_config(&ext.id, Some(&value.to_string()))?;
-                deployer::remove_plugin_entry(&config_path, plugin_key)?;
+                deployer::remove_plugin_entry(&config_path, &plugin_key)?;
             }
         } else {
             for plugin in a.read_plugins() {
