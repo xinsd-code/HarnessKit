@@ -137,6 +137,79 @@ pub fn remove_plugin_entry(config_path: &Path, plugin_key: &str) -> Result<()> {
     write_json(config_path, &config)
 }
 
+/// Restore a previously disabled MCP server entry into the config file.
+pub fn restore_mcp_server(config_path: &Path, server_name: &str, entry: &serde_json::Value) -> Result<()> {
+    let mut config = read_or_create_json(config_path)?;
+    let servers = config.as_object_mut().context("Config is not an object")?
+        .entry("mcpServers")
+        .or_insert_with(|| serde_json::json!({}));
+    servers.as_object_mut().context("mcpServers is not an object")?
+        .insert(server_name.to_string(), entry.clone());
+    write_json(config_path, &config)
+}
+
+/// Restore a previously disabled hook entry into the config file.
+pub fn restore_hook(config_path: &Path, event: &str, entry: &serde_json::Value) -> Result<()> {
+    let mut config = read_or_create_json(config_path)?;
+    let hooks = config.as_object_mut().context("Config is not an object")?
+        .entry("hooks")
+        .or_insert_with(|| serde_json::json!({}));
+    let event_arr = hooks.as_object_mut().context("hooks is not an object")?
+        .entry(event)
+        .or_insert_with(|| serde_json::json!([]));
+    let arr = event_arr.as_array_mut().context("hook event is not an array")?;
+    arr.push(entry.clone());
+    write_json(config_path, &config)
+}
+
+/// Restore a previously disabled plugin entry into enabledPlugins.
+pub fn restore_plugin_entry(config_path: &Path, plugin_key: &str, value: &serde_json::Value) -> Result<()> {
+    let mut config = read_or_create_json(config_path)?;
+    let plugins = config.as_object_mut().context("Config is not an object")?
+        .entry("enabledPlugins")
+        .or_insert_with(|| serde_json::json!({}));
+    plugins.as_object_mut().context("enabledPlugins is not an object")?
+        .insert(plugin_key.to_string(), value.clone());
+    write_json(config_path, &config)
+}
+
+/// Read an MCP server entry's full JSON value from a config file.
+pub fn read_mcp_server_config(config_path: &Path, server_name: &str) -> Result<Option<serde_json::Value>> {
+    if !config_path.exists() { return Ok(None); }
+    let config = read_or_create_json(config_path)?;
+    Ok(config.get("mcpServers")
+        .and_then(|v| v.get(server_name))
+        .cloned())
+}
+
+/// Read a hook entry's full JSON value from a config file.
+pub fn read_hook_config(config_path: &Path, event: &str, matcher: Option<&str>, command: &str) -> Result<Option<serde_json::Value>> {
+    if !config_path.exists() { return Ok(None); }
+    let config = read_or_create_json(config_path)?;
+    let hooks = config.get("hooks").and_then(|v| v.as_object());
+    let Some(hooks) = hooks else { return Ok(None); };
+    let Some(event_arr) = hooks.get(event).and_then(|v| v.as_array()) else { return Ok(None); };
+    for group in event_arr {
+        let group_matcher = group.get("matcher").and_then(|v| v.as_str());
+        if group_matcher != matcher { continue; }
+        if let Some(cmds) = group.get("hooks").and_then(|v| v.as_array()) {
+            if cmds.iter().any(|c| c.as_str() == Some(command)) {
+                return Ok(Some(group.clone()));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Read a plugin entry's value from enabledPlugins in a config file.
+pub fn read_plugin_config(config_path: &Path, plugin_key: &str) -> Result<Option<serde_json::Value>> {
+    if !config_path.exists() { return Ok(None); }
+    let config = read_or_create_json(config_path)?;
+    Ok(config.get("enabledPlugins")
+        .and_then(|v| v.get(plugin_key))
+        .cloned())
+}
+
 fn read_or_create_json(path: &Path) -> Result<serde_json::Value> {
     if path.exists() {
         let content = std::fs::read_to_string(path)?;
@@ -292,5 +365,102 @@ mod tests {
         let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         let hooks = content["hooks"]["PreToolUse"][0]["hooks"].as_array().unwrap();
         assert_eq!(hooks.len(), 1); // not duplicated
+    }
+
+    #[test]
+    fn test_restore_mcp_server() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("settings.json");
+        std::fs::write(&config, r#"{"mcpServers":{}}"#).unwrap();
+
+        let entry_json = r#"{"command":"npx","args":["-y","@mcp/github"],"env":{"TOKEN":"abc"}}"#;
+        let entry: serde_json::Value = serde_json::from_str(entry_json).unwrap();
+        restore_mcp_server(&config, "github", &entry).unwrap();
+
+        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert_eq!(content["mcpServers"]["github"]["command"], "npx");
+        assert_eq!(content["mcpServers"]["github"]["env"]["TOKEN"], "abc");
+    }
+
+    #[test]
+    fn test_restore_hook() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("settings.json");
+        std::fs::write(&config, r#"{"hooks":{}}"#).unwrap();
+
+        let entry = serde_json::json!({"matcher": "Bash", "hooks": ["echo test"]});
+        restore_hook(&config, "PreToolUse", &entry).unwrap();
+
+        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert_eq!(content["hooks"]["PreToolUse"][0]["matcher"], "Bash");
+        assert_eq!(content["hooks"]["PreToolUse"][0]["hooks"][0], "echo test");
+    }
+
+    #[test]
+    fn test_restore_plugin_entry() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("settings.json");
+        std::fs::write(&config, r#"{"enabledPlugins":{}}"#).unwrap();
+
+        restore_plugin_entry(&config, "my-plugin@source", &serde_json::json!(true)).unwrap();
+
+        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert_eq!(content["enabledPlugins"]["my-plugin@source"], true);
+    }
+
+    #[test]
+    fn test_read_mcp_server_config() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("settings.json");
+        std::fs::write(&config, r#"{"mcpServers":{"github":{"command":"npx","args":["-y"]}}}"#).unwrap();
+
+        let entry = read_mcp_server_config(&config, "github").unwrap();
+        assert!(entry.is_some());
+        assert_eq!(entry.unwrap()["command"], "npx");
+
+        let missing = read_mcp_server_config(&config, "nonexistent").unwrap();
+        assert!(missing.is_none());
+    }
+
+    #[test]
+    fn test_read_hook_config() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("settings.json");
+        std::fs::write(&config, r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":["echo test"]}]}}"#).unwrap();
+
+        let entry = read_hook_config(&config, "PreToolUse", Some("Bash"), "echo test").unwrap();
+        assert!(entry.is_some());
+        assert_eq!(entry.unwrap()["matcher"], "Bash");
+
+        let missing = read_hook_config(&config, "PreToolUse", Some("Bash"), "nonexistent").unwrap();
+        assert!(missing.is_none());
+    }
+
+    #[test]
+    fn test_read_plugin_config() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("settings.json");
+        std::fs::write(&config, r#"{"enabledPlugins":{"my-plugin@source":true}}"#).unwrap();
+
+        let entry = read_plugin_config(&config, "my-plugin@source").unwrap();
+        assert_eq!(entry.unwrap(), serde_json::json!(true));
+    }
+
+    #[test]
+    fn test_remove_and_restore_mcp_roundtrip() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("settings.json");
+        std::fs::write(&config, r#"{"mcpServers":{"github":{"command":"npx","args":["-y"],"env":{}}}}"#).unwrap();
+
+        // Read, remove, restore
+        let saved = read_mcp_server_config(&config, "github").unwrap().unwrap();
+        remove_mcp_server(&config, "github").unwrap();
+
+        let after_remove: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert!(after_remove["mcpServers"].get("github").is_none());
+
+        restore_mcp_server(&config, "github", &saved).unwrap();
+        let after_restore: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert_eq!(after_restore["mcpServers"]["github"]["command"], "npx");
     }
 }
