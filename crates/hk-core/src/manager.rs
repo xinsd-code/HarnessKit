@@ -245,6 +245,7 @@ mod tests {
             installed_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             last_used_at: None,
+            source_path: None,
         };
         store.insert_extension(&ext).unwrap();
 
@@ -274,6 +275,7 @@ mod tests {
             installed_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             last_used_at: None,
+            source_path: None,
         };
         store.insert_extension(&ext).unwrap();
 

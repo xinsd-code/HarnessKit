@@ -13,6 +13,11 @@ fn fnv1a(data: &[u8]) -> u64 {
     hash
 }
 
+/// Public wrapper for stable_id, used by other modules for ID matching.
+pub fn stable_id_for(name: &str, kind: &str, agent: &str) -> String {
+    stable_id(name, kind, agent)
+}
+
 /// Generate a deterministic ID from name + kind + agent so re-scans produce the same ID
 fn stable_id(name: &str, kind: &str, agent: &str) -> String {
     let key = format!("{}:{}:{}", kind, agent, name);
@@ -62,6 +67,7 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
             installed_at: file_created_time(&path),
             updated_at: file_modified_time(&path),
             last_used_at: last_used,
+            source_path: Some(skill_file.to_string_lossy().to_string()),
         });
     }
     extensions
@@ -134,6 +140,7 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             installed_at: config_created,
             updated_at: config_modified,
             last_used_at: None,
+            source_path: None,
         }
     }).collect()
 }
@@ -167,6 +174,7 @@ pub fn scan_hooks(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             installed_at: config_created,
             updated_at: config_modified,
             last_used_at: None,
+            source_path: None,
         }
     }).collect()
 }
@@ -219,6 +227,7 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             installed_at,
             updated_at,
             last_used_at: None,
+            source_path: None,
         }
     }).collect()
 }
@@ -391,6 +400,7 @@ pub fn scan_project(project_path: &Path) -> Vec<Extension> {
                 installed_at: config_created,
                 updated_at: config_modified,
                 last_used_at: None,
+                source_path: None,
             });
         }
     }
@@ -433,6 +443,7 @@ pub fn scan_project(project_path: &Path) -> Vec<Extension> {
                 installed_at: config_created,
                 updated_at: config_modified,
                 last_used_at: None,
+                source_path: None,
             });
         }
 
@@ -502,6 +513,7 @@ pub fn scan_project(project_path: &Path) -> Vec<Extension> {
                 installed_at: file_created_time(&settings_path),
                 updated_at: file_modified_time(&settings_path),
                 last_used_at: None,
+                source_path: None,
             });
         }
     } // end for settings_files

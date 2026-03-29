@@ -61,6 +61,8 @@ impl Store {
         let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN last_used_at TEXT", []);
         // Migration: add disabled_config column for real enable/disable
         let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN disabled_config TEXT", []);
+        // Migration: add source_path column for tracking physical file locations
+        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN source_path TEXT", []);
         // Migration: hidden_extensions table for surviving re-scans
         self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS hidden_extensions (id TEXT PRIMARY KEY)"
@@ -117,8 +119,8 @@ impl Store {
     /// Preserves user-set fields: enabled, tags, category, trust_score.
     pub fn insert_extension(&self, ext: &Extension) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+            "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at, source_path)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
              ON CONFLICT(id) DO UPDATE SET
                kind = excluded.kind,
                name = excluded.name,
@@ -128,7 +130,8 @@ impl Store {
                permissions_json = excluded.permissions_json,
                updated_at = excluded.updated_at,
                category = extensions.category,
-               last_used_at = excluded.last_used_at",
+               last_used_at = excluded.last_used_at,
+               source_path = excluded.source_path",
             params![
                 ext.id,
                 ext.kind.as_str(),
@@ -144,6 +147,7 @@ impl Store {
                 ext.updated_at.to_rfc3339(),
                 ext.category,
                 ext.last_used_at.map(|dt| dt.to_rfc3339()),
+                ext.source_path,
             ],
         )?;
         Ok(())
@@ -151,7 +155,7 @@ impl Store {
 
     pub fn get_extension(&self, id: &str) -> Result<Option<Extension>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at
+            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at, source_path
              FROM extensions WHERE id = ?1"
         )?;
         let mut rows = stmt.query_map(params![id], |row| Ok(self.row_to_extension(row)))?;
@@ -164,7 +168,7 @@ impl Store {
     }
 
     pub fn list_extensions(&self, kind: Option<ExtensionKind>, agent: Option<&str>) -> Result<Vec<Extension>> {
-        let mut sql = "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at FROM extensions WHERE 1=1".to_string();
+        let mut sql = "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at, source_path FROM extensions WHERE 1=1".to_string();
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
         if let Some(k) = kind {
@@ -255,6 +259,17 @@ impl Store {
         Ok(())
     }
 
+    /// Find all extension IDs that share the same source_path as the given extension.
+    pub fn find_siblings_by_source_path(&self, id: &str) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT e2.id FROM extensions e1
+             JOIN extensions e2 ON e1.source_path = e2.source_path
+             WHERE e1.id = ?1 AND e1.source_path IS NOT NULL"
+        )?;
+        let rows = stmt.query_map(params![id], |row| row.get::<_, String>(0))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
     pub fn delete_extension(&self, id: &str) -> Result<()> {
         self.conn.execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
         Ok(())
@@ -268,8 +283,8 @@ impl Store {
 
         for ext in extensions {
             tx.execute(
-                "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+                "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at, source_path)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
                  ON CONFLICT(id) DO UPDATE SET
                    kind = excluded.kind,
                    name = excluded.name,
@@ -279,7 +294,8 @@ impl Store {
                    permissions_json = excluded.permissions_json,
                    updated_at = excluded.updated_at,
                    category = extensions.category,
-                   last_used_at = excluded.last_used_at",
+                   last_used_at = excluded.last_used_at,
+                   source_path = excluded.source_path",
                 params![
                     ext.id,
                     ext.kind.as_str(),
@@ -295,6 +311,7 @@ impl Store {
                     ext.updated_at.to_rfc3339(),
                     ext.category,
                     ext.last_used_at.map(|dt| dt.to_rfc3339()),
+                    ext.source_path,
                 ],
             )?;
         }
@@ -444,6 +461,7 @@ impl Store {
             updated_at: DateTime::parse_from_rfc3339(&updated_at_str)?
                 .with_timezone(&Utc),
             last_used_at: last_used_at_str.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
+            source_path: row.get::<_, Option<String>>(14).ok().flatten(),
         })
     }
 }
@@ -483,6 +501,7 @@ mod tests {
             installed_at: Utc::now(),
             updated_at: Utc::now(),
             last_used_at: None,
+            source_path: None,
         }
     }
 
@@ -706,5 +725,34 @@ mod tests {
         store.delete_project("proj-001").unwrap();
         let projects = store.list_projects().unwrap();
         assert!(projects.is_empty());
+    }
+
+    #[test]
+    fn test_find_siblings_by_source_path() {
+        let (store, _dir) = test_store();
+        let shared_path = "/home/.agents/skills/my-skill/SKILL.md";
+
+        let mut ext1 = sample_extension();
+        ext1.id = "ext-cursor".into();
+        ext1.agents = vec!["cursor".into()];
+        ext1.source_path = Some(shared_path.to_string());
+        store.insert_extension(&ext1).unwrap();
+
+        let mut ext2 = sample_extension();
+        ext2.id = "ext-codex".into();
+        ext2.agents = vec!["codex".into()];
+        ext2.source_path = Some(shared_path.to_string());
+        store.insert_extension(&ext2).unwrap();
+
+        let mut ext3 = sample_extension();
+        ext3.id = "ext-claude".into();
+        ext3.agents = vec!["claude".into()];
+        ext3.source_path = Some("/home/.claude/skills/other/SKILL.md".to_string());
+        store.insert_extension(&ext3).unwrap();
+
+        let siblings = store.find_siblings_by_source_path("ext-cursor").unwrap();
+        assert_eq!(siblings.len(), 2);
+        assert!(siblings.contains(&"ext-cursor".to_string()));
+        assert!(siblings.contains(&"ext-codex".to_string()));
     }
 }
