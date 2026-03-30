@@ -12,6 +12,8 @@ import ExtensionsPage from "./pages/extensions";
 import AuditPage from "./pages/audit";
 import SettingsPage from "./pages/settings";
 import MarketplacePage from "./pages/marketplace";
+import { Onboarding, useOnboarding } from "./components/onboarding/onboarding";
+import { Confetti } from "./components/onboarding/confetti";
 
 /** Minimum interval (ms) between consecutive scan_and_sync calls */
 const SCAN_DEBOUNCE_MS = 5_000;
@@ -21,6 +23,8 @@ export default function App() {
   const mode = useUIStore((s) => s.mode);
   const fetchExtensions = useExtensionStore((s) => s.fetch);
   const loadCachedAudit = useAuditStore((s) => s.loadCached);
+  const { show: showOnboarding, complete: completeOnboarding } = useOnboarding();
+  const [showConfetti, setShowConfetti] = useState(false);
   const lastScanRef = useRef(0);
 
   // Track resolved dark/light (reacts to OS changes when mode === "system")
@@ -74,18 +78,25 @@ export default function App() {
     getCurrentWindow().setTheme(mode === "system" ? null : resolved).catch(() => {});
   }, [themeName, mode, resolved]);
 
+  if (showOnboarding) {
+    return <Onboarding onComplete={() => { completeOnboarding(); setShowConfetti(true); setTimeout(() => setShowConfetti(false), 3000); }} />;
+  }
+
   return (
-    <HashRouter>
-      <Routes>
-        <Route element={<AppShell />}>
-          <Route index element={<OverviewPage />} />
-          <Route path="agents" element={<AgentsPage />} />
-          <Route path="extensions" element={<ExtensionsPage />} />
-          <Route path="marketplace" element={<MarketplacePage />} />
-          <Route path="audit" element={<AuditPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-        </Route>
-      </Routes>
-    </HashRouter>
+    <>
+      {showConfetti && <Confetti />}
+      <HashRouter>
+        <Routes>
+          <Route element={<AppShell />}>
+            <Route index element={<OverviewPage />} />
+            <Route path="agents" element={<AgentsPage />} />
+            <Route path="extensions" element={<ExtensionsPage />} />
+            <Route path="marketplace" element={<MarketplacePage />} />
+            <Route path="audit" element={<AuditPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+          </Route>
+        </Routes>
+      </HashRouter>
+    </>
   );
 }
