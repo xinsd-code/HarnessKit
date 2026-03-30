@@ -632,10 +632,10 @@ export default function OverviewPage() {
               loading={auditLoading}
               onClick={() => {
                 setAuditLoading(true);
-                requestAnimationFrame(() => {
+                setTimeout(() => {
                   runAudit().finally(() => setAuditLoading(false));
                   setTimeout(() => navigate("/audit"), 600);
-                });
+                }, 50);
               }}
             />
             <QuickAction
@@ -645,10 +645,10 @@ export default function OverviewPage() {
               loading={updatesLoading}
               onClick={() => {
                 setUpdatesLoading(true);
-                requestAnimationFrame(() => {
+                setTimeout(() => {
                   checkUpdates().finally(() => setUpdatesLoading(false));
                   setTimeout(() => navigate("/extensions"), 600);
-                });
+                }, 50);
               }}
             />
             <QuickAction
