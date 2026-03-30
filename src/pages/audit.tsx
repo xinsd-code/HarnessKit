@@ -242,14 +242,7 @@ export default function AuditPage() {
                   {severity}
                   <span className="normal-case tracking-normal font-normal">({items.length})</span>
                 </button>
-                {isCollapsed ? (
-                  <button
-                    onClick={() => toggleSeverityCollapse(severity)}
-                    className="px-2 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                  >
-                    Show {items.length} more
-                  </button>
-                ) : (
+                {isCollapsed ? null : (
                   <div className="space-y-1">
                     {items.map(({ rule, extensions: exts }) => {
                       const visible = exts.slice(0, 3);
