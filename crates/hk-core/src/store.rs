@@ -75,6 +75,8 @@ impl Store {
                 enabled INTEGER NOT NULL DEFAULT 1
             )"
         )?;
+        // Migration: add sort_order to agent_settings
+        let _ = self.conn.execute("ALTER TABLE agent_settings ADD COLUMN sort_order INTEGER", []);
         Ok(())
     }
 
@@ -114,6 +116,32 @@ impl Store {
         Ok(())
     }
 
+    /// Returns agent names in user-defined order. Agents without a sort_order
+    /// are appended at the end in their default order.
+    pub fn get_agent_order(&self) -> Result<Vec<(String, i32)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT name, sort_order FROM agent_settings WHERE sort_order IS NOT NULL ORDER BY sort_order"
+        )?;
+        let rows: Vec<(String, i32)> = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?))
+        })?.filter_map(|r| r.ok()).collect();
+        Ok(rows)
+    }
+
+    /// Persist a custom agent order. `names` is the full ordered list of agent names.
+    pub fn set_agent_order(&self, names: &[String]) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        for (i, name) in names.iter().enumerate() {
+            tx.execute(
+                "INSERT INTO agent_settings (name, custom_path, enabled, sort_order)
+                 VALUES (?1, NULL, 1, ?2)
+                 ON CONFLICT(name) DO UPDATE SET sort_order = excluded.sort_order",
+                params![name, i as i32],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
 
     /// Upsert an extension: insert if new, update scanner-derived fields if existing.
     /// Preserves user-set fields: enabled, tags, category, trust_score.
@@ -755,6 +783,30 @@ mod tests {
         assert_eq!(siblings.len(), 2);
         assert!(siblings.contains(&"ext-cursor".to_string()));
         assert!(siblings.contains(&"ext-codex".to_string()));
+    }
+
+    #[test]
+    fn test_agent_order_roundtrip() {
+        let (store, _dir) = test_store();
+        // Initially empty
+        assert!(store.get_agent_order().unwrap().is_empty());
+
+        let order = vec!["cursor".into(), "claude".into(), "codex".into()];
+        store.set_agent_order(&order).unwrap();
+
+        let saved = store.get_agent_order().unwrap();
+        assert_eq!(saved.len(), 3);
+        assert_eq!(saved[0], ("cursor".into(), 0));
+        assert_eq!(saved[1], ("claude".into(), 1));
+        assert_eq!(saved[2], ("codex".into(), 2));
+
+        // Update order
+        let new_order = vec!["codex".into(), "cursor".into(), "claude".into()];
+        store.set_agent_order(&new_order).unwrap();
+        let saved = store.get_agent_order().unwrap();
+        assert_eq!(saved[0].0, "codex");
+        assert_eq!(saved[1].0, "cursor");
+        assert_eq!(saved[2].0, "claude");
     }
 
     #[test]
