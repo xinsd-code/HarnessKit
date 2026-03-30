@@ -1,7 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useAuditStore } from "@/stores/audit-store";
 import { TrustBadge } from "@/components/shared/trust-badge";
-import { trustTier, trustColor } from "@/lib/types";
 import type { Severity, Extension, AuditFinding } from "@/lib/types";
 import { api } from "@/lib/invoke";
 import { RefreshCw, ChevronRight, ChevronDown, CircleAlert, Shield, Check, Eye } from "lucide-react";
@@ -74,13 +73,6 @@ export default function AuditPage() {
     return map;
   }, [allExtensions]);
 
-  const avgScore = results.length > 0
-    ? Math.round(results.reduce((s, r) => s + r.trust_score, 0) / results.length)
-    : null;
-  const avgTier = avgScore !== null ? trustTier(avgScore) : null;
-  const avgColor = avgScore !== null ? trustColor(avgScore) : "";
-
-  const withFindings = results.filter(r => r.findings.length > 0).length;
 
   const sortedResults = useMemo(
     () => [...results].sort((a, b) => a.trust_score - b.trust_score),
@@ -242,24 +234,10 @@ export default function AuditPage() {
         {results.length > 0 && (
           <div className="space-y-1">
             <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{results.length}</span> extensions scanned
-              {avgScore !== null && (
-                <>
-                  {" · Avg score "}
-                  <span className={`font-medium ${avgColor}`}>{avgScore}</span>
-                  {avgTier && (
-                    <span className={`${avgColor}`}> ({avgTier === "LowRisk" ? "Low Risk" : avgTier === "HighRisk" ? "High Risk" : avgTier === "AtRisk" ? "At Risk" : avgTier})</span>
-                  )}
-                </>
-              )}
-              {withFindings > 0 ? (
-                <> · <span className="font-medium text-foreground">{withFindings}</span> need attention</>
-              ) : (
-                <> · All clean</>
-              )}
+              <span className="font-medium text-foreground">{groupedResults.length}</span> extensions scanned
             </p>
             <p className="text-xs text-muted-foreground">
-              Trust scores (0–100) reflect 12 security checks. 80+ is safe, 60–79 is low risk, 40–59 needs review, below 40 is critical.
+              Trust scores (0–100) reflect {AUDIT_RULES.length} security checks. 80+ is safe, 60–79 is low risk, 40–59 needs review, below 40 is at risk.
             </p>
           </div>
         )}
