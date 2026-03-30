@@ -253,7 +253,7 @@
 
 .mascot-gemini.is-animated .star-wrapper { animation: gemini-float-spin 4s linear infinite; }
 .mascot-gemini.is-animated .star-svg { animation: gemini-twinkle 2s ease-in-out infinite; }
-.mascot-gemini.is-animated .glow-el { opacity: 0.5; animation: gemini-glow-pulse 2s ease-in-out infinite; }
+.mascot-gemini.is-animated .glow-el { opacity: 0 !important; }
 
 .mascot-gemini.is-clicked .star-wrapper { animation: gemini-pop-spin 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) !important; }
 .mascot-gemini.is-clicked .star-svg { animation: none !important; }

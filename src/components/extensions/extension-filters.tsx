@@ -30,12 +30,12 @@ const kinds: (ExtensionKind | null)[] = [null, "skill", "mcp", "plugin", "hook"]
 
 /** Per-agent background + text colors for the active filter state. */
 const AGENT_FILTER_COLORS: Record<string, string> = {
-  claude:      "bg-[#e87f5f]/15 text-[#c96a4a] border-[#e87f5f]/30",
-  codex:       "bg-[#6b7280]/15 text-[#4b5563] border-[#6b7280]/30",
-  gemini:      "bg-[#4285f4]/15 text-[#2b6ee6] border-[#4285f4]/30",
-  cursor:      "bg-[#000000]/10 text-[#333333] border-[#000000]/20",
-  antigravity: "bg-[#5b8def]/15 text-[#3d6fd9] border-[#5b8def]/30",
-  copilot:     "bg-[#6e40c9]/15 text-[#5a32a3] border-[#6e40c9]/30",
+  claude:      "bg-[#e87f5f]/15 text-[#c96a4a] dark:text-[#f0a58a] border-[#e87f5f]/30",
+  codex:       "bg-[#6b7280]/15 text-[#4b5563] dark:text-[#b0b8c4] border-[#6b7280]/30",
+  gemini:      "bg-[#4285f4]/15 text-[#2b6ee6] dark:text-[#7aacf8] border-[#4285f4]/30",
+  cursor:      "bg-[#808080]/10 text-[#333333] dark:text-[#c0c0c0] border-[#808080]/20",
+  antigravity: "bg-[#5b8def]/15 text-[#3d6fd9] dark:text-[#8bb3f5] border-[#5b8def]/30",
+  copilot:     "bg-[#6e40c9]/15 text-[#5a32a3] dark:text-[#a882e0] border-[#6e40c9]/30",
 };
 
 export function ExtensionFilters() {
