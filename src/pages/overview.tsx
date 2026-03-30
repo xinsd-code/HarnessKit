@@ -633,7 +633,7 @@ export default function OverviewPage() {
               onClick={() => {
                 setAuditLoading(true);
                 runAudit().finally(() => setAuditLoading(false));
-                navigate("/audit");
+                setTimeout(() => navigate("/audit"), 600);
               }}
             />
             <QuickAction
@@ -644,7 +644,7 @@ export default function OverviewPage() {
               onClick={() => {
                 setUpdatesLoading(true);
                 checkUpdates().finally(() => setUpdatesLoading(false));
-                navigate("/extensions");
+                setTimeout(() => navigate("/extensions"), 600);
               }}
             />
             <QuickAction
