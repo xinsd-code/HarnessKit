@@ -16,6 +16,7 @@ pub struct AuditInput {
     pub mcp_env: std::collections::HashMap<String, String>,
     pub installed_at: chrono::DateTime<Utc>,
     pub updated_at: chrono::DateTime<Utc>,
+    pub permissions: Vec<crate::models::Permission>,
 }
 
 pub trait AuditRule: Send + Sync {
@@ -47,6 +48,36 @@ impl Auditor {
             trust_score,
             audited_at: Utc::now(),
         }
+    }
+
+    /// Audit multiple extensions, with batch-level duplicate detection.
+    pub fn audit_batch(&self, inputs: &[AuditInput]) -> Vec<AuditResult> {
+        let mut results: Vec<AuditResult> = inputs.iter().map(|input| self.audit(input)).collect();
+
+        // Batch pass: detect name collisions across extensions of the same kind
+        let mut name_map: std::collections::HashMap<(&str, crate::models::ExtensionKind), Vec<usize>> = std::collections::HashMap::new();
+        for (idx, input) in inputs.iter().enumerate() {
+            name_map.entry((input.name.as_str(), input.kind)).or_default().push(idx);
+        }
+        for ((name, kind), indices) in &name_map {
+            if indices.len() > 1 {
+                for &idx in indices {
+                    results[idx].findings.push(AuditFinding {
+                        rule_id: "duplicate-conflict".into(),
+                        severity: Severity::Low,
+                        message: format!(
+                            "Name collision: {} other {}(s) share the name \"{}\"",
+                            indices.len() - 1,
+                            kind.as_str(),
+                            name
+                        ),
+                        location: inputs[idx].file_path.clone(),
+                    });
+                    results[idx].trust_score = compute_trust_score(&results[idx].findings);
+                }
+            }
+        }
+        results
     }
 }
 
@@ -102,6 +133,6 @@ mod tests {
     #[test]
     fn test_auditor_runs_all_enabled_rules() {
         let auditor = Auditor::new();
-        assert_eq!(auditor.rules.len(), 12);
+        assert_eq!(auditor.rules.len(), 13);
     }
 }

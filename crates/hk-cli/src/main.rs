@@ -190,6 +190,7 @@ fn cmd_audit(extensions: &[Extension], name: Option<&str>, _kind: Option<&str>, 
             mcp_env: Default::default(),
             installed_at: ext.installed_at,
             updated_at: ext.updated_at,
+            permissions: ext.permissions.clone(),
         };
         let result = auditor.audit(&input);
         println!();

@@ -1,5 +1,5 @@
 use crate::auditor::{AuditInput, AuditRule};
-use crate::models::{AuditFinding, ExtensionKind, Severity, SourceOrigin};
+use crate::models::{AuditFinding, ExtensionKind, Permission, Severity, SourceOrigin};
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -17,6 +17,7 @@ pub fn all_rules() -> Vec<Box<dyn AuditRule>> {
         Box::new(Outdated { threshold_days: 90 }),
         Box::new(UnknownSource),
         Box::new(DuplicateConflict),
+        Box::new(PermissionCombinationRisk),
     ]
 }
 
@@ -67,7 +68,7 @@ static RCE_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         Regex::new(r"curl\s+[^\|]*\|\s*(sh|bash|zsh)").unwrap(),
         Regex::new(r"wget\s+[^\|]*\|\s*(sh|bash|zsh)").unwrap(),
         Regex::new(r"base64\s+(-d|--decode)\s*\|").unwrap(),
-        Regex::new(r"eval\s*\(").unwrap(),
+        Regex::new(r"(?:^|[^.\w])eval\s*\(").unwrap(),
         Regex::new(r"curl\s+[^\|]*>\s*/tmp/[^\s]*\s*&&\s*(sh|bash|chmod)").unwrap(),
     ]
 });
@@ -159,7 +160,7 @@ impl AuditRule for PlaintextSecrets {
     fn id(&self) -> &str { "plaintext-secrets" }
     fn severity(&self) -> Severity { Severity::Critical }
     fn check(&self, input: &AuditInput) -> Vec<AuditFinding> {
-        if !matches!(input.kind, ExtensionKind::Mcp | ExtensionKind::Hook) { return vec![]; }
+        if !matches!(input.kind, ExtensionKind::Mcp | ExtensionKind::Hook | ExtensionKind::Skill) { return vec![]; }
         let mut findings = Vec::new();
         for (key, value) in &input.mcp_env {
             for pattern in SECRET_PREFIX_PATTERNS.iter() {
@@ -171,6 +172,24 @@ impl AuditRule for PlaintextSecrets {
                         location: input.file_path.clone(),
                     });
                     break;
+                }
+            }
+        }
+        // Also scan content for plaintext secrets (skills may hardcode keys)
+        if !input.content.is_empty() {
+            for (i, line) in input.content.lines().enumerate() {
+                for token in line.split_whitespace() {
+                    for pattern in SECRET_PREFIX_PATTERNS.iter() {
+                        if pattern.is_match(token) {
+                            findings.push(AuditFinding {
+                                rule_id: self.id().into(),
+                                severity: self.severity(),
+                                message: format!("Possible plaintext secret in content (line {})", i + 1),
+                                location: format!("{}:{}", input.file_path, i + 1),
+                            });
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -233,14 +252,15 @@ impl AuditRule for DangerousCommands {
     fn id(&self) -> &str { "dangerous-commands" }
     fn severity(&self) -> Severity { Severity::High }
     fn check(&self, input: &AuditInput) -> Vec<AuditFinding> {
-        if input.kind != ExtensionKind::Hook { return vec![]; }
+        if !matches!(input.kind, ExtensionKind::Hook | ExtensionKind::Skill) { return vec![]; }
         let mut findings = Vec::new();
         for (i, line) in input.content.lines().enumerate() {
             for pattern in DANGER_CMD_PATTERNS.iter() {
                 if pattern.is_match(line) {
+                    let sev = if input.kind == ExtensionKind::Hook { self.severity() } else { Severity::Medium };
                     findings.push(AuditFinding {
                         rule_id: self.id().into(),
-                        severity: self.severity(),
+                        severity: sev,
                         message: format!("Dangerous command: {}", line.trim()),
                         location: format!("{}:{}", input.file_path, i + 1),
                     });
@@ -393,6 +413,38 @@ impl AuditRule for DuplicateConflict {
     }
 }
 
+// --- Rule 13: Permission Combination Risk ---
+pub struct PermissionCombinationRisk;
+
+impl AuditRule for PermissionCombinationRisk {
+    fn id(&self) -> &str { "permission-combo-risk" }
+    fn severity(&self) -> Severity { Severity::High }
+    fn check(&self, input: &AuditInput) -> Vec<AuditFinding> {
+        let mut findings = Vec::new();
+        let has_network = input.permissions.iter().any(|p| matches!(p, Permission::Network { .. }));
+        let has_env = input.permissions.iter().any(|p| matches!(p, Permission::Env { .. }));
+        let has_shell = input.permissions.iter().any(|p| matches!(p, Permission::Shell { .. }));
+
+        if has_network && has_env {
+            findings.push(AuditFinding {
+                rule_id: self.id().into(),
+                severity: self.severity(),
+                message: "Has both Network and Env permissions — credential exfiltration risk".into(),
+                location: input.file_path.clone(),
+            });
+        }
+        if has_shell && has_network {
+            findings.push(AuditFinding {
+                rule_id: self.id().into(),
+                severity: self.severity(),
+                message: "Has both Shell and Network permissions — remote code execution risk".into(),
+                location: input.file_path.clone(),
+            });
+        }
+        findings
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -412,6 +464,7 @@ mod tests {
             mcp_env: Default::default(),
             installed_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
+            permissions: vec![],
         }
     }
 
@@ -428,6 +481,7 @@ mod tests {
             mcp_env: env.into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
             installed_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
+            permissions: vec![],
         }
     }
 
