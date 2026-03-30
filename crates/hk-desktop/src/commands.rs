@@ -22,6 +22,11 @@ pub fn list_extensions(
 pub fn list_agents(state: State<AppState>) -> Result<Vec<AgentInfo>, String> {
     let adapters = adapter::all_adapters();
     let store = state.store.lock().map_err(|e| e.to_string())?;
+
+    // Build agent order map from DB (or fall back to adapter iteration order)
+    let db_order = store.get_agent_order().unwrap_or_default();
+    let order_map: std::collections::HashMap<String, i32> = db_order.into_iter().collect();
+
     let mut result = Vec::new();
     for a in &adapters {
         let (custom_path, enabled) = store.get_agent_setting(a.name()).unwrap_or((None, true));
@@ -34,6 +39,9 @@ pub fn list_agents(state: State<AppState>) -> Result<Vec<AgentInfo>, String> {
             enabled,
         });
     }
+
+    // Sort by user-defined order; agents without sort_order go to end (index 999)
+    result.sort_by_key(|a| *order_map.get(&a.name).unwrap_or(&999));
     Ok(result)
 }
 
@@ -47,6 +55,12 @@ pub fn update_agent_path(state: State<AppState>, name: String, path: Option<Stri
 pub fn set_agent_enabled(state: State<AppState>, name: String, enabled: bool) -> Result<(), String> {
     let store = state.store.lock().map_err(|e| e.to_string())?;
     store.set_agent_enabled(&name, enabled).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_agent_order(state: State<AppState>, names: Vec<String>) -> Result<(), String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    store.set_agent_order(&names).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

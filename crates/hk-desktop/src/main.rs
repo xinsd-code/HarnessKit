@@ -43,6 +43,7 @@ fn main() {
             commands::get_project_extensions,
             commands::update_agent_path,
             commands::set_agent_enabled,
+            commands::update_agent_order,
             commands::list_skill_files,
             commands::open_in_system,
             commands::list_agent_configs,
