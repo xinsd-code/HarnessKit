@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { agentDisplayName } from "@/lib/types";
+import { agentDisplayName, sortAgents } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 
 export function AgentList() {
@@ -12,7 +12,7 @@ export function AgentList() {
       <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         Agents
       </div>
-      {agentDetails.map((agent) => {
+      {sortAgents(agentDetails).map((agent) => {
         const isSelected = agent.name === selectedAgent;
         const itemCount = agent.config_files.length;
         return (
