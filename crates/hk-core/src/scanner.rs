@@ -1178,7 +1178,6 @@ mod config_tests {
         fs::create_dir_all(home.join(".claude")).unwrap();
         fs::create_dir_all(project.join(".claude")).unwrap();
         fs::write(project.join("CLAUDE.md"), "# Project rules").unwrap();
-        fs::write(project.join(".claudeignore"), "node_modules/").unwrap();
         fs::write(project.join(".claude").join("settings.json"), "{}").unwrap();
 
         let adapter = ClaudeAdapter::with_home(home.to_path_buf());
@@ -1190,9 +1189,9 @@ mod config_tests {
             .collect();
         assert_eq!(project_rules.len(), 1);
 
+        // Claude Code does not have .claudeignore
         let ignores: Vec<_> = configs.iter().filter(|c| c.category == ConfigCategory::Ignore).collect();
-        assert_eq!(ignores.len(), 1);
-        assert_eq!(ignores[0].file_name, ".claudeignore");
+        assert_eq!(ignores.len(), 0);
     }
 
     #[test]

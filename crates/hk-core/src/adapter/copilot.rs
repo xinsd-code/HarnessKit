@@ -22,8 +22,25 @@ impl AgentAdapter for CopilotAdapter {
     fn hook_config_path(&self) -> PathBuf { self.base_dir().join("hooks.json") }
     fn plugin_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("plugins")] }
 
+    fn global_settings_files(&self) -> Vec<PathBuf> {
+        vec![
+            self.home.join(".copilot").join("config.json"),
+            self.home.join(".copilot").join("mcp-config.json"),
+        ]
+    }
+
     fn project_rules_patterns(&self) -> Vec<String> {
-        vec![".github/copilot-instructions.md".into(), ".github/copilot/*.md".into()]
+        vec![
+            ".github/copilot-instructions.md".into(),
+            ".github/instructions/*.instructions.md".into(),
+            "AGENTS.md".into(),
+        ]
+    }
+
+    fn project_settings_patterns(&self) -> Vec<String> {
+        vec![
+            "copilot/mcp-config.json".into(),
+        ]
     }
 
     fn project_ignore_patterns(&self) -> Vec<String> {

@@ -35,15 +35,25 @@ impl AgentAdapter for CodexAdapter {
     fn plugin_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("plugins")] }
 
     fn global_rules_files(&self) -> Vec<PathBuf> {
-        vec![self.base_dir().join("instructions.md")]
+        vec![
+            self.base_dir().join("AGENTS.md"),
+            self.base_dir().join("AGENTS.override.md"),
+        ]
     }
 
     fn global_settings_files(&self) -> Vec<PathBuf> {
-        vec![self.base_dir().join("config.yaml")]
+        vec![self.base_dir().join("config.toml")]
     }
 
     fn project_rules_patterns(&self) -> Vec<String> {
-        vec!["AGENTS.md".into()]
+        vec![
+            "AGENTS.md".into(),
+            "AGENTS.override.md".into(),
+        ]
+    }
+
+    fn project_settings_patterns(&self) -> Vec<String> {
+        vec![".codex/config.toml".into()]
     }
 
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {

@@ -27,12 +27,31 @@ impl AgentAdapter for AntigravityAdapter {
     fn hook_config_path(&self) -> PathBuf { self.base_dir().join("settings.json") }
     fn plugin_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("plugins")] }
 
+    fn global_rules_files(&self) -> Vec<PathBuf> {
+        vec![
+            self.home.join(".gemini").join("GEMINI.md"),
+        ]
+    }
+
     fn global_settings_files(&self) -> Vec<PathBuf> {
-        vec![self.base_dir().join("settings.json")]
+        vec![
+            self.home.join(".gemini").join("antigravity").join("mcp_config.json"),
+        ]
     }
 
     fn project_rules_patterns(&self) -> Vec<String> {
-        vec![".antigravity/rules/*.md".into()]
+        vec![
+            "GEMINI.md".into(),
+            "AGENTS.md".into(),
+        ]
+    }
+
+    fn project_settings_patterns(&self) -> Vec<String> {
+        vec![]
+    }
+
+    fn project_ignore_patterns(&self) -> Vec<String> {
+        vec![".geminiignore".into()]
     }
 
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {

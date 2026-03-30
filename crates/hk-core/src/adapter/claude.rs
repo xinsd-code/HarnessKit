@@ -106,7 +106,18 @@ impl AgentAdapter for ClaudeAdapter {
     }
 
     fn global_rules_files(&self) -> Vec<PathBuf> {
-        vec![self.base_dir().join("CLAUDE.md")]
+        let mut files = vec![self.base_dir().join("CLAUDE.md")];
+        // Also scan ~/.claude/rules/*.md
+        let rules_dir = self.base_dir().join("rules");
+        if let Ok(entries) = std::fs::read_dir(&rules_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().is_some_and(|e| e == "md") {
+                    files.push(p);
+                }
+            }
+        }
+        files
     }
 
     fn global_memory_files(&self) -> Vec<PathBuf> {
@@ -135,15 +146,23 @@ impl AgentAdapter for ClaudeAdapter {
     }
 
     fn project_rules_patterns(&self) -> Vec<String> {
-        vec!["CLAUDE.md".into(), ".claude/CLAUDE.md".into()]
+        vec![
+            "CLAUDE.md".into(),
+            ".claude/CLAUDE.md".into(),
+            ".claude/rules/*.md".into(),
+        ]
     }
 
     fn project_settings_patterns(&self) -> Vec<String> {
-        vec![".claude/settings.json".into(), ".claude/settings.local.json".into()]
+        vec![
+            ".claude/settings.json".into(),
+            ".claude/settings.local.json".into(),
+            ".mcp.json".into(),
+        ]
     }
 
     fn project_ignore_patterns(&self) -> Vec<String> {
-        vec![".claudeignore".into()]
+        vec![]  // Claude Code does NOT have .claudeignore
     }
 
     fn read_plugins(&self) -> Vec<PluginEntry> {
@@ -242,6 +261,7 @@ mod tests {
         let adapter = ClaudeAdapter::with_home(tmp.path().to_path_buf());
 
         let global_rules = adapter.global_rules_files();
+        // Without a rules dir, only CLAUDE.md is returned
         assert_eq!(global_rules.len(), 1);
         assert!(global_rules[0].ends_with("CLAUDE.md"));
 
@@ -252,12 +272,14 @@ mod tests {
         let project_rules = adapter.project_rules_patterns();
         assert!(project_rules.contains(&"CLAUDE.md".to_string()));
         assert!(project_rules.contains(&".claude/CLAUDE.md".to_string()));
+        assert!(project_rules.contains(&".claude/rules/*.md".to_string()));
 
         let project_settings = adapter.project_settings_patterns();
         assert!(project_settings.contains(&".claude/settings.json".to_string()));
         assert!(project_settings.contains(&".claude/settings.local.json".to_string()));
+        assert!(project_settings.contains(&".mcp.json".to_string()));
 
         let project_ignore = adapter.project_ignore_patterns();
-        assert!(project_ignore.contains(&".claudeignore".to_string()));
+        assert!(project_ignore.is_empty());
     }
 }

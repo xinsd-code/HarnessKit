@@ -84,11 +84,17 @@ impl AgentAdapter for CursorAdapter {
     }
 
     fn global_settings_files(&self) -> Vec<PathBuf> {
-        vec![self.base_dir().join("settings.json")]
+        vec![
+            self.base_dir().join("mcp.json"),
+        ]
     }
 
     fn project_rules_patterns(&self) -> Vec<String> {
-        vec![".cursorrules".into(), ".cursor/rules/*.mdc".into()]
+        vec![
+            ".cursorrules".into(),
+            ".cursor/rules/*.mdc".into(),
+            ".cursor/rules/*.md".into(),
+        ]
     }
 
     fn project_memory_patterns(&self) -> Vec<String> {
@@ -96,7 +102,9 @@ impl AgentAdapter for CursorAdapter {
     }
 
     fn project_settings_patterns(&self) -> Vec<String> {
-        vec![".cursor/settings.json".into()]
+        vec![
+            ".cursor/mcp.json".into(),
+        ]
     }
 
     fn project_ignore_patterns(&self) -> Vec<String> {
