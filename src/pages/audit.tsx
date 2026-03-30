@@ -3,6 +3,7 @@ import { useAuditStore } from "@/stores/audit-store";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import type { Severity, Extension, AuditFinding } from "@/lib/types";
 import { api } from "@/lib/invoke";
+import { buildGroups } from "@/stores/extension-store";
 import { RefreshCw, ChevronRight, ChevronDown, CircleAlert, Shield, Check, Eye } from "lucide-react";
 
 function IndeterminateBar({ className = "" }: { className?: string }) {
@@ -72,6 +73,9 @@ export default function AuditPage() {
     }
     return map;
   }, [allExtensions]);
+
+  // Use same deduplication as Overview for consistent extension count
+  const totalExtensions = useMemo(() => buildGroups(allExtensions).length, [allExtensions]);
 
 
   const sortedResults = useMemo(
@@ -234,7 +238,7 @@ export default function AuditPage() {
         {results.length > 0 && (
           <div className="space-y-1">
             <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{groupedResults.length}</span> extensions scanned
+              <span className="font-medium text-foreground">{totalExtensions}</span> extensions scanned
             </p>
             <p className="text-xs text-muted-foreground">
               Trust scores (0–100) reflect {AUDIT_RULES.length} security checks. 80+ is safe, 60–79 is low risk, below 60 needs review.
