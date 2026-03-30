@@ -31,6 +31,10 @@
   --chart-3: oklch(0.6083 0.1247 272.7200);
   --chart-4: oklch(0.5144 0.1605 267.4400);
   --chart-5: oklch(0.2571 0.1161 272.2400);
+  --trust-safe: oklch(0.55 0.14 160);
+  --trust-low-risk: oklch(0.58 0.12 80);
+  --trust-high-risk: oklch(0.58 0.14 55);
+  --trust-critical: oklch(0.52 0.12 40);
   --sidebar: oklch(0.9600 0.0140 267);
   --sidebar-foreground: oklch(0.1500 0.0100 267);
   --sidebar-primary: oklch(0.5144 0.1605 267.4400);
@@ -90,6 +94,10 @@
   --chart-3: oklch(0.6083 0.1247 272.7200);
   --chart-4: oklch(0.5144 0.1605 267.4400);
   --chart-5: oklch(0.2571 0.1161 272.2400);
+  --trust-safe: oklch(0.65 0.14 160);
+  --trust-low-risk: oklch(0.65 0.12 80);
+  --trust-high-risk: oklch(0.65 0.14 55);
+  --trust-critical: oklch(0.60 0.12 40);
   --sidebar: oklch(0.1050 0.0180 267);
   --sidebar-foreground: oklch(0.9300 0.0050 267);
   --sidebar-primary: oklch(0.5800 0.1605 267.4400);
@@ -151,6 +159,10 @@
   --chart-3: oklch(0.8816 0.0276 93.1280);
   --chart-4: oklch(0.8822 0.0403 298.1792);
   --chart-5: oklch(0.5608 0.1348 42.0584);
+  --trust-safe: oklch(0.55 0.14 160);
+  --trust-low-risk: oklch(0.55 0.12 80);
+  --trust-high-risk: oklch(0.55 0.14 55);
+  --trust-critical: oklch(0.50 0.12 40);
   --sidebar: oklch(0.9500 0.0130 98.8792);
   --sidebar-foreground: oklch(0.3590 0.0051 106.6524);
   --sidebar-primary: oklch(0.6171 0.1375 39.0427);
@@ -210,6 +222,10 @@
   --chart-3: oklch(0.2130 0.0078 95.4245);
   --chart-4: oklch(0.3074 0.0516 289.3230);
   --chart-5: oklch(0.5608 0.1348 42.0584);
+  --trust-safe: oklch(0.65 0.14 160);
+  --trust-low-risk: oklch(0.65 0.12 80);
+  --trust-high-risk: oklch(0.65 0.14 55);
+  --trust-critical: oklch(0.60 0.12 40);
   --sidebar: oklch(0.1750 0.0110 95);
   --sidebar-foreground: oklch(0.8500 0.0120 93);
   --sidebar-primary: oklch(0.6724 0.1308 38.7559);
@@ -272,6 +288,10 @@
   --chart-3: oklch(0.6083 0.1247 272.7200);
   --chart-4: oklch(0.5144 0.1605 267.4400);
   --chart-5: oklch(0.2571 0.1161 272.2400);
+  --trust-safe: oklch(0.55 0.14 160);
+  --trust-low-risk: oklch(0.58 0.12 80);
+  --trust-high-risk: oklch(0.58 0.14 55);
+  --trust-critical: oklch(0.52 0.12 40);
   --sidebar: oklch(0.9600 0.0140 267);
   --sidebar-foreground: oklch(0.1500 0.0100 267);
   --sidebar-primary: oklch(0.5144 0.1605 267.4400);
@@ -331,6 +351,10 @@
   --chart-3: oklch(0.6083 0.1247 272.7200);
   --chart-4: oklch(0.5144 0.1605 267.4400);
   --chart-5: oklch(0.2571 0.1161 272.2400);
+  --trust-safe: oklch(0.65 0.14 160);
+  --trust-low-risk: oklch(0.65 0.12 80);
+  --trust-high-risk: oklch(0.65 0.14 55);
+  --trust-critical: oklch(0.60 0.12 40);
   --sidebar: oklch(0.1050 0.0180 267);
   --sidebar-foreground: oklch(0.9300 0.0050 267);
   --sidebar-primary: oklch(0.5800 0.1605 267.4400);
@@ -392,6 +416,10 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-trust-safe: var(--trust-safe);
+  --color-trust-low-risk: var(--trust-low-risk);
+  --color-trust-high-risk: var(--trust-high-risk);
+  --color-trust-critical: var(--trust-critical);
   --color-kind-skill: var(--kind-skill);
   --color-kind-mcp: var(--kind-mcp);
   --color-kind-plugin: var(--kind-plugin);

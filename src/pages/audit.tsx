@@ -34,9 +34,9 @@ const AUDIT_RULES = [
 
 function severityBadgeClass(severity: string): string {
   switch (severity) {
-    case "Critical": return "bg-destructive/10 text-destructive";
-    case "High": return "bg-chart-5/10 text-chart-5 font-semibold";
-    case "Medium": return "bg-chart-4/10 text-chart-4";
+    case "Critical": return "bg-trust-critical/10 text-trust-critical";
+    case "High": return "bg-trust-high-risk/10 text-trust-high-risk font-semibold";
+    case "Medium": return "bg-trust-low-risk/10 text-trust-low-risk";
     case "Low": return "bg-muted text-muted-foreground";
     default: return "";
   }
@@ -44,9 +44,9 @@ function severityBadgeClass(severity: string): string {
 
 function severityTextColor(severity: string): string {
   switch (severity) {
-    case "Critical": return "text-destructive";
-    case "High": return "text-chart-5";
-    case "Medium": return "text-chart-4";
+    case "Critical": return "text-trust-critical";
+    case "High": return "text-trust-high-risk";
+    case "Medium": return "text-trust-low-risk";
     case "Low": return "text-muted-foreground";
     default: return "";
   }
@@ -366,7 +366,7 @@ export default function AuditPage() {
                           title={rule.description}
                           className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors duration-150 hover:bg-muted/30"
                         >
-                          <CircleAlert size={16} className="shrink-0 text-destructive" aria-hidden="true" />
+                          <CircleAlert size={16} className="shrink-0 text-trust-critical" aria-hidden="true" />
                           <span className="flex-1 text-foreground">{rule.label}</span>
                           <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
                             {rule.severity}

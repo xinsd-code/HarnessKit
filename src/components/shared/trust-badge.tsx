@@ -7,10 +7,10 @@ interface TrustBadgeProps {
 }
 
 const dotColor: Record<string, string> = {
-  Safe: "bg-primary",
-  LowRisk: "bg-chart-4",
-  HighRisk: "bg-chart-5",
-  Critical: "bg-destructive",
+  Safe: "bg-trust-safe",
+  LowRisk: "bg-trust-low-risk",
+  HighRisk: "bg-trust-high-risk",
+  Critical: "bg-trust-critical",
 };
 
 const tierTitle: Record<string, string> = {
