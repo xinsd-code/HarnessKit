@@ -59,8 +59,8 @@ export function extensionGroupKey(ext: Extension): string {
 }
 
 /** Sort agent name strings by canonical display order. */
-export function sortAgentNames(names: string[]): string[] {
-  const idx = new Map<string, number>(AGENT_ORDER.map((n, i) => [n, i]));
+export function sortAgentNames(names: string[], order: readonly string[] = AGENT_ORDER): string[] {
+  const idx = new Map<string, number>(order.map((n, i) => [n, i]));
   return [...names].sort((a, b) => (idx.get(a) ?? 99) - (idx.get(b) ?? 99));
 }
 
@@ -138,9 +138,9 @@ export interface FileEntry {
 /** Canonical display order for agents across all UI surfaces. */
 export const AGENT_ORDER = ["claude", "codex", "gemini", "cursor", "antigravity", "copilot"] as const;
 
-/** Sort an array of agents (or agent-like objects with a `name` field) by canonical order. */
-export function sortAgents<T extends { name: string }>(agents: T[]): T[] {
-  const idx = new Map<string, number>(AGENT_ORDER.map((n, i) => [n, i]));
+/** Sort an array of agents (or agent-like objects with a `name` field) by a given order. */
+export function sortAgents<T extends { name: string }>(agents: T[], order: readonly string[] = AGENT_ORDER): T[] {
+  const idx = new Map<string, number>(order.map((n, i) => [n, i]));
   return [...agents].sort((a, b) => (idx.get(a.name) ?? 99) - (idx.get(b.name) ?? 99));
 }
 

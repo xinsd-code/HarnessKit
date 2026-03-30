@@ -125,4 +125,8 @@ export const api = {
   readConfigFilePreview(path: string, maxLines?: number): Promise<string> {
     return invoke("read_config_file_preview", { path, maxLines });
   },
+
+  updateAgentOrder(names: string[]): Promise<void> {
+    return invoke("update_agent_order", { names });
+  },
 };
