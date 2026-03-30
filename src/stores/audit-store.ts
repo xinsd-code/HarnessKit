@@ -23,6 +23,8 @@ export const useAuditStore = create<AuditState>((set) => ({
   },
   async runAudit() {
     set({ loading: true });
+    // Yield to let the browser paint loading state before Tauri IPC call
+    await new Promise((r) => setTimeout(r, 50));
     try {
       const results = await api.runAudit();
       set({ results, loading: false });
