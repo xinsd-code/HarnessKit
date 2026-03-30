@@ -308,8 +308,9 @@ export default function OverviewPage() {
   // Section B: Usage Insights
   // -----------------------------------------------------------------------
   const usageInsights = useMemo(() => {
-    const allSkills = visibleExtensions.filter((e) => e.kind === "skill");
-    const usedSkills = allSkills.filter((e) => e.last_used_at);
+    // Use grouped data (deduplicated) so same skill across agents counts once
+    const allSkills = visibleGroups.filter((g) => g.kind === "skill");
+    const usedSkills = allSkills.filter((g) => g.last_used_at);
     if (usedSkills.length === 0) return null;
 
     // Most active = most recent last_used_at
@@ -319,7 +320,7 @@ export default function OverviewPage() {
     const mostActive = sorted[0];
 
     // Longest unused
-    const neverUsed = allSkills.filter((e) => !e.last_used_at);
+    const neverUsed = allSkills.filter((g) => !g.last_used_at);
     let longestUnused: { name: string; detail: string };
     if (neverUsed.length > 0) {
       longestUnused = { name: neverUsed[0].name, detail: "Never used" };
@@ -334,7 +335,7 @@ export default function OverviewPage() {
     // Recently used count (within 7 days)
     const sevenDays = 7 * 24 * 60 * 60 * 1000;
     const recentlyUsedCount = usedSkills.filter(
-      (e) => Date.now() - new Date(e.last_used_at!).getTime() < sevenDays,
+      (g) => Date.now() - new Date(g.last_used_at!).getTime() < sevenDays,
     ).length;
 
     return {
@@ -346,7 +347,7 @@ export default function OverviewPage() {
       recentlyUsedCount,
       totalSkills: allSkills.length,
     };
-  }, [visibleExtensions]);
+  }, [visibleGroups]);
 
   // -----------------------------------------------------------------------
   // Section C: Tip of the Day
