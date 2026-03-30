@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useExtensionStore } from "@/stores/extension-store";
 import { api } from "@/lib/invoke";
@@ -14,75 +14,56 @@ import {
   Bot,
   RefreshCw,
   ArrowRight,
-  AlertTriangle,
   Clock,
   Sparkles,
+  FilePenLine,
+  TrendingUp,
+  Lightbulb,
 } from "lucide-react";
-import { TrustBadge } from "@/components/shared/trust-badge";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { Hint } from "@/components/shared/hint";
-import type { DashboardStats, Extension, AuditResult } from "@/lib/types";
-import { trustTier, formatRelativeTime, sortAgents } from "@/lib/types";
+import type { DashboardStats, Extension, AgentDetail } from "@/lib/types";
+import { agentDisplayName, formatRelativeTime, sortAgents } from "@/lib/types";
 import { buildGroups } from "@/stores/extension-store";
 import { AgentCard } from "@/components/shared/agent-card";
 
 // ---------------------------------------------------------------------------
-// Needs-attention logic
+// Tip of the Day types & helpers
 // ---------------------------------------------------------------------------
 
-interface AttentionItem {
-  extension: Extension;
-  reason: "low_trust" | "recently_added";
-  detail: string;
-  /** Lower = more urgent */
-  priority: number;
+interface Tip {
+  agent: string;
+  tip: string;
 }
 
-function deriveAttentionItems(
-  extensions: Extension[],
-  auditResults: AuditResult[],
-): AttentionItem[] {
-  const auditMap = new Map<string, AuditResult>();
-  for (const r of auditResults) {
-    auditMap.set(r.extension_id, r);
+const TIPS_URL =
+  "https://raw.githubusercontent.com/RealZST/harnesskit-tips/main/tips.json";
+const TIPS_CACHE_KEY = "harnesskit-tips-cache";
+
+async function fetchTips(): Promise<Tip[]> {
+  try {
+    const res = await fetch(TIPS_URL);
+    if (!res.ok) throw new Error("fetch failed");
+    const tips: Tip[] = await res.json();
+    localStorage.setItem(TIPS_CACHE_KEY, JSON.stringify(tips));
+    return tips;
+  } catch {
+    const cached = localStorage.getItem(TIPS_CACHE_KEY);
+    if (cached) return JSON.parse(cached) as Tip[];
+    return [];
   }
+}
 
-  const items: AttentionItem[] = [];
+// ---------------------------------------------------------------------------
+// Recent Activity types
+// ---------------------------------------------------------------------------
 
-  for (const ext of extensions) {
-    const audit = auditMap.get(ext.id);
-
-    // Low trust score — anything below 60 is noteworthy
-    if (audit && audit.trust_score < 60) {
-      const tier = trustTier(audit.trust_score);
-      items.push({
-        extension: ext,
-        reason: "low_trust",
-        detail:
-          tier === "Critical"
-            ? `Trust score ${audit.trust_score} — critical findings`
-            : `Trust score ${audit.trust_score} — needs review`,
-        priority: audit.trust_score,
-      });
-      continue; // Don't double-list
-    }
-
-    // Recently added (within last 7 days)
-    const installedMs = Date.now() - new Date(ext.installed_at).getTime();
-    const sevenDays = 7 * 24 * 60 * 60 * 1000;
-    if (installedMs < sevenDays) {
-      items.push({
-        extension: ext,
-        reason: "recently_added",
-        detail: `Added ${formatRelativeTime(ext.installed_at)}`,
-        priority: 200 - Math.floor(installedMs / (60 * 60 * 1000)), // newer = higher priority
-      });
-    }
-  }
-
-  // Sort: most urgent first
-  items.sort((a, b) => a.priority - b.priority);
-  return items.slice(0, 6);
+interface ActivityItem {
+  type: "extension" | "config";
+  label: string;
+  sublabel: string;
+  timestamp: number;
+  navigateTo: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -104,56 +85,6 @@ function StatChip({
       <span className="tabular-nums font-medium text-foreground">{count}</span>
       <span>{label}</span>
     </span>
-  );
-}
-
-function AttentionRow({ item, onClick }: { item: AttentionItem; onClick: () => void }) {
-  const isLowTrust = item.reason === "low_trust";
-
-  return (
-    <button
-      onClick={onClick}
-      className="group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-all duration-150 hover:bg-muted/50 hover:shadow-sm"
-    >
-      {/* Status indicator */}
-      <span
-        className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${
-          isLowTrust
-            ? "bg-destructive/8 text-destructive"
-            : "bg-primary/8 text-primary"
-        }`}
-      >
-        {isLowTrust ? <AlertTriangle size={15} aria-hidden="true" /> : <Sparkles size={15} aria-hidden="true" />}
-      </span>
-
-      {/* Extension info */}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium text-foreground">
-            {item.extension.name}
-          </span>
-          <KindBadge kind={item.extension.kind} />
-        </div>
-        <p className="mt-0.5 truncate text-xs text-muted-foreground">{item.detail}</p>
-      </div>
-
-      {/* Trust badge or timestamp */}
-      <div className="shrink-0">
-        {isLowTrust && item.extension.trust_score != null ? (
-          <TrustBadge score={item.extension.trust_score} size="sm" />
-        ) : (
-          <span className="text-xs text-muted-foreground">
-            {formatRelativeTime(item.extension.installed_at)}
-          </span>
-        )}
-      </div>
-
-      <ArrowRight
-        size={14}
-        className="shrink-0 text-muted-foreground/40 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-muted-foreground"
-        aria-hidden="true"
-      />
-    </button>
   );
 }
 
@@ -197,7 +128,7 @@ function OverviewSkeleton() {
         <div className="animate-shimmer h-5 w-80 rounded bg-muted" />
       </div>
 
-      {/* Attention skeleton */}
+      {/* Activity skeleton */}
       <div className="space-y-2">
         <div className="animate-shimmer h-4 w-32 rounded bg-muted" />
         {Array.from({ length: 3 }).map((_, i) => (
@@ -231,6 +162,9 @@ export default function OverviewPage() {
   const fetchAgents = useAgentStore(s => s.fetch);
   const agentOrder = useAgentStore(s => s.agentOrder);
 
+  const [agentConfigs, setAgentConfigs] = useState<AgentDetail[]>([]);
+  const [tips, setTips] = useState<Tip[]>([]);
+
   useEffect(() => {
     // Fetch ALL extensions (unfiltered) for overview stats
     api.listExtensions()
@@ -239,6 +173,8 @@ export default function OverviewPage() {
       .finally(() => setExtLoading(false));
     loadCached();
     fetchAgents();
+    api.listAgentConfigs().then(setAgentConfigs).catch(() => {});
+    fetchTips().then(setTips);
   }, [loadCached, fetchAgents]);
 
   // Filter extensions to only those belonging to enabled agents
@@ -319,52 +255,114 @@ export default function OverviewPage() {
     [agents, agentExtCounts, agentOrder],
   );
 
-  const attentionItems = useMemo(
-    () => deriveAttentionItems(visibleExtensions, auditResults),
-    [visibleExtensions, auditResults],
-  );
+  // -----------------------------------------------------------------------
+  // Section A: Recent Activity
+  // -----------------------------------------------------------------------
+  const activityItems = useMemo<ActivityItem[]>(() => {
+    const items: ActivityItem[] = [];
+    const now = Date.now();
+    const fourteenDays = 14 * 24 * 60 * 60 * 1000;
+    const sevenDays = 7 * 24 * 60 * 60 * 1000;
 
-  const issueCount = stats
-    ? stats.critical_issues + stats.high_issues
-    : 0;
-
-  // Track previous issue count to trigger "all clear" pulse only on transition
-  const prevIssueCountRef = useRef<number | null>(null);
-  const prevHasAuditDataRef = useRef(false);
-  const [showPulse, setShowPulse] = useState(false);
-
-  const prefersReducedMotion = () =>
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  useEffect(() => {
-    const hasAudit = auditResults.length > 0;
-    const prevCount = prevIssueCountRef.current;
-    const prevHadAudit = prevHasAuditDataRef.current;
-
-    // Trigger pulse when:
-    // 1. Transitioning from issues > 0 to issues === 0
-    // 2. First audit completion with no issues (prevCount was null, now 0)
-    const justCleared =
-      hasAudit &&
-      issueCount === 0 &&
-      ((prevCount !== null && prevCount > 0) ||
-        (prevCount === null && !prevHadAudit));
-
-    if (justCleared && !prefersReducedMotion()) {
-      setShowPulse(true);
-      const timer = setTimeout(() => setShowPulse(false), 800);
-      return () => clearTimeout(timer);
+    // Recently installed extensions (within last 14 days)
+    for (const ext of visibleExtensions) {
+      const installedMs = now - new Date(ext.installed_at).getTime();
+      if (installedMs < fourteenDays) {
+        items.push({
+          type: "extension",
+          label: ext.name,
+          sublabel: `Installed ${formatRelativeTime(ext.installed_at)}`,
+          timestamp: new Date(ext.installed_at).getTime(),
+          navigateTo: "/extensions",
+        });
+      }
     }
 
-    prevIssueCountRef.current = issueCount;
-    prevHasAuditDataRef.current = hasAudit;
-  }, [issueCount, auditResults.length]);
+    // Recently modified config files (within last 7 days)
+    for (const agent of agentConfigs) {
+      for (const cfg of agent.config_files) {
+        if (!cfg.modified_at) continue;
+        const modifiedMs = now - new Date(cfg.modified_at).getTime();
+        if (modifiedMs < sevenDays) {
+          items.push({
+            type: "config",
+            label: cfg.file_name,
+            sublabel: `${agentDisplayName(agent.name)} \u00B7 Modified ${formatRelativeTime(cfg.modified_at)}`,
+            timestamp: new Date(cfg.modified_at).getTime(),
+            navigateTo: "/agents",
+          });
+        }
+      }
+    }
+
+    // Sort newest first, limit to 5
+    items.sort((a, b) => b.timestamp - a.timestamp);
+    return items.slice(0, 5);
+  }, [visibleExtensions, agentConfigs]);
+
+  const hasActivity = activityItems.length > 0;
+
+  // -----------------------------------------------------------------------
+  // Section B: Usage Insights
+  // -----------------------------------------------------------------------
+  const usageInsights = useMemo(() => {
+    const skills = visibleExtensions.filter((e) => e.kind === "skill" && e.last_used_at);
+    if (skills.length === 0) return null;
+
+    // Most active = most recent last_used_at
+    const sorted = [...skills].sort(
+      (a, b) => new Date(b.last_used_at!).getTime() - new Date(a.last_used_at!).getTime(),
+    );
+    const mostActive = sorted[0];
+
+    // Longest unused = oldest last_used_at (or null, but we filtered those out)
+    // Also consider skills with null last_used_at for "never used"
+    const allSkills = visibleExtensions.filter((e) => e.kind === "skill");
+    const neverUsed = allSkills.filter((e) => !e.last_used_at);
+
+    let longestUnused: { name: string; detail: string };
+    if (neverUsed.length > 0) {
+      longestUnused = { name: neverUsed[0].name, detail: "Never used" };
+    } else {
+      const oldest = sorted[sorted.length - 1];
+      longestUnused = {
+        name: oldest.name,
+        detail: `Unused for ${formatRelativeTime(oldest.last_used_at!).replace(" ago", "")}`,
+      };
+    }
+
+    return {
+      mostActive: {
+        name: mostActive.name,
+        detail: `Used ${formatRelativeTime(mostActive.last_used_at!)}`,
+      },
+      longestUnused,
+    };
+  }, [visibleExtensions]);
+
+  // -----------------------------------------------------------------------
+  // Section C: Tip of the Day
+  // -----------------------------------------------------------------------
+  const tipOfTheDay = useMemo(() => {
+    if (tips.length === 0) return null;
+
+    const detectedAgentNames = new Set(
+      agents.filter((a) => a.detected).map((a) => a.name),
+    );
+
+    const relevant = tips.filter(
+      (t) => t.agent === "general" || detectedAgentNames.has(t.agent),
+    );
+    if (relevant.length === 0) return null;
+
+    const dayIndex = Math.floor(Date.now() / 86400000);
+    return relevant[dayIndex % relevant.length];
+  }, [tips, agents]);
 
   if (!stats) {
     return <OverviewSkeleton />;
   }
 
-  const hasAttention = attentionItems.length > 0;
   const hasAuditData = auditResults.length > 0;
 
   return (
@@ -404,30 +402,6 @@ export default function OverviewPage() {
             {stats.hook_count > 0 && (
               <StatChip label="hooks" count={stats.hook_count} icon={Webhook} />
             )}
-
-            {/* Audit summary inline, if data exists */}
-            {hasAuditData && issueCount > 0 && (
-              <>
-                <span className="text-border">|</span>
-                <span className="inline-flex items-center gap-1.5 text-sm">
-                  <AlertTriangle size={13} className="text-chart-5" aria-hidden="true" />
-                  <span className="text-muted-foreground">
-                    {issueCount} {issueCount === 1 ? "issue" : "issues"} found
-                  </span>
-                </span>
-              </>
-            )}
-            {hasAuditData && issueCount === 0 && (
-              <>
-                <span className="text-border">|</span>
-                <span className="inline-flex items-center gap-1.5 text-sm text-primary">
-                  <span className={`inline-flex ${showPulse ? "all-clear-pulse" : ""}`}>
-                    <Shield size={13} aria-hidden="true" />
-                  </span>
-                  All clear
-                </span>
-              </>
-            )}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -448,6 +422,120 @@ export default function OverviewPage() {
       </header>
 
       {/* ----------------------------------------------------------------- */}
+      {/* Section A: Recent Activity                                        */}
+      {/* ----------------------------------------------------------------- */}
+      {hasActivity && (
+        <section className="animate-slide-in-right space-y-3">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Recent activity
+          </h3>
+          <div className="rounded-xl border border-border/60 bg-card/40 divide-y divide-border/40">
+            {activityItems.map((item, i) => (
+              <button
+                key={`${item.type}-${item.label}-${i}`}
+                onClick={() => navigate(item.navigateTo)}
+                className="group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-all duration-150 hover:bg-muted/50 hover:shadow-sm"
+              >
+                <span
+                  className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${
+                    item.type === "extension"
+                      ? "bg-primary/8 text-primary"
+                      : "bg-muted/80 text-muted-foreground"
+                  }`}
+                >
+                  {item.type === "extension" ? (
+                    <Sparkles size={15} aria-hidden="true" />
+                  ) : (
+                    <FilePenLine size={15} aria-hidden="true" />
+                  )}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-sm font-medium text-foreground">
+                      {item.label}
+                    </span>
+                    {item.type === "extension" && (
+                      <KindBadge kind={visibleExtensions.find((e) => e.name === item.label)?.kind ?? "skill"} />
+                    )}
+                  </div>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{item.sublabel}</p>
+                </div>
+                <ArrowRight
+                  size={14}
+                  className="shrink-0 text-muted-foreground/40 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-muted-foreground"
+                  aria-hidden="true"
+                />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ----------------------------------------------------------------- */}
+      {/* Section B: Usage Insights                                         */}
+      {/* ----------------------------------------------------------------- */}
+      {usageInsights && (
+        <section className="space-y-3">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Usage insights
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Most active skill */}
+            <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-card/50 px-4 py-3">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <TrendingUp size={17} strokeWidth={1.75} aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <span className="block text-sm font-medium text-foreground">
+                  {usageInsights.mostActive.name}
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  Most active skill &middot; {usageInsights.mostActive.detail}
+                </span>
+              </div>
+            </div>
+
+            {/* Longest unused skill */}
+            <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-card/50 px-4 py-3">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
+                <Clock size={17} strokeWidth={1.75} aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <span className="block text-sm font-medium text-foreground">
+                  {usageInsights.longestUnused.name}
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  Longest unused &middot; {usageInsights.longestUnused.detail}
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ----------------------------------------------------------------- */}
+      {/* Section C: Tip of the Day                                         */}
+      {/* ----------------------------------------------------------------- */}
+      {tipOfTheDay && (
+        <section className="space-y-3">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Tip of the day
+          </h3>
+          <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-4">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Lightbulb size={17} strokeWidth={1.75} aria-hidden="true" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-foreground leading-relaxed">{tipOfTheDay.tip}</p>
+              <span className="mt-2 inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                {tipOfTheDay.agent === "general" ? "General" : agentDisplayName(tipOfTheDay.agent)}
+              </span>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ----------------------------------------------------------------- */}
       {/* First-run hint: audit                                              */}
       {/* ----------------------------------------------------------------- */}
       {!hasAuditData && stats.total_extensions > 0 && (
@@ -455,37 +543,6 @@ export default function OverviewPage() {
           Run a security audit to check your extensions for vulnerabilities and
           get trust scores. Use the Quick Actions below to get started.
         </Hint>
-      )}
-
-      {/* ----------------------------------------------------------------- */}
-      {/* Needs Attention                                                    */}
-      {/* ----------------------------------------------------------------- */}
-      {hasAttention && (
-        <section className="animate-slide-in-right space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Needs attention
-            </h3>
-            {attentionItems.some((i) => i.reason === "low_trust") && (
-              <button
-                onClick={() => navigate("/audit")}
-                className="text-xs font-medium text-primary hover:underline"
-              >
-                View audit
-              </button>
-            )}
-          </div>
-
-          <div className="rounded-xl border border-border/60 bg-card/40 divide-y divide-border/40">
-            {attentionItems.map((item) => (
-              <AttentionRow
-                key={item.extension.id}
-                item={item}
-                onClick={() => navigate("/extensions")}
-              />
-            ))}
-          </div>
-        </section>
       )}
 
       {/* ----------------------------------------------------------------- */}
