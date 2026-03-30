@@ -87,15 +87,40 @@ export default function AuditPage() {
     [results]
   );
 
+  // Map extension ID → agent names for display
+  const agentMap = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const ext of allExtensions) {
+      map.set(ext.id, ext.agents);
+    }
+    return map;
+  }, [allExtensions]);
+
   // Group results by extension name to deduplicate same extension across agents
-  const groupedResults = useMemo(() => {
-    const groups = new Map<string, { name: string; ids: string[]; findings: AuditFinding[]; trust_score: number }>();
+  interface GroupedResult {
+    name: string;
+    /** Per-agent sub-results. If all agents have identical findings, this has one merged entry. */
+    agents: { agent: string; id: string; findings: AuditFinding[]; trust_score: number }[];
+    /** Whether all agents share the same findings (can display as one). */
+    uniform: boolean;
+    /** Overall trust score (lowest across agents). */
+    trust_score: number;
+    /** Merged unique findings across all agents. */
+    findings: AuditFinding[];
+    /** Primary ID for keying and scroll targets. */
+    primaryId: string;
+  }
+
+  const groupedResults = useMemo<GroupedResult[]>(() => {
+    const groups = new Map<string, GroupedResult>();
     for (const result of sortedResults) {
       const name = nameMap.get(result.extension_id) ?? result.extension_id;
+      const agentNames = agentMap.get(result.extension_id) ?? ["unknown"];
+      const agentLabel = agentNames.join(", ");
+
       const existing = groups.get(name);
       if (existing) {
-        // Merge: keep lowest trust score, combine unique findings
-        existing.ids.push(result.extension_id);
+        existing.agents.push({ agent: agentLabel, id: result.extension_id, findings: result.findings, trust_score: result.trust_score });
         existing.trust_score = Math.min(existing.trust_score, result.trust_score);
         for (const f of result.findings) {
           if (!existing.findings.some(ef => ef.rule_id === f.rule_id)) {
@@ -105,14 +130,28 @@ export default function AuditPage() {
       } else {
         groups.set(name, {
           name,
-          ids: [result.extension_id],
-          findings: [...result.findings],
+          agents: [{ agent: agentLabel, id: result.extension_id, findings: result.findings, trust_score: result.trust_score }],
+          uniform: true,
           trust_score: result.trust_score,
+          findings: [...result.findings],
+          primaryId: result.extension_id,
+        });
+      }
+    }
+    // Determine if agents within each group have identical findings
+    for (const group of groups.values()) {
+      if (group.agents.length <= 1) {
+        group.uniform = true;
+      } else {
+        const first = new Set(group.agents[0].findings.map(f => f.rule_id));
+        group.uniform = group.agents.every(a => {
+          const ruleIds = new Set(a.findings.map(f => f.rule_id));
+          return ruleIds.size === first.size && [...ruleIds].every(id => first.has(id));
         });
       }
     }
     return [...groups.values()];
-  }, [sortedResults, nameMap]);
+  }, [sortedResults, nameMap, agentMap]);
 
   function scrollToExtensionResult(extensionId: string) {
     setOpenId(extensionId);
@@ -359,7 +398,7 @@ export default function AuditPage() {
           </div>
         )}
         {groupedResults.map((group) => {
-          const primaryId = group.ids[0];
+          const { primaryId } = group;
           const isOpen = openId === primaryId;
           const failedRuleIds = new Set(group.findings.map((f) => f.rule_id));
           const hasFindings = group.findings.length > 0;
@@ -367,7 +406,7 @@ export default function AuditPage() {
           const failedRules = AUDIT_RULES.filter(r => failedRuleIds.has(r.id));
           const passedCount = AUDIT_RULES.length - failedRules.length;
 
-          // Clean extensions: minimal row, no expandable card
+          // Clean extensions: minimal row
           if (!hasFindings) {
             return (
               <div
@@ -399,6 +438,9 @@ export default function AuditPage() {
                   <span className="text-xs text-muted-foreground">
                     {group.findings.length} {group.findings.length === 1 ? "finding" : "findings"}
                   </span>
+                  {!group.uniform && (
+                    <span className="text-xs text-trust-high-risk">varies by agent</span>
+                  )}
                 </div>
                 <TrustBadge score={group.trust_score} size="sm" />
               </button>
@@ -408,51 +450,82 @@ export default function AuditPage() {
               >
                 <div className="overflow-hidden">
                   <div className="border-t border-border px-4 py-3">
-                    <div className="grid gap-1.5">
-                      {/* Show failed rules */}
-                      {failedRules.map((rule) => (
-                        <div
-                          key={rule.id}
-                          title={rule.description}
-                          className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors duration-150 hover:bg-muted/30"
-                        >
-                          <CircleAlert size={16} className="shrink-0 text-trust-critical" aria-hidden="true" />
-                          <span className="flex-1 text-foreground">{rule.label}</span>
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
-                            {rule.severity}
-                          </span>
+                    {group.uniform ? (
+                      /* All agents have same findings — show merged view */
+                      <div className="grid gap-1.5">
+                        {failedRules.map((rule) => (
+                          <div
+                            key={rule.id}
+                            title={rule.description}
+                            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors duration-150 hover:bg-muted/30"
+                          >
+                            <CircleAlert size={16} className="shrink-0 text-trust-critical" aria-hidden="true" />
+                            <span className="flex-1 text-foreground">{rule.label}</span>
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
+                              {rule.severity}
+                            </span>
+                          </div>
+                        ))}
+
+                        {showingAll && (
+                          <>
+                            <div className="my-1 border-t border-border/50" />
+                            {AUDIT_RULES.filter(r => !failedRuleIds.has(r.id)).map((rule) => (
+                              <div key={rule.id} title={rule.description} className="flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-muted-foreground">
+                                <Check size={14} className="shrink-0 text-primary/60" aria-hidden="true" />
+                                <span className="flex-1">{rule.label}</span>
+                                <span className="text-xs">Pass</span>
+                              </div>
+                            ))}
+                          </>
+                        )}
+
+                        <div className="mt-1 flex items-center gap-4">
+                          <button
+                            onClick={() => toggleShowAllRules(primaryId)}
+                            className="flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
+                          >
+                            <Eye size={12} aria-hidden="true" />
+                            {showingAll ? "Show failures only" : `Show all ${AUDIT_RULES.length} rules (${passedCount} passed)`}
+                          </button>
                         </div>
-                      ))}
-
-                      {/* Show all rules toggle */}
-                      {showingAll && (
-                        <>
-                          <div className="my-1 border-t border-border/50" />
-                          {AUDIT_RULES.filter(r => !failedRuleIds.has(r.id)).map((rule) => (
-                            <div
-                              key={rule.id}
-                              title={rule.description}
-                              className="flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-muted-foreground"
-                            >
-                              <Check size={14} className="shrink-0 text-primary/60" aria-hidden="true" />
-                              <span className="flex-1">{rule.label}</span>
-                              <span className="text-xs">Pass</span>
-                            </div>
-                          ))}
-                        </>
-                      )}
-
-                      {/* Toggle link */}
-                      <div className="mt-1 flex items-center gap-4">
-                        <button
-                          onClick={() => toggleShowAllRules(primaryId)}
-                          className="flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
-                        >
-                          <Eye size={12} aria-hidden="true" />
-                          {showingAll ? "Show failures only" : `Show all ${AUDIT_RULES.length} rules (${passedCount} passed)`}
-                        </button>
                       </div>
-                    </div>
+                    ) : (
+                      /* Agents have different findings — show per-agent breakdown */
+                      <div className="grid gap-3">
+                        {group.agents.map((agentResult) => {
+                          const agentFailed = new Set(agentResult.findings.map(f => f.rule_id));
+                          const agentFailedRules = AUDIT_RULES.filter(r => agentFailed.has(r.id));
+                          return (
+                            <div key={agentResult.id} className="space-y-1.5">
+                              <div className="flex items-center justify-between px-1">
+                                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                                  {agentResult.agent}
+                                </span>
+                                <TrustBadge score={agentResult.trust_score} size="sm" />
+                              </div>
+                              {agentFailedRules.length === 0 ? (
+                                <div className="flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-muted-foreground">
+                                  <Check size={14} className="shrink-0 text-primary/60" aria-hidden="true" />
+                                  <span>Clean</span>
+                                </div>
+                              ) : (
+                                agentFailedRules.map((rule) => (
+                                  <div key={rule.id} title={rule.description} className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors duration-150 hover:bg-muted/30">
+                                    <CircleAlert size={16} className="shrink-0 text-trust-critical" aria-hidden="true" />
+                                    <span className="flex-1 text-foreground">{rule.label}</span>
+                                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>{rule.severity}</span>
+                                  </div>
+                                ))
+                              )}
+                              {group.agents.indexOf(agentResult) < group.agents.length - 1 && (
+                                <div className="my-1 border-t border-border/30" />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
