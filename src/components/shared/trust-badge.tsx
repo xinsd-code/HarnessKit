@@ -10,14 +10,14 @@ const tierTitle: Record<string, string> = {
   Safe: "Score 80+: No security concerns found",
   LowRisk: "Score 60-79: Minor issues, generally safe",
   HighRisk: "Score 40-59: Review recommended",
-  Critical: "Score below 40: Significant security concerns",
+  AtRisk: "Score below 40: Significant security concerns",
 };
 
 const tierLabel: Record<string, string> = {
   Safe: "Safe",
   LowRisk: "Low Risk",
   HighRisk: "Needs Review",
-  Critical: "Critical",
+  AtRisk: "At Risk",
 };
 
 export function TrustBadge({ score, size = "md" }: TrustBadgeProps) {

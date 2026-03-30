@@ -1,7 +1,7 @@
 export type ExtensionKind = "skill" | "mcp" | "plugin" | "hook";
 export type SourceOrigin = "git" | "registry" | "agent" | "local";
 export type Severity = "Critical" | "High" | "Medium" | "Low";
-export type TrustTier = "Safe" | "LowRisk" | "HighRisk" | "Critical";
+export type TrustTier = "Safe" | "LowRisk" | "HighRisk" | "AtRisk";
 
 export interface Extension {
   id: string;
@@ -227,7 +227,7 @@ export function trustTier(score: number): TrustTier {
   if (score >= 80) return "Safe";
   if (score >= 60) return "LowRisk";
   if (score >= 40) return "HighRisk";
-  return "Critical";
+  return "AtRisk";
 }
 
 export function trustColor(score: number): string {
@@ -236,7 +236,7 @@ export function trustColor(score: number): string {
     case "Safe": return "text-trust-safe";
     case "LowRisk": return "text-trust-low-risk";
     case "HighRisk": return "text-trust-high-risk";
-    case "Critical": return "text-trust-critical";
+    case "AtRisk": return "text-trust-critical";
   }
 }
 

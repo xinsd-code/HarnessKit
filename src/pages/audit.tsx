@@ -248,7 +248,7 @@ export default function AuditPage() {
                   {" · Avg score "}
                   <span className={`font-medium ${avgColor}`}>{avgScore}</span>
                   {avgTier && (
-                    <span className={`${avgColor}`}> ({avgTier === "LowRisk" ? "Low Risk" : avgTier === "HighRisk" ? "High Risk" : avgTier})</span>
+                    <span className={`${avgColor}`}> ({avgTier === "LowRisk" ? "Low Risk" : avgTier === "HighRisk" ? "High Risk" : avgTier === "AtRisk" ? "At Risk" : avgTier})</span>
                   )}
                 </>
               )}

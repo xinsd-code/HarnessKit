@@ -163,7 +163,7 @@ pub enum TrustTier {
     Safe,
     LowRisk,
     HighRisk,
-    Critical,
+    AtRisk,
 }
 
 impl TrustTier {
@@ -172,8 +172,8 @@ impl TrustTier {
             80..=100 => Self::Safe,
             60..=79 => Self::LowRisk,
             40..=59 => Self::HighRisk,
-            0..=39 => Self::Critical,
-            _ => Self::Critical,
+            0..=39 => Self::AtRisk,
+            _ => Self::AtRisk,
         }
     }
 
@@ -182,7 +182,7 @@ impl TrustTier {
             Self::Safe => "Safe",
             Self::LowRisk => "Low Risk",
             Self::HighRisk => "High Risk",
-            Self::Critical => "Critical",
+            Self::AtRisk => "At Risk",
         }
     }
 }
@@ -347,8 +347,8 @@ mod tests {
         assert_eq!(TrustTier::from_score(60), TrustTier::LowRisk);
         assert_eq!(TrustTier::from_score(59), TrustTier::HighRisk);
         assert_eq!(TrustTier::from_score(40), TrustTier::HighRisk);
-        assert_eq!(TrustTier::from_score(39), TrustTier::Critical);
-        assert_eq!(TrustTier::from_score(0), TrustTier::Critical);
+        assert_eq!(TrustTier::from_score(39), TrustTier::AtRisk);
+        assert_eq!(TrustTier::from_score(0), TrustTier::AtRisk);
     }
 
     #[test]
