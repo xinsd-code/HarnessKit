@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Extension, ExtensionContent, AgentInfo, AgentDetail, DashboardStats, AuditResult, UpdateStatus, MarketplaceItem, SkillAuditInfo, Project, DiscoveredProject, InstallResult, FileEntry } from "./types";
+import type { Extension, ExtensionContent, AgentInfo, AgentDetail, DashboardStats, AuditResult, UpdateStatus, MarketplaceItem, SkillAuditInfo, Project, DiscoveredProject, InstallResult, FileEntry, ScanResult } from "./types";
 
 export const api = {
   listExtensions(kind?: string, agent?: string): Promise<Extension[]> {
@@ -42,8 +42,20 @@ export const api = {
     return invoke("check_updates");
   },
 
+  updateExtension(id: string): Promise<InstallResult> {
+    return invoke("update_extension", { id });
+  },
+
   installFromGit(url: string, targetAgent?: string, skillId?: string): Promise<InstallResult> {
     return invoke("install_from_git", { url, targetAgent, skillId });
+  },
+
+  scanGitRepo(url: string, targetAgents: string[]): Promise<ScanResult> {
+    return invoke("scan_git_repo", { url, targetAgents });
+  },
+
+  installScannedSkills(cloneId: string, skillIds: string[], targetAgents: string[]): Promise<InstallResult[]> {
+    return invoke("install_scanned_skills", { cloneId, skillIds, targetAgents });
   },
 
   updateTags(id: string, tags: string[]): Promise<void> {

@@ -164,6 +164,18 @@ export interface InstallResult {
   was_update: boolean;
 }
 
+export interface DiscoveredSkill {
+  skill_id: string;
+  name: string;
+  description: string;
+  path: string;
+}
+
+export type ScanResult =
+  | { type: "Installed"; result: InstallResult }
+  | { type: "MultipleSkills"; clone_id: string; skills: DiscoveredSkill[] }
+  | { type: "NoSkills" };
+
 export interface ExtensionContent {
   content: string;
   path: string | null;

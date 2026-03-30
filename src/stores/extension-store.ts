@@ -46,6 +46,7 @@ interface ExtensionState {
   undoDelete: () => void;
   confirmDelete: () => Promise<void>;
   checkUpdates: () => Promise<void>;
+  updateExtension: (id: string) => Promise<void>;
   deleteFromAgents: (groupKey: string, agents: string[]) => Promise<void>;
   grouped: () => GroupedExtension[];
   filtered: () => GroupedExtension[];
@@ -108,13 +109,25 @@ export function buildGroups(extensions: Extension[]): GroupedExtension[] {
 function deduplicatePermissions(
   perms: Extension["permissions"],
 ): Extension["permissions"] {
-  const seen = new Set<string>();
-  return perms.filter((p) => {
-    const key = JSON.stringify(p);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const merged = new Map<string, Set<string>>();
+  for (const p of perms) {
+    const values = "paths" in p ? p.paths : "domains" in p ? p.domains : "commands" in p ? p.commands : "engines" in p ? p.engines : "keys" in p ? p.keys : [];
+    const existing = merged.get(p.type) ?? new Set<string>();
+    for (const v of values) existing.add(v);
+    merged.set(p.type, existing);
+  }
+  const result: Extension["permissions"] = [];
+  for (const [type, values] of merged) {
+    const arr = [...values].sort();
+    switch (type) {
+      case "filesystem": result.push({ type, paths: arr }); break;
+      case "network": result.push({ type, domains: arr }); break;
+      case "shell": result.push({ type, commands: arr }); break;
+      case "database": result.push({ type, engines: arr }); break;
+      case "env": result.push({ type, keys: arr }); break;
+    }
+  }
+  return result;
 }
 
 // Simple reference-equality memoization for grouped() —
@@ -323,6 +336,16 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       map.set(id, status);
     }
     set({ updateStatuses: map });
+  },
+
+  async updateExtension(id: string) {
+    await api.updateExtension(id);
+    // Clear the update status for this extension
+    const statuses = new Map(get().updateStatuses);
+    statuses.set(id, { status: "up_to_date" });
+    set({ updateStatuses: statuses });
+    // Re-fetch extensions to reflect new state
+    await get().fetch();
   },
 
   async deleteFromAgents(groupKey, agentNames) {
