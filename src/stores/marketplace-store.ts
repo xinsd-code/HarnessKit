@@ -4,11 +4,15 @@ import { api } from "@/lib/invoke";
 
 type TabKind = "skill" | "mcp";
 
+const TRENDING_TTL = 5 * 60 * 1000; // 5 minutes
+
 interface MarketplaceState {
   tab: TabKind;
   query: string;
   results: MarketplaceItem[];
   trending: MarketplaceItem[];
+  trendingCache: Record<TabKind, MarketplaceItem[]>;
+  trendingFetchedAt: Record<TabKind, number>;
   loading: boolean;
   trendingLoading: boolean;
   selectedItem: MarketplaceItem | null;
@@ -31,6 +35,8 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   query: "",
   results: [],
   trending: [],
+  trendingCache: { skill: [], mcp: [] },
+  trendingFetchedAt: { skill: 0, mcp: 0 },
   loading: false,
   trendingLoading: false,
   selectedItem: null,
@@ -40,7 +46,8 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   auditLoading: false,
   installing: null,
   setTab(tab) {
-    set({ tab, results: [], query: "", selectedItem: null, trending: [] });
+    const { trendingCache } = get();
+    set({ tab, results: [], query: "", selectedItem: null, trending: trendingCache[tab] });
     get().loadTrending();
   },
   setQuery(query) { set({ query }); },
@@ -56,11 +63,17 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     }
   },
   async loadTrending() {
-    const { tab } = get();
+    const { tab, trendingFetchedAt } = get();
+    if (Date.now() - trendingFetchedAt[tab] < TRENDING_TTL) return;
     set({ trendingLoading: true });
     try {
       const trending = await api.trendingMarketplace(tab, 10);
-      set({ trending, trendingLoading: false });
+      set({
+        trending,
+        trendingLoading: false,
+        trendingCache: { ...get().trendingCache, [tab]: trending },
+        trendingFetchedAt: { ...get().trendingFetchedAt, [tab]: Date.now() },
+      });
     } catch {
       set({ trending: [], trendingLoading: false });
     }
