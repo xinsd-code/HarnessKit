@@ -158,7 +158,7 @@ impl Store {
                permissions_json = excluded.permissions_json,
                updated_at = excluded.updated_at,
                category = extensions.category,
-               last_used_at = excluded.last_used_at,
+               last_used_at = COALESCE(extensions.last_used_at, excluded.last_used_at),
                source_path = excluded.source_path",
             params![
                 ext.id,
@@ -322,7 +322,7 @@ impl Store {
                    permissions_json = excluded.permissions_json,
                    updated_at = excluded.updated_at,
                    category = extensions.category,
-                   last_used_at = excluded.last_used_at,
+                   last_used_at = COALESCE(extensions.last_used_at, excluded.last_used_at),
                    source_path = excluded.source_path",
                 params![
                     ext.id,
