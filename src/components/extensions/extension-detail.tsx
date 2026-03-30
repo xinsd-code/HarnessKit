@@ -40,6 +40,7 @@ export function ExtensionDetail() {
   const setSelectedId = useExtensionStore(s => s.setSelectedId);
   const toggle = useExtensionStore(s => s.toggle);
   const updateStatuses = useExtensionStore(s => s.updateStatuses);
+  const updateExtension = useExtensionStore(s => s.updateExtension);
   const updateCategory = useExtensionStore(s => s.updateCategory);
   const deployToAgent = useExtensionStore(s => s.deployToAgent);
   const deleteFromAgents = useExtensionStore(s => s.deleteFromAgents);
@@ -50,6 +51,7 @@ export function ExtensionDetail() {
   const agents = useAgentStore(s => s.agents);
   const agentOrder = useAgentStore(s => s.agentOrder);
   const [deploying, setDeploying] = useState<string | null>(null);
+  const [updating, setUpdating] = useState(false);
   const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);
   const [deleteAgents, setDeleteAgents] = useState<Set<string>>(new Set());
@@ -117,6 +119,79 @@ export function ExtensionDetail() {
       {group.description && (
         <p className="text-sm text-muted-foreground">{group.description}</p>
       )}
+
+      {/* Status + Category row */}
+      <div className="mt-4 flex items-center gap-2">
+        <button
+          onClick={() => { toggle(group.groupKey, !group.enabled); toast.success(`Extension ${group.enabled ? "disabled" : "enabled"}`); }}
+          aria-pressed={group.enabled}
+          className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${
+            group.enabled
+              ? "bg-primary/10 text-primary"
+              : "bg-destructive/10 text-destructive"
+          }`}
+        >
+          {group.enabled ? "Enabled" : "Disabled"}
+        </button>
+        <select
+          value={group.category ?? ""}
+          onChange={(e) => updateCategory(group.groupKey, e.target.value || null)}
+          aria-label="Extension category"
+          className="min-w-0 flex-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground focus:border-ring focus:outline-none"
+        >
+          <option value="">No category</option>
+          {CATEGORIES.map((cat) => (
+            <option key={cat} value={cat}>{cat}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Update status for git-sourced extensions */}
+      {group.source.origin === "git" && (() => {
+        const statuses = group.instances
+          .map((inst) => updateStatuses.get(inst.id))
+          .filter(Boolean);
+        const hasUpdate = statuses.some((s) => s!.status === "update_available");
+        const allUpToDate = statuses.length > 0 && statuses.every((s) => s!.status === "up_to_date");
+        const handleUpdate = async () => {
+          setUpdating(true);
+          try {
+            const inst = group.instances.find((i) => updateStatuses.get(i.id)?.status === "update_available");
+            if (inst) {
+              await updateExtension(inst.id);
+              toast.success(`${group.name} updated`);
+            }
+          } catch (e) {
+            toast.error(`Update failed: ${e}`);
+          } finally {
+            setUpdating(false);
+          }
+        };
+        return (
+          <div className="mt-2 flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
+            <span className="text-sm">Updates</span>
+            {statuses.length === 0 ? (
+              <span className="text-xs text-muted-foreground">Not checked</span>
+            ) : hasUpdate ? (
+              <button
+                onClick={handleUpdate}
+                disabled={updating}
+                className="flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
+              >
+                {updating ? <Loader2 size={14} className="animate-spin" /> : <ArrowDownCircle size={14} />}
+                {updating ? "Updating..." : "Update available"}
+              </button>
+            ) : allUpToDate ? (
+              <span className="flex items-center gap-1 text-xs text-primary">
+                <CheckCircle size={14} /> Up to date
+              </span>
+            ) : (
+              <span className="text-xs text-muted-foreground">Check failed</span>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Metadata */}
       <div className="mt-4 space-y-2 text-sm">
         <div className="flex items-center gap-2 text-muted-foreground">
@@ -144,6 +219,18 @@ export function ExtensionDetail() {
           </div>
         </div>
       </div>
+
+      {/* Permissions */}
+      {group.permissions.length > 0 && (
+        <div className="mt-4">
+          <h4 className="mb-2 text-xs font-medium text-muted-foreground">Permissions</h4>
+          <div className="space-y-2">
+            {group.permissions.map((p, i) => (
+              <PermissionDetail key={i} perm={p} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Agent Details (per-agent breakdown) */}
       {group.instances.length > 0 && (
@@ -194,23 +281,6 @@ export function ExtensionDetail() {
         </div>
       )}
 
-      {/* Category */}
-      <div className="mt-4">
-        <h4 className="mb-2 text-xs font-medium text-muted-foreground">Category</h4>
-        <select
-          value={group.category ?? ""}
-          onChange={(e) => updateCategory(group.groupKey, e.target.value || null)}
-          aria-label="Extension category"
-          className="w-full rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground focus:border-ring focus:outline-none"
-        >
-          <option value="">No category</option>
-          {CATEGORIES.map((cat) => (
-            <option key={cat} value={cat}>{cat}</option>
-          ))}
-        </select>
-      </div>
-
-
       {/* Deploy to other agents (skill, mcp, hook) */}
       {(group.kind === "skill" || group.kind === "mcp" || group.kind === "hook") && (() => {
         const detectedAgents = sortAgents(agents.filter((a) => a.detected), agentOrder);
@@ -249,62 +319,6 @@ export function ExtensionDetail() {
           </div>
         );
       })()}
-
-      {/* Update status for git-sourced extensions (group-level summary) */}
-      {group.source.origin === "git" && (() => {
-        // Show aggregate status across all instances
-        const statuses = group.instances
-          .map((inst) => updateStatuses.get(inst.id))
-          .filter(Boolean);
-        const hasUpdate = statuses.some((s) => s!.status === "update_available");
-        const allUpToDate = statuses.length > 0 && statuses.every((s) => s!.status === "up_to_date");
-        return (
-          <div className="mt-4 flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
-            <span className="text-sm">Updates</span>
-            {statuses.length === 0 ? (
-              <span className="text-xs text-muted-foreground">Not checked</span>
-            ) : hasUpdate ? (
-              <span className="flex items-center gap-1 text-xs text-primary">
-                <ArrowDownCircle size={14} /> Update available
-              </span>
-            ) : allUpToDate ? (
-              <span className="flex items-center gap-1 text-xs text-primary">
-                <CheckCircle size={14} /> Up to date
-              </span>
-            ) : (
-              <span className="text-xs text-muted-foreground">Check failed</span>
-            )}
-          </div>
-        );
-      })()}
-
-      {/* Status toggle */}
-      <div className="mt-4 flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
-        <span className="text-sm">Status</span>
-        <button
-          onClick={() => { toggle(group.groupKey, !group.enabled); toast.success(`Extension ${group.enabled ? "disabled" : "enabled"}`); }}
-          aria-pressed={group.enabled}
-          className={`rounded-full px-3 py-1 text-xs font-medium ${
-            group.enabled
-              ? "bg-primary/10 text-primary"
-              : "bg-destructive/10 text-destructive"
-          }`}
-        >
-          {group.enabled ? "Enabled" : "Disabled"}
-        </button>
-      </div>
-
-      {/* Permissions */}
-      {group.permissions.length > 0 && (
-        <div className="mt-4">
-          <h4 className="mb-2 text-xs font-medium text-muted-foreground">Permissions</h4>
-          <div className="space-y-2">
-            {group.permissions.map((p, i) => (
-              <PermissionDetail key={i} perm={p} />
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Content / Documentation */}
       <div className="mt-4">
