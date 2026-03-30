@@ -426,12 +426,12 @@ export default function OverviewPage() {
       {/* 3-column info grid: Activity | Tip | Usage                        */}
       {/* ----------------------------------------------------------------- */}
       {(hasActivity || tipOfTheDay || usageInsights) && (
-        <section className="space-y-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            At a glance
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-stretch">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-3 gap-y-6 items-stretch">
             {/* Recent Activity */}
+            <section className="space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Recent activity
+            </h3>
             <div className="rounded-xl border border-border/60 bg-card/40 divide-y divide-border/40">
               {hasActivity ? (
                 activityItems.map((item, i) => (
@@ -466,7 +466,13 @@ export default function OverviewPage() {
               )}
             </div>
 
+            </section>
+
             {/* Tip of the Day */}
+            <section className="space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Tip of the day
+            </h3>
             {tipOfTheDay ? (
               <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-4">
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary mt-0.5">
@@ -487,7 +493,13 @@ export default function OverviewPage() {
               </div>
             )}
 
+            </section>
+
             {/* Usage Insights */}
+            <section className="space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Usage insights
+            </h3>
             {usageInsights ? (
               <div className="flex flex-col justify-center gap-3 rounded-xl border border-border/60 bg-card/40 px-4 py-4">
                 <div className="flex items-center gap-2.5">
@@ -514,8 +526,8 @@ export default function OverviewPage() {
                 No usage data yet
               </div>
             )}
+            </section>
           </div>
-        </section>
       )}
 
       {/* ----------------------------------------------------------------- */}
