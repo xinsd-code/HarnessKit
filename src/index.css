@@ -532,6 +532,17 @@
   outline-offset: 3px;
 }
 
+button,
+select,
+[role="button"] {
+  cursor: pointer;
+}
+
+button:disabled,
+select:disabled {
+  cursor: default;
+}
+
 button:focus-visible,
 [role="button"]:focus-visible {
   outline: 3px solid var(--ring);
