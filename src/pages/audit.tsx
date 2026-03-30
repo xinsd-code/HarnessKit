@@ -6,6 +6,7 @@ import { formatRelativeTime } from "@/lib/types";
 import { api } from "@/lib/invoke";
 import { buildGroups } from "@/stores/extension-store";
 import { RefreshCw, ChevronRight, ChevronDown, CircleAlert, Shield, Check, Eye } from "lucide-react";
+import { Hint } from "@/components/shared/hint";
 
 function IndeterminateBar({ className = "" }: { className?: string }) {
   return (
@@ -28,6 +29,7 @@ const AUDIT_RULES = [
   { id: "outdated", label: "Outdated (90+ days)", severity: "Low" as Severity, deduction: 3, description: "Extension hasn't been updated in over 90 days" },
   { id: "unknown-source", label: "Unknown Source", severity: "Low" as Severity, deduction: 3, description: "Extension origin cannot be determined" },
   { id: "duplicate-conflict", label: "Duplicate / Conflict", severity: "Low" as Severity, deduction: 3, description: "Multiple extensions with overlapping functionality" },
+  { id: "permission-combo-risk", label: "Permission Combination Risk", severity: "High" as Severity, deduction: 15, description: "Dangerous combination of permissions that could enable data exfiltration or RCE" },
 ] as const;
 
 function severityBadgeClass(severity: string): string {
@@ -57,6 +59,12 @@ export default function AuditPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [showAllRules, setShowAllRules] = useState<Set<string>>(new Set());
   const [expandedRules, setExpandedRules] = useState<Set<string>>(new Set());
+  const [expandedFindings, setExpandedFindings] = useState<Set<string>>(new Set());
+  const toggleFinding = (key: string) => setExpandedFindings((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
   const [collapsedSeverities, setCollapsedSeverities] = useState<Set<string>>(new Set(["Critical", "High", "Medium", "Low"]));
   const severityRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [allExtensions, setAllExtensions] = useState<Extension[]>([]);
@@ -246,6 +254,10 @@ export default function AuditPage() {
             </p>
           </div>
         )}
+
+        <Hint id="audit-disclaimer">
+          Automated heuristic checks — not a substitute for professional security review.
+        </Hint>
       </div>
 
       {/* Scrollable content */}
@@ -436,19 +448,46 @@ export default function AuditPage() {
                     {group.uniform ? (
                       /* All agents have same findings — show merged view */
                       <div className="grid gap-1.5">
-                        {failedRules.map((rule) => (
-                          <div
-                            key={rule.id}
-                            title={rule.description}
-                            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors duration-150 hover:bg-muted/30"
-                          >
-                            <CircleAlert size={16} className="shrink-0 text-trust-critical" aria-hidden="true" />
-                            <span className="flex-1 text-foreground">{rule.label}</span>
-                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
-                              {rule.severity}
-                            </span>
-                          </div>
-                        ))}
+                        {failedRules.map((rule) => {
+                          const findingKey = `${primaryId}:${rule.id}`;
+                          const isDetailOpen = expandedFindings.has(findingKey);
+                          // Collect findings from ALL agents to show every location
+                          const allFindings = group.agents.flatMap((a) => a.findings.filter((f) => f.rule_id === rule.id));
+                          // Deduplicate by message+location
+                          const seen = new Set<string>();
+                          const unique = allFindings.filter((f) => {
+                            const key = `${f.message}\0${f.location}`;
+                            if (seen.has(key)) return false;
+                            seen.add(key);
+                            return true;
+                          });
+                          return (
+                            <div key={rule.id}>
+                              <button
+                                onClick={() => toggleFinding(findingKey)}
+                                title={rule.description}
+                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-left transition-colors duration-150 hover:bg-muted/30"
+                              >
+                                <CircleAlert size={16} className="shrink-0 text-trust-critical" aria-hidden="true" />
+                                <span className="flex-1 text-foreground">{rule.label}</span>
+                                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
+                                  {rule.severity}
+                                </span>
+                                <ChevronRight size={14} className={`shrink-0 text-muted-foreground transition-transform duration-150 ${isDetailOpen ? "rotate-90" : ""}`} />
+                              </button>
+                              {isDetailOpen && unique.length > 0 && (
+                                <div className="ml-10 mr-3 mb-1 rounded-md bg-muted/40 px-3 py-2 space-y-1.5">
+                                  {unique.map((f, i) => (
+                                    <div key={i} className="text-xs">
+                                      <p className="text-muted-foreground">{f.message}</p>
+                                      <p className="text-muted-foreground/60 font-mono truncate">{f.location}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
 
                         {showingAll && (
                           <>
@@ -493,13 +532,35 @@ export default function AuditPage() {
                                   <span>Clean</span>
                                 </div>
                               ) : (
-                                agentFailedRules.map((rule) => (
-                                  <div key={rule.id} title={rule.description} className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors duration-150 hover:bg-muted/30">
-                                    <CircleAlert size={16} className="shrink-0 text-trust-critical" aria-hidden="true" />
-                                    <span className="flex-1 text-foreground">{rule.label}</span>
-                                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>{rule.severity}</span>
-                                  </div>
-                                ))
+                                agentFailedRules.map((rule) => {
+                                  const findingKey = `${agentResult.id}:${rule.id}`;
+                                  const isDetailOpen = expandedFindings.has(findingKey);
+                                  const findings = agentResult.findings.filter((f) => f.rule_id === rule.id);
+                                  return (
+                                    <div key={rule.id}>
+                                      <button
+                                        onClick={() => toggleFinding(findingKey)}
+                                        title={rule.description}
+                                        className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-left transition-colors duration-150 hover:bg-muted/30"
+                                      >
+                                        <CircleAlert size={16} className="shrink-0 text-trust-critical" aria-hidden="true" />
+                                        <span className="flex-1 text-foreground">{rule.label}</span>
+                                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>{rule.severity}</span>
+                                        <ChevronRight size={14} className={`shrink-0 text-muted-foreground transition-transform duration-150 ${isDetailOpen ? "rotate-90" : ""}`} />
+                                      </button>
+                                      {isDetailOpen && findings.length > 0 && (
+                                        <div className="ml-10 mr-3 mb-1 rounded-md bg-muted/40 px-3 py-2 space-y-1.5">
+                                          {findings.map((f, i) => (
+                                            <div key={i} className="text-xs">
+                                              <p className="text-muted-foreground">{f.message}</p>
+                                              <p className="text-muted-foreground/60 font-mono truncate">{f.location}</p>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })
                               )}
                               {group.agents.indexOf(agentResult) < group.agents.length - 1 && (
                                 <div className="my-1 border-t border-border/30" />
