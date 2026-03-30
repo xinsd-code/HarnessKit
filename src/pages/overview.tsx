@@ -426,106 +426,96 @@ export default function OverviewPage() {
       {/* 3-column info grid: Activity | Tip | Usage                        */}
       {/* ----------------------------------------------------------------- */}
       {(hasActivity || tipOfTheDay || usageInsights) && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-stretch">
-          {/* Recent Activity */}
-          <div className="flex flex-col rounded-xl border border-border/60 bg-card/40 overflow-hidden">
-            <div className="px-3 pt-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Recent activity
-            </div>
-            {hasActivity ? (
-              <div className="flex-1 divide-y divide-border/40">
-                {activityItems.map((item, i) => (
+        <section className="space-y-3">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            At a glance
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-stretch">
+            {/* Recent Activity */}
+            <div className="rounded-xl border border-border/60 bg-card/40 divide-y divide-border/40">
+              {hasActivity ? (
+                activityItems.map((item, i) => (
                   <button
                     key={`${item.type}-${item.label}-${i}`}
                     onClick={() => navigate(item.navigateTo)}
-                    className="group flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/50"
+                    className="group flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
                   >
                     <span
-                      className={`flex size-6 shrink-0 items-center justify-center rounded-md ${
+                      className={`flex size-7 shrink-0 items-center justify-center rounded-md ${
                         item.type === "extension"
                           ? "bg-primary/8 text-primary"
                           : "bg-muted/80 text-muted-foreground"
                       }`}
                     >
                       {item.type === "extension" ? (
-                        <Sparkles size={12} aria-hidden="true" />
+                        <Sparkles size={13} aria-hidden="true" />
                       ) : (
-                        <FilePenLine size={12} aria-hidden="true" />
+                        <FilePenLine size={13} aria-hidden="true" />
                       )}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <span className="truncate text-[12px] font-medium text-foreground block">{item.label}</span>
-                      <span className="truncate text-[10px] text-muted-foreground block">{item.sublabel}</span>
+                      <span className="truncate text-sm font-medium text-foreground block">{item.label}</span>
+                      <span className="truncate text-xs text-muted-foreground block">{item.sublabel}</span>
                     </div>
                   </button>
-                ))}
-              </div>
-            ) : (
-              <div className="flex-1 flex items-center justify-center px-3 pb-3 text-[11px] text-muted-foreground">
-                No recent changes
-              </div>
-            )}
-          </div>
-
-          {/* Tip of the Day */}
-          <div className="flex flex-col rounded-xl border border-primary/20 bg-primary/5 overflow-hidden">
-            <div className="px-3 pt-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Tip of the day
+                ))
+              ) : (
+                <div className="flex items-center justify-center px-3 py-6 text-xs text-muted-foreground">
+                  No recent changes
+                </div>
+              )}
             </div>
+
+            {/* Tip of the Day */}
             {tipOfTheDay ? (
-              <div className="flex-1 flex items-start gap-2.5 px-3 pb-3">
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary mt-0.5">
-                  <Lightbulb size={14} strokeWidth={1.75} aria-hidden="true" />
+              <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-4">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary mt-0.5">
+                  <Lightbulb size={15} strokeWidth={1.75} aria-hidden="true" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[12px] text-foreground leading-relaxed">{tipOfTheDay.tip}</p>
+                  <p className="text-sm text-foreground leading-relaxed">{tipOfTheDay.tip}</p>
                   {tipOfTheDay.agent !== "general" && (
-                    <span className="mt-1.5 inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                    <span className="mt-2 inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
                       {agentDisplayName(tipOfTheDay.agent)}
                     </span>
                   )}
                 </div>
               </div>
             ) : (
-              <div className="flex-1 flex items-center justify-center px-3 pb-3 text-[11px] text-muted-foreground">
+              <div className="flex items-center justify-center rounded-xl border border-border/60 bg-card/40 px-3 py-6 text-xs text-muted-foreground">
                 Loading tips...
               </div>
             )}
-          </div>
 
-          {/* Usage Insights */}
-          <div className="flex flex-col rounded-xl border border-border/60 bg-card/40 overflow-hidden">
-            <div className="px-3 pt-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Usage insights
-            </div>
+            {/* Usage Insights */}
             {usageInsights ? (
-              <div className="flex-1 flex flex-col justify-center gap-2 px-3 pb-3">
-                <div className="flex items-center gap-2">
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <TrendingUp size={13} strokeWidth={1.75} aria-hidden="true" />
+              <div className="flex flex-col justify-center gap-3 rounded-xl border border-border/60 bg-card/40 px-4 py-4">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <TrendingUp size={15} strokeWidth={1.75} aria-hidden="true" />
                   </span>
                   <div className="min-w-0">
-                    <span className="block text-[12px] font-medium text-foreground truncate">{usageInsights.mostActive.name}</span>
-                    <span className="block text-[10px] text-muted-foreground truncate">Most active · {usageInsights.mostActive.detail}</span>
+                    <span className="block text-sm font-medium text-foreground truncate">{usageInsights.mostActive.name}</span>
+                    <span className="block text-xs text-muted-foreground truncate">Most active · {usageInsights.mostActive.detail}</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
-                    <Clock size={13} strokeWidth={1.75} aria-hidden="true" />
+                <div className="flex items-center gap-2.5">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
+                    <Clock size={15} strokeWidth={1.75} aria-hidden="true" />
                   </span>
                   <div className="min-w-0">
-                    <span className="block text-[12px] font-medium text-foreground truncate">{usageInsights.longestUnused.name}</span>
-                    <span className="block text-[10px] text-muted-foreground truncate">Longest unused · {usageInsights.longestUnused.detail}</span>
+                    <span className="block text-sm font-medium text-foreground truncate">{usageInsights.longestUnused.name}</span>
+                    <span className="block text-xs text-muted-foreground truncate">Longest unused · {usageInsights.longestUnused.detail}</span>
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="flex-1 flex items-center justify-center px-3 pb-3 text-[11px] text-muted-foreground">
+              <div className="flex items-center justify-center rounded-xl border border-border/60 bg-card/40 px-3 py-6 text-xs text-muted-foreground">
                 No usage data yet
               </div>
             )}
           </div>
-        </div>
+        </section>
       )}
 
       {/* ----------------------------------------------------------------- */}
