@@ -60,7 +60,7 @@ export default function AuditPage() {
   const navigate = useNavigate();
   const [openId, setOpenId] = useState<string | null>(null);
   const [showAllRules, setShowAllRules] = useState<Set<string>>(new Set());
-  const [collapsedSeverities, setCollapsedSeverities] = useState<Set<string>>(new Set(["Medium", "Low"]));
+  const [collapsedSeverities, setCollapsedSeverities] = useState<Set<string>>(new Set(["Critical", "High", "Medium", "Low"]));
   const severityRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [allExtensions, setAllExtensions] = useState<Extension[]>([]);
 
@@ -145,19 +145,6 @@ export default function AuditPage() {
     });
   }
 
-  function scrollToSeverity(severity: string) {
-    const el = severityRefs.current[severity];
-    if (el) {
-      if (collapsedSeverities.has(severity)) {
-        setCollapsedSeverities(prev => {
-          const next = new Set(prev);
-          next.delete(severity);
-          return next;
-        });
-      }
-      setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
-    }
-  }
 
   function toggleShowAllRules(extId: string) {
     setShowAllRules(prev => {
@@ -226,13 +213,12 @@ export default function AuditPage() {
               const count = findingsBySeverity[severity]?.length ?? 0;
               if (count === 0) return null;
               return (
-                <button
+                <span
                   key={severity}
-                  onClick={() => scrollToSeverity(severity)}
-                  className={`font-medium ${severityTextColor(severity)} hover:underline hover:scale-[1.05] cursor-pointer transition-all`}
+                  className={`font-medium ${severityTextColor(severity)}`}
                 >
                   {count} {severity}
-                </button>
+                </span>
               );
             }).filter(Boolean).reduce<ReactNode[]>((acc, el, i) => {
               if (i > 0) acc.push(<span key={`sep-${i}`} className="text-muted-foreground/40">·</span>);
