@@ -203,7 +203,7 @@ export default function MarketplacePage() {
 
         <Hint id="marketplace-intro">
           Search for skills and MCP servers to install across your agents. Use
-          'Install from Git' for private repositories.
+          'Install from Git' to install directly from a Git URL.
         </Hint>
       </div>
 

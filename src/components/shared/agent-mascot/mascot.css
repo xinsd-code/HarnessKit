@@ -20,26 +20,19 @@
 .mascot-claude .arm-left { transform-origin: 40px 75px; }
 .mascot-claude .legs { transform-origin: 120px 110px; }
 
-.mascot-claude.is-animated .body { animation: claude-breathe 2.5s ease-in-out infinite; }
-.mascot-claude.is-animated .eye { animation: claude-blink 4s infinite; }
-.mascot-claude.is-animated .arm-right { animation: claude-wave-right 2.5s ease-in-out infinite; }
-.mascot-claude.is-animated .arm-left { animation: claude-wave-left 2.5s ease-in-out infinite; }
-.mascot-claude.is-animated .pixel { filter: brightness(1.08); }
+/* Hover: jump + wave hello */
+.mascot-claude.is-animated { animation: claude-jump 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite; }
+.mascot-claude.is-animated .arm-right { animation: claude-wave-right 1.2s ease-in-out infinite; }
+.mascot-claude.is-animated .arm-left { animation: claude-wave-left 1.2s ease-in-out infinite; }
+.mascot-claude.is-animated .legs { animation: claude-legs-squash-light 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite; }
+.mascot-claude.is-animated .eye { animation: claude-blink 3.2s infinite; }
 
-.mascot-claude.is-clicked { animation: claude-jump 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
-.mascot-claude.is-clicked .arm-right { animation: claude-flap-right 0.5s ease-in-out !important; }
-.mascot-claude.is-clicked .arm-left { animation: claude-flap-left 0.5s ease-in-out !important; }
-.mascot-claude.is-clicked .eye { animation: claude-squint 0.5s ease-in-out !important; }
-.mascot-claude.is-clicked .legs { animation: claude-legs-squash 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+/* Click: run to edge, peek, blink, run back */
+.mascot-claude.is-clicked { animation: claude-peek 4s ease-in-out !important; }
+.mascot-claude.is-clicked .eye { animation: claude-peek-blink 4s ease-in-out !important; }
+.mascot-claude.is-clicked .leg-a { animation: claude-leg-a 4s linear !important; }
+.mascot-claude.is-clicked .leg-b { animation: claude-leg-b 4s linear !important; }
 
-@keyframes claude-breathe {
-  0%, 100% { transform: scaleY(1) translateY(0); }
-  50% { transform: scaleY(1.02) translateY(-1px); }
-}
-@keyframes claude-blink {
-  0%, 90%, 94%, 100% { transform: scaleY(1); }
-  92% { transform: scaleY(0.1); }
-}
 @keyframes claude-wave-right {
   0%, 100% { transform: rotate(0deg); }
   15% { transform: rotate(-25deg); }
@@ -55,6 +48,86 @@
   45% { transform: rotate(20deg); }
   60% { transform: rotate(-10deg); }
   75% { transform: rotate(0deg); }
+}
+@keyframes claude-blink {
+  0%, 90%, 94%, 100% { transform: scaleY(1); }
+  92% { transform: scaleY(0.1); }
+}
+
+/* Click: run to edge, peek, blink, run back */
+@keyframes claude-peek {
+  0%   { transform: translateX(0) rotate(0deg); }
+  18%  { transform: translateX(55px) rotate(0deg); }
+  24%  { transform: translateX(55px) rotate(-12deg); }
+  55%  { transform: translateX(55px) rotate(-12deg); }
+  60%  { transform: translateX(55px) rotate(0deg); }
+  78%  { transform: translateX(0) rotate(0deg); }
+  100% { transform: translateX(0) rotate(0deg); }
+}
+@keyframes claude-peek-blink {
+  0%, 30%, 36%, 42%, 48%, 100% { transform: scaleY(1); }
+  32%, 34% { transform: scaleY(0.1); }
+  44%, 46% { transform: scaleY(0.1); }
+}
+/* Leg pair A: far-left + inner-right (diagonal) */
+@keyframes claude-leg-a {
+  0%   { transform: translateX(0); }
+  1.5% { transform: translateX(8px); }
+  3%   { transform: translateX(-8px); }
+  4.5% { transform: translateX(8px); }
+  6%   { transform: translateX(-8px); }
+  7.5% { transform: translateX(8px); }
+  9%   { transform: translateX(-8px); }
+  10.5%{ transform: translateX(8px); }
+  12%  { transform: translateX(-8px); }
+  13.5%{ transform: translateX(8px); }
+  15%  { transform: translateX(-8px); }
+  16.5%{ transform: translateX(5px); }
+  18%  { transform: translateX(0); }
+  60%  { transform: translateX(0); }
+  61.5%{ transform: translateX(8px); }
+  63%  { transform: translateX(-8px); }
+  64.5%{ transform: translateX(8px); }
+  66%  { transform: translateX(-8px); }
+  67.5%{ transform: translateX(8px); }
+  69%  { transform: translateX(-8px); }
+  70.5%{ transform: translateX(8px); }
+  72%  { transform: translateX(-8px); }
+  73.5%{ transform: translateX(8px); }
+  75%  { transform: translateX(-8px); }
+  76.5%{ transform: translateX(5px); }
+  78%  { transform: translateX(0); }
+  100% { transform: translateX(0); }
+}
+/* Leg pair B: inner-left + far-right (opposite phase) */
+@keyframes claude-leg-b {
+  0%   { transform: translateX(0); }
+  1.5% { transform: translateX(-8px); }
+  3%   { transform: translateX(8px); }
+  4.5% { transform: translateX(-8px); }
+  6%   { transform: translateX(8px); }
+  7.5% { transform: translateX(-8px); }
+  9%   { transform: translateX(8px); }
+  10.5%{ transform: translateX(-8px); }
+  12%  { transform: translateX(8px); }
+  13.5%{ transform: translateX(-8px); }
+  15%  { transform: translateX(8px); }
+  16.5%{ transform: translateX(-5px); }
+  18%  { transform: translateX(0); }
+  60%  { transform: translateX(0); }
+  61.5%{ transform: translateX(-8px); }
+  63%  { transform: translateX(8px); }
+  64.5%{ transform: translateX(-8px); }
+  66%  { transform: translateX(8px); }
+  67.5%{ transform: translateX(-8px); }
+  69%  { transform: translateX(8px); }
+  70.5%{ transform: translateX(-8px); }
+  72%  { transform: translateX(8px); }
+  73.5%{ transform: translateX(-8px); }
+  75%  { transform: translateX(8px); }
+  76.5%{ transform: translateX(-5px); }
+  78%  { transform: translateX(0); }
+  100% { transform: translateX(0); }
 }
 @keyframes claude-jump {
   0%, 100% { transform: translateY(0) scale(1); }
@@ -83,6 +156,12 @@
   30% { transform: scaleY(0.5); }
   50% { transform: scaleY(0.4); }
   80% { transform: scaleY(1.1); }
+}
+@keyframes claude-legs-squash-light {
+  0%, 100% { transform: scaleY(1); }
+  30% { transform: scaleY(0.8); }
+  50% { transform: scaleY(0.75); }
+  80% { transform: scaleY(1.05); }
 }
 
 /* === Cursor === */
