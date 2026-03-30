@@ -432,17 +432,24 @@ export default function OverviewPage() {
       {/* Tip of the Day — full-width banner                                */}
       {/* ----------------------------------------------------------------- */}
       {tipOfTheDay && (
-        <div className="flex items-center gap-3 rounded-xl border border-accent-foreground/10 bg-accent/60 px-4 py-3">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent-foreground/10 text-accent-foreground/70">
-            <Lightbulb size={15} strokeWidth={1.75} aria-hidden="true" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm text-foreground leading-relaxed">{tipOfTheDay.tip}</p>
+        <section className="space-y-3">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Tip of the day
+          </h3>
+          <div className="flex items-start gap-3 rounded-xl border border-accent-foreground/10 bg-accent/60 px-4 py-3">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent-foreground/10 text-accent-foreground/70 mt-0.5">
+              <Lightbulb size={15} strokeWidth={1.75} aria-hidden="true" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="rounded-full bg-accent-foreground/10 px-2 py-0.5 text-[10px] font-medium text-accent-foreground/70">
+                  {tipOfTheDay.agent === "general" ? "General" : agentDisplayName(tipOfTheDay.agent)}
+                </span>
+              </div>
+              <p className="text-sm text-foreground leading-relaxed">{tipOfTheDay.tip}</p>
+            </div>
           </div>
-          <span className="shrink-0 rounded-full bg-accent-foreground/10 px-2.5 py-0.5 text-[10px] font-medium text-accent-foreground/70">
-            {tipOfTheDay.agent === "general" ? "General" : agentDisplayName(tipOfTheDay.agent)}
-          </span>
-        </div>
+        </section>
       )}
 
       {/* ----------------------------------------------------------------- */}
