@@ -196,7 +196,7 @@ export function ExtensionDetail() {
       <div className="mt-4 space-y-2 text-sm">
         <div className="flex items-center gap-2 text-muted-foreground">
           <Calendar size={14} />
-          <span>Installed {formatDate(group.installed_at)}</span>
+          <span>Installed {group.kind === "skill" ? formatDate(group.installed_at) : "\u2014"}</span>
         </div>
         <div className="flex items-center gap-2 text-muted-foreground">
           <Clock size={14} />

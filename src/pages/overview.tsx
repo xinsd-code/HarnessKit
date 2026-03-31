@@ -274,9 +274,11 @@ export default function OverviewPage() {
     const fourteenDays = 14 * 24 * 60 * 60 * 1000;
     const sevenDays = 7 * 24 * 60 * 60 * 1000;
 
-    // Recently installed extensions (within last 14 days), deduplicated by name
+    // Recently installed skills (within last 14 days), deduplicated by name
+    // Only skills have reliable installed_at timestamps
     const seenExtNames = new Set<string>();
     for (const ext of visibleExtensions) {
+      if (ext.kind !== "skill") continue;
       if (seenExtNames.has(ext.name)) continue;
       const installedMs = now - new Date(ext.installed_at).getTime();
       if (installedMs < fourteenDays) {

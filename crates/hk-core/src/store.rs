@@ -217,7 +217,7 @@ impl Store {
             param_values.push(Box::new(format!("%\"{}%", agent.unwrap())));
         }
 
-        sql.push_str(" ORDER BY installed_at DESC");
+        sql.push_str(" ORDER BY name ASC");
 
         let mut stmt = self.conn.prepare(&sql)?;
         let params_ref: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
