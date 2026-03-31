@@ -2,7 +2,7 @@ mod commands;
 
 use commands::AppState;
 use hk_core::store::Store;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 #[cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 fn main() {
@@ -14,8 +14,8 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(AppState {
-            store: Mutex::new(store),
-            pending_clones: Mutex::new(std::collections::HashMap::new()),
+            store: Arc::new(Mutex::new(store)),
+            pending_clones: Arc::new(Mutex::new(std::collections::HashMap::new())),
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_extensions,
