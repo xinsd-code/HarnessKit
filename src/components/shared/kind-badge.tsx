@@ -6,6 +6,7 @@ const kindStyles: Record<ExtensionKind, string> = {
   mcp: "bg-kind-mcp/15 text-kind-mcp ring-kind-mcp/25",
   plugin: "bg-kind-plugin/15 text-kind-plugin ring-kind-plugin/25",
   hook: "bg-kind-hook/15 text-kind-hook ring-kind-hook/25",
+  cli: "bg-kind-cli/15 text-kind-cli ring-kind-cli/25",
 };
 
 const kindLabel: Record<ExtensionKind, string> = {
@@ -13,6 +14,7 @@ const kindLabel: Record<ExtensionKind, string> = {
   mcp: "MCP",
   plugin: "plugin",
   hook: "hook",
+  cli: "CLI",
 };
 
 const kindTitle: Record<ExtensionKind, string> = {
@@ -20,6 +22,7 @@ const kindTitle: Record<ExtensionKind, string> = {
   mcp: "Model Context Protocol server — extends agent capabilities",
   plugin: "Agent-specific plugin extension",
   hook: "Shell command triggered by agent events",
+  cli: "Agent-oriented CLI tool — binary + skills bundle",
 };
 
 export function KindBadge({ kind }: { kind: ExtensionKind }) {
