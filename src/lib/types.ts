@@ -64,9 +64,17 @@ export interface GroupedExtension {
   instances: Extension[];
 }
 
-/** Stable grouping key: same name + kind + source origin + url → same group. */
+/** Extract owner/repo from a source URL (e.g. "github.com/alice/repo" → "alice/repo"). */
+function extractDeveloper(url: string | null): string {
+  if (!url) return "";
+  const match = url.match(/github\.com\/([^/]+\/[^/]+)/);
+  if (match) return match[1].replace(/\.git$/, "");
+  return url;
+}
+
+/** Stable grouping key: same kind + name + origin + developer → same group. */
 export function extensionGroupKey(ext: Extension): string {
-  return `${ext.kind}\0${ext.name}\0${ext.source.origin}\0${ext.source.url ?? ""}`;
+  return `${ext.kind}\0${ext.name}\0${ext.source.origin}\0${extractDeveloper(ext.source.url)}`;
 }
 
 /** Sort agent name strings by canonical display order. */

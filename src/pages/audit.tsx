@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useAuditStore } from "@/stores/audit-store";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import type { Severity, Extension, AuditFinding } from "@/lib/types";
-import { formatRelativeTime, trustTier, type TrustTier } from "@/lib/types";
+import { extensionGroupKey, formatRelativeTime, trustTier, type TrustTier } from "@/lib/types";
 import { api } from "@/lib/invoke";
 import { buildGroups } from "@/stores/extension-store";
 import { RefreshCw, ChevronRight, CircleAlert, Shield, Check, Eye, Search, X } from "lucide-react";
@@ -73,18 +73,15 @@ export default function AuditPage() {
     api.listExtensions().then((exts) => { setAllExtensions(exts); setExtensionsReady(true); }).catch(() => { setExtensionsReady(true); });
   }, [loadCached]);
 
-  // Handle ?ext= query param to scroll to a specific extension
-  const didScrollRef = useRef(false);
+  // Capture ?ext= query param for deferred scrolling (resolved after groupedResults are ready)
+  const pendingScrollRef = useRef<string | null>(searchParams.get("ext"));
   useEffect(() => {
-    if (didScrollRef.current || results.length === 0) return;
-    const extParam = searchParams.get("ext");
-    if (extParam) {
-      didScrollRef.current = true;
+    if (!pendingScrollRef.current) return;
+    if (searchParams.has("ext")) {
       searchParams.delete("ext");
       setSearchParams(searchParams, { replace: true });
-      scrollToExtensionResult(extParam);
     }
-  }, [results, searchParams, setSearchParams]);
+  }, [searchParams, setSearchParams]);
 
   const nameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -94,13 +91,28 @@ export default function AuditPage() {
     return map;
   }, [allExtensions]);
 
+  // Map extension ID → groupKey (kind + name + source) for deduplication
+  const groupKeyMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const ext of allExtensions) {
+      map.set(ext.id, extensionGroupKey(ext));
+    }
+    return map;
+  }, [allExtensions]);
+
   // Use same deduplication as Overview for consistent extension count
   const totalExtensions = useMemo(() => buildGroups(allExtensions).length, [allExtensions]);
 
 
   const sortedResults = useMemo(
-    () => [...results].sort((a, b) => a.trust_score - b.trust_score),
-    [results]
+    () => [...results].sort((a, b) => {
+      const scoreDiff = a.trust_score - b.trust_score;
+      if (scoreDiff !== 0) return scoreDiff;
+      const nameA = nameMap.get(a.extension_id) ?? a.extension_id;
+      const nameB = nameMap.get(b.extension_id) ?? b.extension_id;
+      return nameA.localeCompare(nameB);
+    }),
+    [results, nameMap]
   );
 
   // Map extension ID → agent names for display
@@ -131,10 +143,11 @@ export default function AuditPage() {
     const groups = new Map<string, GroupedResult>();
     for (const result of sortedResults) {
       const name = nameMap.get(result.extension_id) ?? result.extension_id;
+      const key = groupKeyMap.get(result.extension_id) ?? result.extension_id;
       const agentNames = agentMap.get(result.extension_id) ?? ["unknown"];
       const agentLabel = agentNames.join(", ");
 
-      const existing = groups.get(name);
+      const existing = groups.get(key);
       if (existing) {
         existing.agents.push({ agent: agentLabel, id: result.extension_id, findings: result.findings, trust_score: result.trust_score });
         existing.trust_score = Math.min(existing.trust_score, result.trust_score);
@@ -144,7 +157,7 @@ export default function AuditPage() {
           }
         }
       } else {
-        groups.set(name, {
+        groups.set(key, {
           name,
           agents: [{ agent: agentLabel, id: result.extension_id, findings: result.findings, trust_score: result.trust_score }],
           uniform: true,
@@ -167,7 +180,7 @@ export default function AuditPage() {
       }
     }
     return [...groups.values()];
-  }, [sortedResults, nameMap, agentMap]);
+  }, [sortedResults, nameMap, groupKeyMap, agentMap]);
 
   // Apply search, severity, and trust tier filters
   const filteredResults = useMemo(() => {
@@ -183,13 +196,25 @@ export default function AuditPage() {
   }, [groupedResults, searchQuery, tierFilter]);
 
   function scrollToExtensionResult(extensionId: string) {
-    setOpenId(extensionId);
-    // Scroll to the element after a short delay to let it render
-    setTimeout(() => {
-      const el = document.getElementById(`audit-result-${extensionId}`);
-      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 100);
+    const group = groupedResults.find((g) =>
+      g.primaryId === extensionId || g.agents.some((a) => a.id === extensionId)
+    );
+    const targetId = group?.primaryId ?? extensionId;
+    setOpenId(targetId);
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`audit-result-${targetId}`);
+      if (el) el.scrollIntoView({ block: "start" });
+    });
   }
+
+  // Scroll to target extension once groupedResults and extensions are fully loaded
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!pendingScrollRef.current || groupedResults.length === 0 || !extensionsReady) return;
+    const target = pendingScrollRef.current;
+    pendingScrollRef.current = null;
+    scrollToExtensionResult(target);
+  }, [groupedResults, extensionsReady]);
 
   function toggleShowAllRules(extId: string) {
     setShowAllRules(prev => {
@@ -265,6 +290,7 @@ export default function AuditPage() {
               <option value="LowRisk">Low Risk</option>
               <option value="NeedsReview">Needs Review</option>
             </select>
+            <span className="text-xs text-muted-foreground">{filteredResults.length} results</span>
 
             {/* Clear filters */}
             {(searchQuery || tierFilter) && (
