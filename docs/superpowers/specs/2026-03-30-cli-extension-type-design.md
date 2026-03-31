@@ -375,3 +375,80 @@ New wrappers for `get_cli_with_children` and `install_cli`. Existing `toggleExte
 - Kind filter gains `"cli"` option
 - CLI extensions do not participate in cross-agent grouping (they are global)
 - New getter: `childSkillsOf(cliId)` filters skills by `cli_parent_id`
+
+## 8. Marketplace — CLI Section
+
+The existing marketplace has two data sources: skills.sh (skills) and Smithery (MCP servers). A third section — **CLI Tools** — is added, powered by HarnessKit's own curated registry.
+
+### Data source: HarnessKit CLI Registry
+
+Since no authoritative agent CLI marketplace exists yet, HarnessKit maintains its own registry. Entries are added via two channels:
+
+**Channel 1 — Manual curation:**
+A hardcoded list of vetted agent-oriented CLI packages, maintained in the codebase as a static registry (similar to KNOWN_CLIS but with marketplace metadata: description, install command, skills repo, icon, categories).
+
+**Channel 2 — Automated GitHub discovery (daily scan):**
+A scheduled scan searches GitHub for new agent-oriented CLI repos using these rules:
+
+| Rule | Signal Strength | Description |
+|------|----------------|-------------|
+| Repo contains SKILL.md with `requires.bins` referencing its own binary | Strong | Vendor ships agent integration for their own CLI |
+| Repo has `install-skills.sh` or equivalent agent skills installer | Strong | Dedicated agent skills installation mechanism |
+| Repo topics include `agent-skills`, `agent-cli`, `claude-code`, etc. | Medium | GitHub topic tags |
+| README mentions "CLI" + ("Agent Skills" or "SKILL.md" or "Claude Code" or "Cursor") | Medium | Content keyword combination |
+
+**Match logic:** At least 1 strong signal, OR 2+ medium signals → enters candidate queue. Candidates require human review before being published to the marketplace. This ensures quality while automating discovery.
+
+### Marketplace UI
+
+The marketplace page gains a third tab/section alongside "Skills" and "MCP Servers":
+
+- **CLI Tools** tab
+- Shows curated + approved CLI packages
+- Each entry displays: name, description, install command, child skills count, categories, verified badge (for manually curated entries)
+- Install flow: user selects target agents → confirms system command (e.g., `npm install -g @wecom/cli`) → installs CLI binary → installs associated skills → triggers scan
+
+### Rust backend
+
+```rust
+// New in marketplace.rs
+
+/// Curated CLI registry entry
+pub struct CliRegistryEntry {
+    pub binary_name: String,
+    pub display_name: String,
+    pub description: String,
+    pub install_command: String,       // e.g., "npm install -g @wecom/cli"
+    pub skills_repo: String,           // e.g., "WecomTeam/wecom-cli"
+    pub icon_url: Option<String>,
+    pub categories: Vec<String>,
+    pub verified: bool,                // true for manually curated
+    pub api_domains: Vec<String>,
+    pub credentials_path: Option<String>,
+}
+
+/// Returns all CLI entries for the marketplace
+pub fn list_cli_registry() -> Vec<MarketplaceItem>
+
+/// GitHub discovery: search for candidate repos (daily cron)
+pub fn discover_cli_candidates() -> Result<Vec<CliCandidate>>
+```
+
+### Tauri commands
+
+```rust
+list_cli_marketplace() -> Vec<MarketplaceItem>      // curated + approved entries
+discover_cli_candidates() -> Vec<CliCandidate>       // for admin/review UI (future)
+```
+
+### Frontend
+
+```typescript
+// marketplace-store.ts
+cliItems: MarketplaceItem[]
+fetchCliMarketplace: () => Promise<void>
+
+// invoke.ts
+export const listCliMarketplace = () =>
+  invoke<MarketplaceItem[]>("list_cli_marketplace");
+```
