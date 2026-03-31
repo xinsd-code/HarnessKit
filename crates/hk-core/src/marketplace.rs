@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 const SMITHERY_API: &str = "https://api.smithery.ai";
@@ -268,4 +269,110 @@ pub fn git_url_for_source(source: &str) -> String {
 
 fn urlencoded(s: &str) -> String {
     s.replace(' ', "+").replace('&', "%26").replace('?', "%3F").replace('#', "%23")
+}
+
+// --- CLI Marketplace Registry ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CliRegistryEntry {
+    pub binary_name: String,
+    pub display_name: String,
+    pub description: String,
+    pub install_command: String,
+    pub skills_repo: String,
+    pub skills_install_command: Option<String>,
+    pub icon_url: Option<String>,
+    pub categories: Vec<String>,
+    pub verified: bool,
+    pub api_domains: Vec<String>,
+    pub credentials_path: Option<String>,
+}
+
+static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
+    vec![
+        CliRegistryEntry {
+            binary_name: "wecom-cli".into(),
+            display_name: "WeChat Work CLI".into(),
+            description: "CLI for WeChat Work (WeCom) — team messaging, approvals, and bots".into(),
+            install_command: "npm install -g @wecom/cli".into(),
+            skills_repo: "WecomTeam/wecom-cli".into(),
+            skills_install_command: None,
+            icon_url: None,
+            categories: vec!["collaboration".into(), "messaging".into()],
+            verified: true,
+            api_domains: vec!["qyapi.weixin.qq.com".into()],
+            credentials_path: Some("~/.wecom/credentials.json".into()),
+        },
+        CliRegistryEntry {
+            binary_name: "lark-cli".into(),
+            display_name: "Lark / Feishu CLI".into(),
+            description: "CLI for Lark (Feishu) — docs, messages, calendar, and approvals".into(),
+            install_command: "npm install -g @larksuite/cli".into(),
+            skills_repo: "larksuite/cli".into(),
+            skills_install_command: None,
+            icon_url: None,
+            categories: vec!["collaboration".into(), "productivity".into()],
+            verified: true,
+            api_domains: vec!["open.feishu.cn".into(), "open.larksuite.com".into()],
+            credentials_path: Some("~/.lark/credentials.json".into()),
+        },
+        CliRegistryEntry {
+            binary_name: "dws".into(),
+            display_name: "DingTalk Workspace CLI".into(),
+            description: "CLI for DingTalk — workspace management, bots, and messaging".into(),
+            install_command: "curl -fsSL https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/install.sh | sh".into(),
+            skills_repo: "DingTalk-Real-AI/dingtalk-workspace-cli".into(),
+            skills_install_command: Some("curl -fsSL https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/install-skills.sh | sh".into()),
+            icon_url: None,
+            categories: vec!["collaboration".into(), "messaging".into()],
+            verified: true,
+            api_domains: vec!["oapi.dingtalk.com".into()],
+            credentials_path: Some("~/.dingtalk/credentials.json".into()),
+        },
+        CliRegistryEntry {
+            binary_name: "meitu".into(),
+            display_name: "Meitu CLI".into(),
+            description: "CLI for Meitu — AI-powered image editing, filters, and batch processing".into(),
+            install_command: "npm install -g meitu-cli".into(),
+            skills_repo: "meitu/meitu-skills".into(),
+            skills_install_command: None,
+            icon_url: None,
+            categories: vec!["image".into(), "ai".into()],
+            verified: true,
+            api_domains: vec!["api.meitu.com".into()],
+            credentials_path: Some("~/.meitu/credentials.json".into()),
+        },
+        CliRegistryEntry {
+            binary_name: "officecli".into(),
+            display_name: "OfficeCLI".into(),
+            description: "CLI for office document management — create, convert, and automate documents".into(),
+            install_command: "curl -fsSL https://raw.githubusercontent.com/iOfficeAI/OfficeCLI/main/install.sh | sh".into(),
+            skills_repo: "iOfficeAI/OfficeCLI".into(),
+            skills_install_command: None,
+            icon_url: None,
+            categories: vec!["office".into(), "documents".into()],
+            verified: true,
+            api_domains: vec![],
+            credentials_path: None,
+        },
+    ]
+});
+
+pub fn list_cli_registry() -> Vec<MarketplaceItem> {
+    CLI_REGISTRY.iter().map(|entry| MarketplaceItem {
+        id: format!("cli:{}", entry.binary_name),
+        name: entry.display_name.clone(),
+        description: entry.description.clone(),
+        source: entry.skills_repo.clone(),
+        skill_id: String::new(),
+        kind: "cli".into(),
+        installs: 0,
+        icon_url: entry.icon_url.clone(),
+        verified: entry.verified,
+        categories: entry.categories.clone(),
+    }).collect()
+}
+
+pub fn get_cli_registry_entry(binary_name: &str) -> Option<&'static CliRegistryEntry> {
+    CLI_REGISTRY.iter().find(|e| e.binary_name == binary_name)
 }
