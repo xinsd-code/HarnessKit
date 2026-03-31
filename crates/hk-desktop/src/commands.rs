@@ -446,7 +446,7 @@ pub fn run_audit(state: State<AppState>) -> Result<Vec<AuditResult>, String> {
             }
         };
 
-        let input = hk_core::auditor::AuditInput {
+        let mut input = hk_core::auditor::AuditInput {
             extension_id: ext.id.clone(),
             kind: ext.kind,
             name: ext.name.clone(),
@@ -459,7 +459,15 @@ pub fn run_audit(state: State<AppState>) -> Result<Vec<AuditResult>, String> {
             installed_at: ext.installed_at,
             updated_at: ext.updated_at,
             permissions: ext.permissions.clone(),
+            cli_meta: ext.cli_meta.clone(),
+            child_permissions: vec![],
         };
+        if ext.kind == hk_core::models::ExtensionKind::Cli {
+            let store = state.store.lock().map_err(|e| e.to_string())?;
+            if let Ok(children) = store.get_child_skills(&ext.id) {
+                input.child_permissions = children.into_iter().flat_map(|c| c.permissions).collect();
+            }
+        }
         inputs.push(input);
     }
 
@@ -652,6 +660,8 @@ fn audit_extension_by_name(name: &str, extensions: &[Extension], adapters: &[Box
                     installed_at: ext.installed_at,
                     updated_at: ext.updated_at,
                     permissions: ext.permissions.clone(),
+                    cli_meta: ext.cli_meta.clone(),
+                    child_permissions: vec![],
                 }
             }
             _ => continue,

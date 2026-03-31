@@ -17,6 +17,9 @@ pub struct AuditInput {
     pub installed_at: chrono::DateTime<Utc>,
     pub updated_at: chrono::DateTime<Utc>,
     pub permissions: Vec<crate::models::Permission>,
+    // CLI-specific fields
+    pub cli_meta: Option<crate::models::CliMeta>,
+    pub child_permissions: Vec<crate::models::Permission>,
 }
 
 pub trait AuditRule: Send + Sync {
@@ -133,6 +136,6 @@ mod tests {
     #[test]
     fn test_auditor_runs_all_enabled_rules() {
         let auditor = Auditor::new();
-        assert_eq!(auditor.rules.len(), 13);
+        assert_eq!(auditor.rules.len(), 18);
     }
 }
