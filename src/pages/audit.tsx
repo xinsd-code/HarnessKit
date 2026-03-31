@@ -61,16 +61,16 @@ export default function AuditPage() {
     return next;
   });
   const [allExtensions, setAllExtensions] = useState<Extension[]>([]);
+  const [extensionsReady, setExtensionsReady] = useState(false);
 
   // Search & filter state
   const [searchQuery, setSearchQuery] = useState("");
-  const [severityFilter, setSeverityFilter] = useState<Severity | null>(null);
   const [tierFilter, setTierFilter] = useState<TrustTier | null>(null);
 
   useEffect(() => {
     loadCached();
     // Fetch ALL extensions (unfiltered) for name resolution
-    api.listExtensions().then(setAllExtensions).catch(() => {});
+    api.listExtensions().then((exts) => { setAllExtensions(exts); setExtensionsReady(true); }).catch(() => { setExtensionsReady(true); });
   }, [loadCached]);
 
   // Handle ?ext= query param to scroll to a specific extension
@@ -176,19 +176,11 @@ export default function AuditPage() {
       const q = searchQuery.toLowerCase();
       filtered = filtered.filter((g) => g.name.toLowerCase().includes(q));
     }
-    if (severityFilter) {
-      filtered = filtered.filter((g) =>
-        g.findings.some((f) => {
-          const rule = AUDIT_RULES.find((r) => r.id === f.rule_id);
-          return rule?.severity === severityFilter;
-        })
-      );
-    }
     if (tierFilter) {
       filtered = filtered.filter((g) => trustTier(g.trust_score) === tierFilter);
     }
     return filtered;
-  }, [groupedResults, searchQuery, severityFilter, tierFilter]);
+  }, [groupedResults, searchQuery, tierFilter]);
 
   function scrollToExtensionResult(extensionId: string) {
     setOpenId(extensionId);
@@ -227,7 +219,7 @@ export default function AuditPage() {
         </div>
 
         {/* Compact summary row */}
-        {results.length > 0 && (
+        {extensionsReady && results.length > 0 && (
           <div className="space-y-1">
             <p className="text-sm text-muted-foreground">
               <span className="font-medium text-foreground">{totalExtensions}</span> extensions scanned · Last run {formatRelativeTime(results.reduce((latest, r) => r.audited_at > latest ? r.audited_at : latest, results[0].audited_at))}
@@ -243,7 +235,7 @@ export default function AuditPage() {
         </Hint>
 
         {/* Search & Filters */}
-        {results.length > 0 && (
+        {extensionsReady && results.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
             {/* Search */}
             <div className="relative flex-1 min-w-[180px] max-w-xs">
@@ -262,19 +254,6 @@ export default function AuditPage() {
               )}
             </div>
 
-            {/* Severity filter */}
-            <select
-              value={severityFilter ?? ""}
-              onChange={(e) => setSeverityFilter((e.target.value || null) as Severity | null)}
-              className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-            >
-              <option value="">All Severities</option>
-              <option value="Critical">Critical</option>
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-              <option value="Low">Low</option>
-            </select>
-
             {/* Trust tier filter */}
             <select
               value={tierFilter ?? ""}
@@ -288,9 +267,9 @@ export default function AuditPage() {
             </select>
 
             {/* Clear filters */}
-            {(searchQuery || severityFilter || tierFilter) && (
+            {(searchQuery || tierFilter) && (
               <button
-                onClick={() => { setSearchQuery(""); setSeverityFilter(null); setTierFilter(null); }}
+                onClick={() => { setSearchQuery(""); setTierFilter(null); }}
                 className="text-xs text-muted-foreground hover:text-foreground transition-colors"
               >
                 Clear filters
@@ -304,7 +283,7 @@ export default function AuditPage() {
       <div className="flex-1 min-h-0 overflow-y-auto space-y-6">
       {/* Per-extension list */}
       <div className="space-y-1.5">
-        {loading && results.length === 0 && (
+        {(loading || !extensionsReady) && results.length === 0 && (
           <div className="py-12 px-6" aria-live="polite" role="status">
             <p className="text-sm font-medium text-foreground">Running security audit...</p>
             <p className="mt-1 text-sm text-muted-foreground">Scanning your extensions for security issues.</p>
@@ -313,7 +292,7 @@ export default function AuditPage() {
             </div>
           </div>
         )}
-        {!loading && results.length === 0 && (
+        {!loading && extensionsReady && results.length === 0 && (
           <div className="py-12 px-6" aria-live="polite" role="status">
             <h3 className="text-lg font-semibold text-foreground">Ready to audit</h3>
             <p className="mt-1 text-sm text-muted-foreground">Scan your extensions for vulnerabilities, dangerous commands, and trust scores.</p>
@@ -331,7 +310,7 @@ export default function AuditPage() {
             No extensions match your filters.
           </div>
         )}
-        {filteredResults.map((group) => {
+        {extensionsReady && filteredResults.map((group) => {
           const { primaryId } = group;
           const isOpen = openId === primaryId;
           const failedRuleIds = new Set(group.findings.map((f) => f.rule_id));

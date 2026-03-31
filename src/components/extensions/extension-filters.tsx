@@ -108,6 +108,14 @@ export function ExtensionFilters() {
             className="w-full rounded-lg border border-border bg-card py-1.5 pl-8 pr-3 text-xs placeholder:text-muted-foreground focus:border-ring focus:outline-none"
           />
         </div>
+        {(kindFilter || agentFilter || categoryFilter || searchQuery) && (
+          <button
+            onClick={() => { setKindFilter(null); setAgentFilter(null); setCategoryFilter(null); setSearchQuery(""); }}
+            className="shrink-0 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
     </div>

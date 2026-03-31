@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useExtensionStore } from "@/stores/extension-store";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { api } from "@/lib/invoke";
-import { X, File, Globe, Terminal, Database, Key, Calendar, Clock, GitBranch, ArrowDownCircle, CheckCircle, FolderOpen, Download, Loader2, Trash2, Link, AlertTriangle } from "lucide-react";
+import { X, File, Globe, Terminal, Database, Key, Calendar, Clock, GitBranch, ArrowDownCircle, CheckCircle, FolderOpen, Download, Loader2, Trash2, Link, AlertTriangle, Shield } from "lucide-react";
 import type { ExtensionContent as ExtContent } from "@/lib/types";
 import { formatRelativeTime, sortAgents, agentDisplayName } from "@/lib/types";
 import type { Permission } from "@/lib/types";
@@ -35,6 +36,7 @@ function PermissionDetail({ perm }: { perm: Permission }) {
 }
 
 export function ExtensionDetail() {
+  const navigate = useNavigate();
   const grouped = useExtensionStore(s => s.grouped);
   const selectedId = useExtensionStore(s => s.selectedId);
   const setSelectedId = useExtensionStore(s => s.setSelectedId);
@@ -107,6 +109,16 @@ export function ExtensionDetail() {
           <div className="mt-1 flex items-center gap-2">
             <KindBadge kind={group.kind} />
             {group.trust_score != null && <TrustBadge score={group.trust_score} size="sm" />}
+            {group.trust_score != null && (
+              <button
+                onClick={() => navigate(`/audit?ext=${group.instances[0].id}`)}
+                className="flex items-center gap-1 rounded-md px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                title="View audit details"
+              >
+                <Shield size={12} />
+                View Audit
+              </button>
+            )}
           </div>
         </div>
         <button onClick={() => setSelectedId(null)} aria-label="Close extension details" className="shrink-0 rounded-lg p-2.5 text-muted-foreground hover:text-foreground">
