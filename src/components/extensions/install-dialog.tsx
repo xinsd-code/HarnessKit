@@ -7,6 +7,7 @@ import { useExtensionStore } from "@/stores/extension-store";
 import { useAgentStore } from "@/stores/agent-store";
 import { toast } from "@/stores/toast-store";
 import { ChevronLeft } from "lucide-react";
+import { AnimatedEllipsis } from "@/components/shared/animated-ellipsis";
 
 interface InstallDialogProps {
   open: boolean;
@@ -28,6 +29,7 @@ export function InstallDialog({ open, onClose }: InstallDialogProps) {
   const { agents, fetch: fetchAgents, agentOrder } = useAgentStore();
   const triggerRef = useRef<HTMLElement | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const scanBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
 
@@ -191,7 +193,7 @@ export function InstallDialog({ open, onClose }: InstallDialogProps) {
                   type="text"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && !loading && handleScan()}
+                  onKeyDown={(e) => e.key === "Enter" && !loading && scanBtnRef.current?.click()}
                   placeholder="https://github.com/user/skill-repo.git"
                   aria-label="Git repository URL"
                   aria-required="true"
@@ -248,7 +250,7 @@ export function InstallDialog({ open, onClose }: InstallDialogProps) {
                   <p className="text-xs text-muted-foreground">{discoveredSkills.length} skills found in repository</p>
                 </div>
               </div>
-              <div className="mt-3 space-y-1.5">
+              <div className="mt-3">
                 <label className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-foreground hover:bg-muted/30 transition-colors">
                   <input
                     type="checkbox"
@@ -259,27 +261,24 @@ export function InstallDialog({ open, onClose }: InstallDialogProps) {
                   />
                   All Skills
                 </label>
-                <div className="border-t border-border/50" />
-                {discoveredSkills.map((skill) => (
-                  <label
-                    key={skill.skill_id}
-                    className="flex items-start gap-2 rounded-lg px-3 py-2 text-sm hover:bg-muted/30 transition-colors"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedSkills.has(skill.skill_id)}
-                      onChange={() => toggleSkill(skill.skill_id)}
-                      disabled={loading}
-                      className="mt-0.5 rounded border-border accent-primary"
-                    />
-                    <div className="min-w-0">
+                <div className="border-t border-border/50 mb-2" />
+                <div className="flex flex-wrap gap-1.5 px-1">
+                  {discoveredSkills.map((skill) => (
+                    <label
+                      key={skill.skill_id}
+                      className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs cursor-pointer hover:bg-muted/30 transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedSkills.has(skill.skill_id)}
+                        onChange={() => toggleSkill(skill.skill_id)}
+                        disabled={loading}
+                        className="rounded border-border accent-primary"
+                      />
                       <span className="font-medium text-foreground">{skill.name}</span>
-                      {skill.description && (
-                        <p className="text-xs text-muted-foreground line-clamp-1">{skill.description}</p>
-                      )}
-                    </div>
-                  </label>
-                ))}
+                    </label>
+                  ))}
+                </div>
               </div>
             </>
           )}
@@ -292,11 +291,12 @@ export function InstallDialog({ open, onClose }: InstallDialogProps) {
           <div className="mt-3 flex items-center gap-2">
             {phase === "input" ? (
               <button
+                ref={scanBtnRef}
                 onClick={handleScan}
                 disabled={loading || !url.trim() || selectedAgents.size === 0}
                 className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
-                {loading ? "Scanning..." : "Install"}
+                {loading ? <>Scanning<AnimatedEllipsis /></> : "Install"}
               </button>
             ) : (
               <button
@@ -304,7 +304,7 @@ export function InstallDialog({ open, onClose }: InstallDialogProps) {
                 disabled={loading || selectedSkills.size === 0}
                 className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
-                {loading ? "Installing..." : `Install${selectedSkills.size > 0 ? ` (${selectedSkills.size})` : ""}`}
+                {loading ? <>Installing<AnimatedEllipsis /></> : `Install${selectedSkills.size > 0 ? ` (${selectedSkills.size})` : ""}`}
               </button>
             )}
             <button
