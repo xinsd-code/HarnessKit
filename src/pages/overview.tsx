@@ -21,7 +21,6 @@ import {
   BarChart3,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Hint } from "@/components/shared/hint";
 import type { DashboardStats, Extension, AgentDetail } from "@/lib/types";
 import { agentDisplayName, formatRelativeTime, sortAgents } from "@/lib/types";
 import { buildGroups } from "@/stores/extension-store";
@@ -550,16 +549,6 @@ export default function OverviewPage() {
             )}
           </section>
         </div>
-      )}
-
-      {/* ----------------------------------------------------------------- */}
-      {/* First-run hint: audit                                              */}
-      {/* ----------------------------------------------------------------- */}
-      {!hasAuditData && stats.total_extensions > 0 && (
-        <Hint id="overview-audit">
-          Run a security audit to check your extensions for vulnerabilities and
-          get trust scores. Use the Quick Actions below to get started.
-        </Hint>
       )}
 
       {/* ----------------------------------------------------------------- */}
