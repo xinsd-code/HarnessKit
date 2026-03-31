@@ -2,9 +2,49 @@ use crate::adapter::{AgentAdapter, HookEntry, McpServerEntry};
 use crate::models::*;
 use chrono::{DateTime, Utc};
 use regex::Regex;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::LazyLock;
+
+struct KnownCli {
+    binary_name: &'static str,
+    display_name: &'static str,
+    api_domains: &'static [&'static str],
+    credentials_path: Option<&'static str>,
+}
+
+static KNOWN_CLIS: &[KnownCli] = &[
+    KnownCli {
+        binary_name: "wecom-cli",
+        display_name: "WeChat Work CLI",
+        api_domains: &["qyapi.weixin.qq.com"],
+        credentials_path: Some("~/.config/wecom/bot.enc"),
+    },
+    KnownCli {
+        binary_name: "lark-cli",
+        display_name: "Lark / Feishu CLI",
+        api_domains: &["open.feishu.cn", "open.larksuite.com"],
+        credentials_path: Some("~/.config/lark/credentials"),
+    },
+    KnownCli {
+        binary_name: "dws",
+        display_name: "DingTalk Workspace CLI",
+        api_domains: &["api.dingtalk.com"],
+        credentials_path: Some("~/.config/dws/auth.json"),
+    },
+    KnownCli {
+        binary_name: "meitu",
+        display_name: "Meitu CLI",
+        api_domains: &["openapi.mtlab.meitu.com"],
+        credentials_path: Some("~/.meitu/credentials.json"),
+    },
+    KnownCli {
+        binary_name: "officecli",
+        display_name: "OfficeCLI",
+        api_domains: &[],
+        credentials_path: None,
+    },
+];
 
 /// FNV-1a 64-bit hash — deterministic across Rust versions (unlike DefaultHasher).
 pub fn fnv1a(data: &[u8]) -> u64 {
@@ -24,6 +64,12 @@ pub fn stable_id_for(name: &str, kind: &str, agent: &str) -> String {
 /// Generate a deterministic ID from name + kind + agent so re-scans produce the same ID
 fn stable_id(name: &str, kind: &str, agent: &str) -> String {
     let key = format!("{}:{}:{}", kind, agent, name);
+    format!("{:016x}", fnv1a(key.as_bytes()))
+}
+
+/// Generate a deterministic ID for CLI extensions based on binary name
+fn cli_stable_id(binary_name: &str) -> String {
+    let key = format!("cli::{}", binary_name);
     format!("{:016x}", fnv1a(key.as_bytes()))
 }
 
@@ -54,10 +100,10 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
         let last_used = skill_last_used_at(&skill_file);
         let Ok(content) = std::fs::read_to_string(&skill_file) else { continue; };
 
-        let (name, description) = parse_skill_frontmatter(&content)
+        let (name, description, _requires_bins) = parse_skill_frontmatter(&content)
             .unwrap_or_else(|| {
                 let name = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
-                (name, String::new())
+                (name, String::new(), vec![])
             });
 
         let category = infer_category(&name, &content);
@@ -266,6 +312,175 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
     }).collect()
 }
 
+/// Run `which` to find a binary's absolute path
+fn which_binary(name: &str) -> Option<String> {
+    std::process::Command::new("which")
+        .arg(name)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| {
+            let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            if s.is_empty() { None } else { Some(s) }
+        })
+}
+
+/// Run `<binary> --version` and extract a version number via regex
+fn get_binary_version(name: &str) -> Option<String> {
+    static VERSION_RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(\d+\.\d+(?:\.\d+)?)").unwrap()
+    });
+    let output = std::process::Command::new(name)
+        .arg("--version")
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let text = if text.trim().is_empty() {
+        String::from_utf8_lossy(&output.stderr)
+    } else {
+        text
+    };
+    VERSION_RE.captures(&text).map(|c| c[1].to_string())
+}
+
+/// Detect the install method from the binary path
+fn detect_install_method(path: &str) -> Option<String> {
+    let lower = path.to_lowercase();
+    if lower.contains("/node_modules/") || lower.contains("/.npm/") || lower.contains("/npx/") {
+        Some("npm".into())
+    } else if lower.contains("/.cargo/") {
+        Some("cargo".into())
+    } else if lower.contains("/pip") || lower.contains("/python") || lower.contains("/site-packages/") {
+        Some("pip".into())
+    } else if lower.contains("/homebrew/") || lower.contains("/cellar/") || lower.contains("/linuxbrew/") {
+        Some("brew".into())
+    } else {
+        None
+    }
+}
+
+/// Scan for CLI binaries referenced by skills and from the KNOWN_CLIS registry.
+///
+/// Returns a tuple of:
+/// - CLI Extension entries
+/// - Map from CLI extension ID -> list of skill extension IDs that depend on it
+fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, HashMap<String, Vec<String>>) {
+    let mut candidate_bins: HashSet<String> = HashSet::new();
+    // Map: binary_name -> Vec<skill extension id>
+    let mut bin_to_skills: HashMap<String, Vec<String>> = HashMap::new();
+
+    // 1. Iterate scanned skills, read their SKILL.md content to extract requires_bins
+    for ext in existing_extensions {
+        if ext.kind != ExtensionKind::Skill {
+            continue;
+        }
+        if let Some(ref path_str) = ext.source_path {
+            if let Ok(content) = std::fs::read_to_string(path_str) {
+                if let Some((_, _, requires_bins)) = parse_skill_frontmatter(&content) {
+                    for bin in requires_bins {
+                        candidate_bins.insert(bin.clone());
+                        bin_to_skills.entry(bin).or_default().push(ext.id.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Add all KNOWN_CLIS binary names to candidate set
+    for known in KNOWN_CLIS {
+        candidate_bins.insert(known.binary_name.to_string());
+    }
+
+    let mut cli_extensions = Vec::new();
+    let mut child_links: HashMap<String, Vec<String>> = HashMap::new();
+    let now = Utc::now();
+
+    // 3. For each candidate, check if it exists
+    for bin_name in &candidate_bins {
+        let bin_path = which_binary(bin_name);
+        // Skip if binary is not installed and not in KNOWN_CLIS
+        let known = KNOWN_CLIS.iter().find(|k| k.binary_name == bin_name.as_str());
+        if bin_path.is_none() && known.is_none() {
+            continue;
+        }
+
+        let version = bin_path.as_ref().and_then(|_| get_binary_version(bin_name));
+        let install_method = bin_path.as_ref().and_then(|p| detect_install_method(p));
+
+        let display_name = known.map(|k| k.display_name.to_string())
+            .unwrap_or_else(|| bin_name.clone());
+        let api_domains: Vec<String> = known
+            .map(|k| k.api_domains.iter().map(|d| d.to_string()).collect())
+            .unwrap_or_default();
+        let credentials_path = known.and_then(|k| k.credentials_path.map(|p| p.to_string()));
+
+        // 4. Auto-derive permissions from CliMeta
+        let mut permissions = Vec::new();
+        if !api_domains.is_empty() {
+            permissions.push(Permission::Network { domains: api_domains.clone() });
+        }
+        if credentials_path.is_some() {
+            permissions.push(Permission::FileSystem {
+                paths: credentials_path.iter().cloned().collect(),
+            });
+        }
+        if bin_path.is_some() {
+            permissions.push(Permission::Shell { commands: vec![bin_name.clone()] });
+        }
+
+        let cli_id = cli_stable_id(bin_name);
+
+        let description = if let Some(ref v) = version {
+            format!("{} v{}", display_name, v)
+        } else if bin_path.is_some() {
+            format!("{} (installed)", display_name)
+        } else {
+            format!("{} (not installed)", display_name)
+        };
+
+        // 5. Build child_links: CLI ID -> skill IDs
+        if let Some(skill_ids) = bin_to_skills.get(bin_name.as_str()) {
+            child_links.entry(cli_id.clone()).or_default().extend(skill_ids.clone());
+        }
+
+        let source = Source {
+            origin: if bin_path.is_some() { SourceOrigin::Local } else { SourceOrigin::Registry },
+            url: None,
+            version: version.clone(),
+            commit_hash: None,
+        };
+
+        cli_extensions.push(Extension {
+            id: cli_id,
+            kind: ExtensionKind::Cli,
+            name: display_name,
+            description,
+            source,
+            agents: vec![],
+            tags: vec![],
+            category: None,
+            permissions,
+            enabled: bin_path.is_some(),
+            trust_score: None,
+            installed_at: now,
+            updated_at: now,
+            last_used_at: None,
+            source_path: bin_path.clone(),
+            cli_parent_id: None,
+            cli_meta: Some(CliMeta {
+                binary_name: bin_name.clone(),
+                binary_path: bin_path,
+                install_method,
+                credentials_path,
+                version,
+                api_domains,
+            }),
+        });
+    }
+
+    (cli_extensions, child_links)
+}
+
 /// Scan all extensions from all detected agents
 pub fn scan_all(adapters: &[Box<dyn AgentAdapter>]) -> Vec<Extension> {
     let mut all = Vec::new();
@@ -278,6 +493,23 @@ pub fn scan_all(adapters: &[Box<dyn AgentAdapter>]) -> Vec<Extension> {
         all.extend(scan_hooks(adapter.as_ref()));
         all.extend(scan_plugins(adapter.as_ref()));
     }
+
+    // CLI scanning: discover CLIs from skills' requires.bins + KNOWN_CLIS
+    let (cli_extensions, child_links) = scan_cli_binaries(&all);
+
+    // Back-fill cli_parent_id on matching skills
+    for ext in &mut all {
+        if ext.kind == ExtensionKind::Skill {
+            for (cli_id, skill_ids) in &child_links {
+                if skill_ids.contains(&ext.id) {
+                    ext.cli_parent_id = Some(cli_id.clone());
+                    break;
+                }
+            }
+        }
+    }
+
+    all.extend(cli_extensions);
     all
 }
 
@@ -674,24 +906,92 @@ fn infer_category(name: &str, content: &str) -> Option<String> {
 /// Extract the skill name from a SKILL.md file (public for use in commands)
 pub fn parse_skill_name(path: &Path) -> Option<String> {
     let content = std::fs::read_to_string(path).ok()?;
-    parse_skill_frontmatter(&content).map(|(name, _)| name)
+    parse_skill_frontmatter(&content).map(|(name, _, _)| name)
 }
 
-pub fn parse_skill_frontmatter(content: &str) -> Option<(String, String)> {
+pub fn parse_skill_frontmatter(content: &str) -> Option<(String, String, Vec<String>)> {
     if !content.starts_with("---") { return None; }
     let rest = &content[3..];
     let end = rest.find("---")?;
     let frontmatter = &rest[..end];
     let mut name = None;
     let mut description = None;
+    let mut bins: Vec<String> = Vec::new();
+
+    // Track parsing state for block-style YAML arrays under bins:
+    let mut in_bins_block = false;
+    // Track nesting: we accept bins: at top level OR under metadata: -> requires: -> bins:
+    let mut in_metadata = false;
+    let mut in_requires = false;
+
     for line in frontmatter.lines() {
-        if let Some(val) = line.strip_prefix("name:") {
+        let trimmed = line.trim();
+
+        // Top-level fields
+        if let Some(val) = trimmed.strip_prefix("name:") {
             name = Some(val.trim().to_string());
-        } else if let Some(val) = line.strip_prefix("description:") {
+            in_bins_block = false;
+            continue;
+        }
+        if let Some(val) = trimmed.strip_prefix("description:") {
             description = Some(val.trim().to_string());
+            in_bins_block = false;
+            continue;
+        }
+
+        // Track metadata: / requires: nesting
+        if trimmed == "metadata:" {
+            in_metadata = true;
+            in_bins_block = false;
+            continue;
+        }
+        if in_metadata && trimmed == "requires:" {
+            in_requires = true;
+            in_bins_block = false;
+            continue;
+        }
+
+        // bins: field — either top-level or nested under metadata: -> requires:
+        let is_bins_line = if in_metadata && in_requires {
+            trimmed.starts_with("bins:")
+        } else {
+            line.starts_with("bins:") || trimmed.starts_with("bins:")
+        };
+
+        if is_bins_line {
+            let val = trimmed.strip_prefix("bins:").unwrap_or("").trim();
+            if val.is_empty() {
+                // Block-style array follows
+                in_bins_block = true;
+            } else {
+                // Inline array: bins: ["wecom-cli", "lark-cli"]
+                in_bins_block = false;
+                let inner = val.trim_start_matches('[').trim_end_matches(']');
+                for item in inner.split(',') {
+                    let b = item.trim().trim_matches('"').trim_matches('\'').trim();
+                    if !b.is_empty() {
+                        bins.push(b.to_string());
+                    }
+                }
+            }
+            continue;
+        }
+
+        // Block-style array items
+        if in_bins_block {
+            if let Some(item) = trimmed.strip_prefix("- ") {
+                let b = item.trim().trim_matches('"').trim_matches('\'').trim();
+                if !b.is_empty() {
+                    bins.push(b.to_string());
+                }
+            } else if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                // Non-continuation line ends the block
+                in_bins_block = false;
+            }
         }
     }
-    Some((name?, description.unwrap_or_default()))
+
+    Some((name?, description.unwrap_or_default(), bins))
 }
 
 fn detect_source(path: &Path, agent_managed: bool) -> Source {

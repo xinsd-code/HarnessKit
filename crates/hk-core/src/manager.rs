@@ -360,9 +360,9 @@ pub fn scan_repo_skills(clone_dir: &Path) -> Vec<DiscoveredSkill> {
     // Check root SKILL.md
     let root_skill = clone_dir.join("SKILL.md");
     if root_skill.exists() {
-        let (name, desc) = crate::scanner::parse_skill_frontmatter(
+        let (name, desc, _) = crate::scanner::parse_skill_frontmatter(
             &std::fs::read_to_string(&root_skill).unwrap_or_default()
-        ).unwrap_or_else(|| (repo_name_from_url(""), String::new()));
+        ).unwrap_or_else(|| (repo_name_from_url(""), String::new(), vec![]));
         // Only add root if there are no subdirectory skills
         let has_sub = has_subdirectory_skills(clone_dir);
         if !has_sub {
@@ -384,8 +384,8 @@ pub fn scan_repo_skills(clone_dir: &Path) -> Vec<DiscoveredSkill> {
                 let p = entry.path();
                 if p.is_dir() && p.join("SKILL.md").exists() {
                     let content = std::fs::read_to_string(p.join("SKILL.md")).unwrap_or_default();
-                    let (name, desc) = crate::scanner::parse_skill_frontmatter(&content)
-                        .unwrap_or_else(|| (entry.file_name().to_string_lossy().to_string(), String::new()));
+                    let (name, desc, _) = crate::scanner::parse_skill_frontmatter(&content)
+                        .unwrap_or_else(|| (entry.file_name().to_string_lossy().to_string(), String::new(), vec![]));
                     skills.push(DiscoveredSkill {
                         skill_id: entry.file_name().to_string_lossy().to_string(),
                         name,
@@ -405,8 +405,8 @@ pub fn scan_repo_skills(clone_dir: &Path) -> Vec<DiscoveredSkill> {
             if fname == ".git" || fname == "skills" { continue; }
             if p.is_dir() && p.join("SKILL.md").exists() {
                 let content = std::fs::read_to_string(p.join("SKILL.md")).unwrap_or_default();
-                let (name, desc) = crate::scanner::parse_skill_frontmatter(&content)
-                    .unwrap_or_else(|| (fname.to_string_lossy().to_string(), String::new()));
+                let (name, desc, _) = crate::scanner::parse_skill_frontmatter(&content)
+                    .unwrap_or_else(|| (fname.to_string_lossy().to_string(), String::new(), vec![]));
                 // Avoid duplicate if already found in skills/ scan
                 if !skills.iter().any(|s| s.skill_id == fname.to_string_lossy().as_ref()) {
                     skills.push(DiscoveredSkill {
