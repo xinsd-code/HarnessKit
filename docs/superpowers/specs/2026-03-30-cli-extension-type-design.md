@@ -314,7 +314,24 @@ Deletes all child skills (reusing existing skill deletion logic), then removes t
 
 ### install_cli
 
-Executes the install command (e.g., `npm install -g @wecom/cli`), then installs skills via `install_from_git` or `npx skills add`. Requires user confirmation in UI since it runs a system-level command. Triggers `scan_and_sync` after completion.
+CLI installation does NOT use Install from Git. Unlike skills (which are Markdown files that work after a simple git clone), CLIs are compiled binaries with diverse installation methods (npm, curl, pip, etc.). Git clone yields source code that most users cannot build without the right toolchain.
+
+Instead, each CLI has its own `install_command` stored in the registry:
+
+| CLI | install_command |
+|-----|----------------|
+| wecom-cli | `npm install -g @wecom/cli` |
+| lark-cli | `npm install -g @larksuite/cli` |
+| dws | `curl -fsSL https://raw.githubusercontent.com/.../install.sh \| sh` |
+| meitu-cli | `npm install -g meitu-cli` |
+| OfficeCLI | `curl -fsSL https://raw.githubusercontent.com/.../install.sh \| bash` |
+
+**Install flow:**
+1. User clicks Install on a CLI marketplace entry
+2. UI shows the exact install command and asks for confirmation (system-level operation)
+3. Execute `install_command` to install the binary
+4. Install associated skills: `npx skills add <skills_repo>` or repo-specific `install-skills.sh`
+5. Trigger `scan_and_sync` to discover the new CLI + child skills
 
 ## 6. Tauri Commands (IPC)
 
@@ -419,7 +436,8 @@ pub struct CliRegistryEntry {
     pub display_name: String,
     pub description: String,
     pub install_command: String,       // e.g., "npm install -g @wecom/cli"
-    pub skills_repo: String,           // e.g., "WecomTeam/wecom-cli"
+    pub skills_repo: String,           // e.g., "WecomTeam/wecom-cli" (skills may be in same repo or separate, e.g., "meitu/meitu-skills")
+    pub skills_install_command: Option<String>, // override for non-standard skills install (e.g., "curl ... | sh" for dws)
     pub icon_url: Option<String>,
     pub categories: Vec<String>,
     pub verified: bool,                // true for manually curated
