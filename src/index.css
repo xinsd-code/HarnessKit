@@ -761,6 +761,81 @@ button:focus-visible,
   .transition-premium {
     transition-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
   }
+
+  .terminal-status {
+    display: block;
+    max-width: 100%;
+    font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-variant-ligatures: none;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .terminal-status__line {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.42rem 1.45rem;
+    margin: 0;
+    max-width: 100%;
+    line-height: 1.02;
+    font-size: 1.5rem;
+  }
+
+  .terminal-status__command {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.42rem;
+    color: var(--primary);
+    font-size: inherit;
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    white-space: nowrap;
+  }
+
+  .terminal-status__prompt {
+    color: inherit;
+    font-weight: 700;
+  }
+
+  .terminal-status__command-text {
+    white-space: nowrap;
+  }
+
+  .terminal-status__output {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.28rem 0.8rem;
+    color: var(--foreground);
+    font-size: inherit;
+    font-weight: 500;
+    letter-spacing: -0.04em;
+  }
+
+  .terminal-status__metric {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.26rem;
+    white-space: nowrap;
+  }
+
+  .terminal-status__count {
+    color: var(--foreground);
+    font-weight: 700;
+    font-size: 1em;
+    letter-spacing: -0.04em;
+  }
+
+  .terminal-status__label {
+    color: var(--foreground);
+    letter-spacing: -0.035em;
+  }
+
+  .terminal-status__separator {
+    color: var(--foreground);
+    font-size: 1em;
+  }
+
 }
 
 /* Respect OS-level reduced motion preference */

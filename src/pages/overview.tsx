@@ -67,6 +67,10 @@ interface ActivityItem {
   navigateTo: string;
 }
 
+function formatTerminalCount(value: number) {
+  return value >= 100 ? String(value) : String(value).padStart(2, "0");
+}
+
 // ---------------------------------------------------------------------------
 // Small composable pieces
 // ---------------------------------------------------------------------------
@@ -390,18 +394,38 @@ export default function OverviewPage() {
       {/* ----------------------------------------------------------------- */}
       {/* Header — editorial greeting with inline stats                     */}
       {/* ----------------------------------------------------------------- */}
-      <header className="space-y-1.5">
+      <header className="space-y-2">
         {enabledAgents.length > 0 || stats.total_extensions > 0 ? (
-          <h2 className="select-none text-2xl tracking-tight font-mono text-foreground">
-            <span className="text-primary/70 font-medium">&gt;</span>
-            <span className="text-muted-foreground font-medium ml-1.5">hk status</span>
-            <span className="text-muted-foreground/25 mx-2.5">|</span>
-            <span className="font-bold tabular-nums">{enabledAgents.length}</span>
-            <span className="font-normal text-muted-foreground ml-1">agent{enabledAgents.length !== 1 ? "s" : ""}</span>
-            <span className="text-primary/30 mx-1.5">·</span>
-            <span className="font-bold tabular-nums">{stats.total_extensions}</span>
-            <span className="font-normal text-muted-foreground ml-1">extension{stats.total_extensions !== 1 ? "s" : ""}</span>
-          </h2>
+          <div className="terminal-status select-none">
+            <h2
+              className="terminal-status__line"
+              aria-label={`${enabledAgents.length} agents / ${stats.total_extensions} extensions`}
+            >
+              <span className="terminal-status__command">
+                <span className="terminal-status__prompt" aria-hidden="true">&gt;</span>
+                <span className="terminal-status__command-text">hk status</span>
+              </span>
+              <span className="terminal-status__output">
+                <span className="terminal-status__metric">
+                  <span className="terminal-status__count tabular-nums">
+                    {formatTerminalCount(enabledAgents.length)}
+                  </span>
+                  <span className="terminal-status__label">
+                    agent{enabledAgents.length !== 1 ? "s" : ""}
+                  </span>
+                </span>
+                <span className="terminal-status__separator" aria-hidden="true">/</span>
+                <span className="terminal-status__metric">
+                  <span className="terminal-status__count tabular-nums">
+                    {formatTerminalCount(stats.total_extensions)}
+                  </span>
+                  <span className="terminal-status__label">
+                    extension{stats.total_extensions !== 1 ? "s" : ""}
+                  </span>
+                </span>
+              </span>
+            </h2>
+          </div>
         ) : (
           <h2 className="text-2xl font-bold tracking-tight text-foreground select-none">
             Welcome to HarnessKit
