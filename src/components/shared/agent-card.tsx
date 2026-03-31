@@ -12,7 +12,7 @@ export function AgentCard({ agent }: AgentCardProps) {
 
   const handleClick = useCallback(() => {
     setIsClicked(true);
-    const duration = agent.name === "claude" ? 4200 : 600;
+    const duration = agent.name === "claude" ? 4200 : agent.name === "antigravity" ? 1200 : 600;
     setTimeout(() => setIsClicked(false), duration);
   }, [agent.name]);
 

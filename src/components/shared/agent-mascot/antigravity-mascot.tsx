@@ -46,6 +46,10 @@ export function AntigravityMascot({ size, clicked }: MascotSvgProps) {
     for (let i = 0; i < 35; i++) spawnPuff(320 + i * 8, 8, 45, 2);
     for (let i = 0; i < 20; i++) spawnPuff(400 + i * 15, 10, 35, 3);
     for (let i = 0; i < 15; i++) spawnPuff(600 + i * 20, 3, 50, 0.5);
+    // Clear all particles halfway through the smoke dissipation
+    setTimeout(() => {
+      if (particleRef.current) particleRef.current.innerHTML = "";
+    }, 1000);
   }, [spawnPuff]);
 
   // Trigger explosion when clicked transitions to true
