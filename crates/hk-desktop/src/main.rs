@@ -43,7 +43,6 @@ fn main() {
             commands::add_project,
             commands::remove_project,
             commands::discover_projects,
-            commands::get_project_extensions,
             commands::update_agent_path,
             commands::set_agent_enabled,
             commands::update_agent_order,

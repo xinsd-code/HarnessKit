@@ -1458,15 +1458,6 @@ pub fn discover_projects(root_path: String) -> Result<Vec<DiscoveredProject>, St
 }
 
 #[tauri::command]
-pub fn get_project_extensions(project_path: String) -> Result<Vec<Extension>, String> {
-    let path = std::path::Path::new(&project_path);
-    if !path.is_dir() {
-        return Err(format!("Not a directory: {}", project_path));
-    }
-    Ok(scanner::scan_project(path))
-}
-
-#[tauri::command]
 pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, String> {
     let adapters = adapter::all_adapters();
     let store = state.store.lock().map_err(|e| e.to_string())?;

@@ -110,10 +110,6 @@ export const api = {
     return invoke("discover_projects", { rootPath });
   },
 
-  getProjectExtensions(projectPath: string): Promise<Extension[]> {
-    return invoke("get_project_extensions", { projectPath });
-  },
-
   updateAgentPath(name: string, path: string | null): Promise<void> {
     return invoke("update_agent_path", { name, path });
   },
