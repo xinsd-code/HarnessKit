@@ -1,11 +1,8 @@
 import { useEffect, useState } from "react";
-import { ChevronRight, FolderOpen, Copy, Trash2, Tag, Pencil, Check, X } from "lucide-react";
+import { ChevronRight, FolderOpen, FolderSearch, Copy, Trash2, Pencil, Check, X } from "lucide-react";
 import { clsx } from "clsx";
-import type { AgentConfigFile, ConfigCategory } from "@/lib/types";
-import { CONFIG_CATEGORY_LABELS } from "@/lib/types";
+import type { AgentConfigFile } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
-
-const CATEGORY_ORDER: ConfigCategory[] = ["rules", "memory", "settings", "ignore"];
 
 export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
   const expandedFiles = useAgentConfigStore((s) => s.expandedFiles);
@@ -22,15 +19,17 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
 
   const [editing, setEditing] = useState(false);
   const [editPath, setEditPath] = useState(file.path);
-  const [editCategory, setEditCategory] = useState<ConfigCategory>(file.category);
 
   useEffect(() => {
     if (isExpanded && preview === null && !file.is_dir) {
       fetchPreview(file.path);
     }
-  }, [isExpanded, file.path, fetchPreview, preview, file.is_dir]);
+    if (!isExpanded && editing) {
+      setEditing(false);
+      setEditPath(file.path);
+    }
+  }, [isExpanded, file.path, file.is_dir, fetchPreview, preview, editing]);
 
-  const scopeLabel = file.scope.type === "global" ? "Global" : file.scope.name;
   const scopePath = file.custom_id != null
     ? file.path
     : file.scope.type === "global"
@@ -55,12 +54,18 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
             className={clsx("shrink-0 text-muted-foreground transition-transform", isExpanded && "rotate-90")}
           />
           <span className="text-[13px] font-medium truncate">{file.file_name}</span>
-          {file.custom_id != null && (
-            <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary shrink-0">
-              <Tag size={8} /> Custom
-            </span>
+          {file.custom_id == null && (
+            file.scope.type === "global" ? (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-tag-global/10 text-tag-global shrink-0">
+                Global
+              </span>
+            ) : (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-tag-project/10 text-tag-project shrink-0">
+                Project
+              </span>
+            )
           )}
-          <span className="text-[11px] text-muted-foreground truncate">{scopeLabel} · {scopePath}</span>
+          <span className="text-[11px] text-muted-foreground truncate">{scopePath}</span>
         </div>
         {!file.is_dir && (
           <span className="text-[11px] text-muted-foreground shrink-0 ml-2">{sizeLabel}</span>
@@ -80,43 +85,47 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
 
           {/* Edit form for custom paths */}
           {editing && file.custom_id != null && (
-            <div className="mb-3 space-y-2 rounded-md border border-border bg-background p-2.5">
+            <div className="mb-3 flex items-center gap-1.5 rounded-md border border-border bg-background p-2">
               <input
                 type="text"
                 value={editPath}
                 onChange={(e) => setEditPath(e.target.value)}
                 placeholder="Path"
-                className="w-full rounded-md border border-border bg-card px-2.5 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-ring"
+                className="flex-1 rounded-md border border-border bg-card px-2.5 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-ring"
               />
-              <div className="flex items-center gap-2">
-                <select
-                  value={editCategory}
-                  onChange={(e) => setEditCategory(e.target.value as ConfigCategory)}
-                  className="rounded-md border border-border bg-card px-2 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-ring"
-                >
-                  {CATEGORY_ORDER.map((cat) => (
-                    <option key={cat} value={cat}>{CONFIG_CATEGORY_LABELS[cat]}</option>
-                  ))}
-                </select>
-                <div className="flex-1" />
-                <button
-                  onClick={(e) => { e.stopPropagation(); setEditing(false); }}
-                  className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
-                >
-                  <X size={11} /> Cancel
-                </button>
-                <button
-                  disabled={!editPath.trim()}
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    await updateCustomPath(file.custom_id!, editPath.trim(), "", editCategory);
-                    setEditing(false);
-                  }}
-                  className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
-                >
-                  <Check size={11} /> Save
-                </button>
-              </div>
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    const { open } = await import("@tauri-apps/plugin-dialog");
+                    const selected = await open({ title: "Select file or folder" });
+                    if (typeof selected === "string") setEditPath(selected);
+                  } catch {}
+                }}
+                className="shrink-0 rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                title="Browse..."
+              >
+                <FolderSearch size={13} />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setEditing(false); }}
+                className="shrink-0 rounded-md border border-border bg-background p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                title="Cancel"
+              >
+                <X size={13} />
+              </button>
+              <button
+                disabled={!editPath.trim()}
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  await updateCustomPath(file.custom_id!, editPath.trim(), "", file.category);
+                  setEditing(false);
+                }}
+                className="shrink-0 rounded-md bg-primary p-1.5 text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors"
+                title="Save"
+              >
+                <Check size={13} />
+              </button>
             </div>
           )}
 
@@ -125,7 +134,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
               onClick={(e) => { e.stopPropagation(); openInEditor(file.path); }}
               className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
             >
-              <FolderOpen size={12} /> Reveal in Finder
+              <FolderOpen size={12} /> {file.is_dir ? "Reveal in Finder" : "Open in Editor"}
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); copyPath(file.path); }}
@@ -139,7 +148,6 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                   onClick={(e) => {
                     e.stopPropagation();
                     setEditPath(file.path);
-                    setEditCategory(file.category);
                     setEditing(!editing);
                   }}
                   className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"

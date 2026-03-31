@@ -100,6 +100,20 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
   },
 
   async addCustomPath(agent, path, label, category) {
+    // Check if path already exists in auto-scanned config files
+    const detail = get().agentDetails.find((a) => a.name === agent);
+    if (detail) {
+      const existing = detail.config_files.find((f) => f.path === path && f.custom_id == null);
+      if (existing) {
+        toast.error("This path is already detected automatically");
+        return;
+      }
+      const customDup = detail.config_files.find((f) => f.path === path && f.custom_id != null);
+      if (customDup) {
+        toast.error("This path has already been added");
+        return;
+      }
+    }
     try {
       await api.addCustomConfigPath(agent, path, label, category);
       toast.success("Custom path added");

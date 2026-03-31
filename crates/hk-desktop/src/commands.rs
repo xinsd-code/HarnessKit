@@ -1391,11 +1391,20 @@ pub fn add_project(state: State<AppState>, path: String) -> Result<Project, Stri
         .map_err(|e| format!("Invalid path: {}", e))?;
     let path = project_path.to_string_lossy().to_string();
 
-    // Validate the path contains project markers
-    let has_claude = project_path.join(".claude").exists();
-    let has_mcp = project_path.join(".mcp.json").exists();
-    if !has_claude && !has_mcp {
-        return Err("Directory does not contain .claude/ or .mcp.json".to_string());
+    // Validate the path contains project markers for any supported agent
+    let has_agent_config =
+        project_path.join(".claude").is_dir()
+        || project_path.join(".mcp.json").is_file()
+        || project_path.join(".codex").is_dir()
+        || project_path.join(".gemini").is_dir()
+        || project_path.join(".cursor").join("rules").is_dir()
+        || project_path.join(".cursorrules").is_file()
+        || project_path.join(".github").join("copilot-instructions.md").is_file()
+        || project_path.join(".github").join("instructions").is_dir()
+        || project_path.join(".agent").join("rules").is_dir()
+        || project_path.join(".agent").join("skills").is_dir();
+    if !has_agent_config {
+        return Err("Directory does not contain any recognized agent configuration".to_string());
     }
 
     // Check for duplicate before insert
@@ -1468,9 +1477,17 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, St
             vec![]
         };
 
-        // Merge user-defined custom config paths
+        // Merge user-defined custom config paths (skip if path already found by auto-scan)
+        let existing_paths: std::collections::HashSet<String> = config_files.iter()
+            .filter_map(|f| std::path::Path::new(&f.path).canonicalize().ok())
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
         if let Ok(custom_paths) = store.list_custom_config_paths(a.name()) {
             for (id, path, label, category_str) in custom_paths {
+                let canonical = std::path::Path::new(&path).canonicalize()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|_| path.clone());
+                if existing_paths.contains(&canonical) { continue; }
                 let category = match category_str.as_str() {
                     "rules" => ConfigCategory::Rules,
                     "memory" => ConfigCategory::Memory,

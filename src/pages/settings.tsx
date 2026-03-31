@@ -1,14 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useUIStore } from "@/stores/ui-store";
 import type { ThemeName } from "@/stores/ui-store";
 import { useProjectStore } from "@/stores/project-store";
 import { useAgentStore } from "@/stores/agent-store";
-import { KindBadge } from "@/components/shared/kind-badge";
-import { FolderOpen, Plus, Trash2, Loader2, ChevronDown, ChevronRight, Pencil } from "lucide-react";
+import { FolderOpen, FolderSearch, Plus, Trash2, Loader2, Pencil, Check, X } from "lucide-react";
 import { clsx } from "clsx";
 import { api } from "@/lib/invoke";
-import { agentDisplayName, type Extension, type ExtensionKind, type DiscoveredProject } from "@/lib/types";
+import { agentDisplayName, type DiscoveredProject } from "@/lib/types";
 import { toast } from "@/stores/toast-store";
 
 async function openDirectoryPicker(title: string): Promise<string | null> {
@@ -23,25 +22,6 @@ async function openDirectoryPicker(title: string): Promise<string | null> {
   }
 }
 
-const kindLabels: Record<ExtensionKind, string> = {
-  skill: "Skills",
-  mcp: "MCP Servers",
-  hook: "Hooks",
-  plugin: "Plugins",
-  cli: "CLI Tools",
-};
-
-const kindOrder: ExtensionKind[] = ["skill", "mcp", "hook", "plugin", "cli"];
-
-function groupByKind(extensions: Extension[]): Record<string, Extension[]> {
-  const groups: Record<string, Extension[]> = {};
-  for (const ext of extensions) {
-    if (!groups[ext.kind]) groups[ext.kind] = [];
-    groups[ext.kind].push(ext);
-  }
-  return groups;
-}
-
 const THEME_OPTIONS: { value: ThemeName; label: string; colors: [string, string, string] }[] = [
   { value: "tiesen", label: "Tiesen", colors: ["oklch(0.5144 0.1605 267.4400)", "oklch(0.9851 0 0)", "oklch(0 0 0)"] },
 { value: "claude", label: "Claude", colors: ["oklch(0.6171 0.1375 39.0427)", "oklch(0.9665 0.0067 97.3521)", "oklch(0.2679 0.0036 106.6427)"] },
@@ -51,32 +31,21 @@ export default function SettingsPage() {
   const { themeName, mode, setThemeName, setMode } = useUIStore();
   const {
     projects,
-    selectedProject,
-    projectExtensions,
     loading,
-    extensionsLoading,
     loadProjects,
     addProject,
     removeProject,
-    selectProject,
   } = useProjectStore();
 
   const { agents, fetch: fetchAgents, updatePath, setEnabled } = useAgentStore();
   const [searchParams, setSearchParams] = useSearchParams();
 
+  const [editingAgent, setEditingAgent] = useState<string | null>(null);
+  const [editingPath, setEditingPath] = useState("");
   const [adding, setAdding] = useState(false);
+  const [projectPathInput, setProjectPathInput] = useState("");
   const [discoveredProjects, setDiscoveredProjects] = useState<DiscoveredProject[] | null>(null);
   const [discoveredSelected, setDiscoveredSelected] = useState<Set<string>>(new Set());
-  const [confirmingRemoveId, setConfirmingRemoveId] = useState<string | null>(null);
-  const confirmRemoveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Auto-cancel project removal confirmation after 5 seconds
-  useEffect(() => {
-    if (confirmingRemoveId) {
-      confirmRemoveTimerRef.current = setTimeout(() => setConfirmingRemoveId(null), 5000);
-      return () => { if (confirmRemoveTimerRef.current) clearTimeout(confirmRemoveTimerRef.current); };
-    }
-  }, [confirmingRemoveId]);
 
   useEffect(() => {
     loadProjects();
@@ -104,18 +73,15 @@ export default function SettingsPage() {
 
   const existingPaths = new Set(projects.map((p) => p.path));
 
-  const handleAdd = async () => {
-    const path = await openDirectoryPicker("Select Project Directory");
+  const handleAddPath = async (path: string) => {
     if (!path) return;
-
     setAdding(true);
     try {
-      // Try adding directly first (it's a project itself)
       await addProject(path);
       setDiscoveredProjects(null);
+      setProjectPathInput("");
       toast.success("Project added");
     } catch {
-      // Not a valid project — try discovering projects inside it
       try {
         const results = await api.discoverProjects(path);
         if (results.length > 0) {
@@ -131,6 +97,11 @@ export default function SettingsPage() {
     } finally {
       setAdding(false);
     }
+  };
+
+  const handleBrowseProject = async () => {
+    const path = await openDirectoryPicker("Select Project Directory");
+    if (path) handleAddPath(path);
   };
 
   const handleAddDiscovered = async () => {
@@ -156,8 +127,6 @@ export default function SettingsPage() {
       return next;
     });
   };
-
-  const grouped = useMemo(() => groupByKind(projectExtensions), [projectExtensions]);
 
   return (
     <div className="flex flex-1 flex-col min-h-0 -mb-6">
@@ -253,24 +222,63 @@ export default function SettingsPage() {
               <span className="shrink-0 w-28 text-sm font-medium text-foreground">{agentDisplayName(agent)}</span>
               <input
                 type="text"
-                readOnly
-                value={info?.path ?? ""}
+                readOnly={editingAgent !== agent}
+                disabled={!isEnabled}
+                value={editingAgent === agent ? editingPath : (info?.path ?? "")}
                 placeholder="Not detected"
                 aria-label={`${agent} config path`}
-                className="flex-1 rounded-md border border-border bg-muted px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground cursor-default truncate"
-              />
-              <button
-                type="button"
-                disabled={!isEnabled}
-                aria-label={`Change ${agent} path`}
-                className="shrink-0 rounded-md border border-border p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:pointer-events-none disabled:opacity-40"
-                onClick={async () => {
-                  const path = await openDirectoryPicker(`Select ${agent} directory`);
-                  if (path) updatePath(agent, path);
+                onChange={(e) => setEditingPath(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && editingPath.trim()) { updatePath(agent, editingPath.trim()); setEditingAgent(null); }
+                  if (e.key === "Escape") setEditingAgent(null);
                 }}
-              >
-                <Pencil size={14} />
-              </button>
+                className={clsx(
+                  "flex-1 rounded-md border border-border px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground truncate disabled:opacity-40",
+                  editingAgent === agent ? "bg-card ring-1 ring-ring" : "bg-muted cursor-default"
+                )}
+              />
+              {editingAgent === agent ? (
+                <>
+                  <button
+                    type="button"
+                    aria-label={`Browse ${agent} path`}
+                    className="shrink-0 rounded-md border border-border p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    onClick={async () => {
+                      const path = await openDirectoryPicker(`Select ${agent} directory`);
+                      if (path) { updatePath(agent, path); setEditingAgent(null); }
+                    }}
+                  >
+                    <FolderSearch size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Cancel"
+                    className="shrink-0 rounded-md border border-border bg-background p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={() => setEditingAgent(null)}
+                  >
+                    <X size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Save"
+                    disabled={!editingPath.trim()}
+                    className="shrink-0 rounded-md bg-primary p-1.5 text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors"
+                    onClick={() => { updatePath(agent, editingPath.trim()); setEditingAgent(null); }}
+                  >
+                    <Check size={14} />
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  disabled={!isEnabled}
+                  aria-label={`Edit ${agent} path`}
+                  className="shrink-0 rounded-md border border-border p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:pointer-events-none disabled:opacity-40"
+                  onClick={() => { setEditingAgent(agent); setEditingPath(info?.path ?? ""); }}
+                >
+                  <Pencil size={14} />
+                </button>
+              )}
             </div>
           );
         })}
@@ -278,16 +286,33 @@ export default function SettingsPage() {
 
       {/* Project Paths */}
       <section id="project-paths" className="space-y-4 border-t border-border pt-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-medium text-muted-foreground">Project Paths</h3>
-            <p className="text-xs text-muted-foreground mt-1">
-              Add project directories to scan their local extensions (.claude/skills, .mcp.json, hooks).
-            </p>
-          </div>
+        <div>
+          <h3 className="text-sm font-medium text-muted-foreground">Project Paths</h3>
+          <p className="text-xs text-muted-foreground mt-1">
+            Add project directories to scan their local extensions (.claude/skills, .mcp.json, hooks).
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <input
+            type="text"
+            placeholder="Paste a project path or browse..."
+            value={projectPathInput}
+            onChange={(e) => setProjectPathInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && projectPathInput.trim()) handleAddPath(projectPathInput.trim()); }}
+            className="flex-1 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          />
           <button
-            onClick={handleAdd}
+            type="button"
             disabled={adding}
+            onClick={handleBrowseProject}
+            className="shrink-0 rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-40"
+            title="Browse..."
+          >
+            <FolderSearch size={16} />
+          </button>
+          <button
+            onClick={() => handleAddPath(projectPathInput.trim())}
+            disabled={adding || !projectPathInput.trim()}
             className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground shadow-sm transition-[color,background-color,box-shadow] duration-200 hover:bg-primary/90 hover:shadow-md disabled:opacity-50"
           >
             {adding ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
@@ -362,95 +387,29 @@ export default function SettingsPage() {
           </div>
         ) : (
           <div className="space-y-1">
-            {projects.map((project) => {
-              const isSelected = selectedProject?.id === project.id;
-              const isConfirmingRemove = confirmingRemoveId === project.id;
-              return (
-                <div key={project.id}>
-                  {isConfirmingRemove ? (
-                    <div className="animate-fade-in flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm border border-border bg-card shadow-sm">
-                      <span className="text-sm text-muted-foreground">Remove {project.name}?</span>
-                      <div className="ml-auto flex items-center gap-2">
-                        <button
-                          onClick={() => { removeProject(project.id); setConfirmingRemoveId(null); toast.success("Project removed"); }}
-                          className="rounded-lg bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90"
-                        >
-                          Remove
-                        </button>
-                        <button
-                          onClick={() => setConfirmingRemoveId(null)}
-                          className="rounded-lg px-3 py-1 text-xs text-muted-foreground hover:text-foreground"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                  <button
-                    type="button"
-                    onClick={() => selectProject(isSelected ? null : project)}
-                    className={clsx(
-                      "group flex w-full text-left items-center gap-3 rounded-lg px-4 py-2.5 text-sm cursor-pointer border shadow-sm transition-[color,background-color,border-color,box-shadow,transform] duration-200",
-                      isSelected
-                        ? "border-ring bg-accent"
-                        : "border-border bg-card hover:bg-muted hover:shadow-md"
-                    )}
-                  >
-                    {isSelected ? <ChevronDown size={14} className="shrink-0 text-muted-foreground" /> : <ChevronRight size={14} className="shrink-0 text-muted-foreground" />}
-                    <FolderOpen size={14} className="shrink-0 text-muted-foreground" />
-                    <div className="min-w-0 flex-1">
-                      <span className="font-medium text-foreground">{project.name}</span>
-                      <span className="ml-2 text-xs text-muted-foreground truncate">{project.path}</span>
-                    </div>
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      onClick={(e) => { e.stopPropagation(); setConfirmingRemoveId(project.id); }}
-                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setConfirmingRemoveId(project.id); } }}
-                      className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity cursor-pointer"
-                      aria-label={`Remove ${project.name}`}
-                    >
-                      <Trash2 size={14} />
-                    </span>
-                  </button>
-                  )}
-
-                  {/* Expanded: show project extensions */}
-                  {isSelected && (
-                    <div className="animate-fade-in ml-8 mt-1 mb-2 space-y-2">
-                      {extensionsLoading ? (
-                        <p className="text-xs text-muted-foreground py-2">Scanning...</p>
-                      ) : projectExtensions.length === 0 ? (
-                        <p className="text-xs text-muted-foreground italic py-2">No project-level extensions found.</p>
-                      ) : (
-                        kindOrder.map((kind) => {
-                          const items = grouped[kind];
-                          if (!items || items.length === 0) return null;
-                          return (
-                            <div key={kind}>
-                              <p className="text-xs font-medium text-muted-foreground mb-1">
-                                {kindLabels[kind]} ({items.length})
-                              </p>
-                              {items.map((ext) => (
-                                <div key={ext.id} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 mb-1">
-                                  <span className="text-sm text-foreground">{ext.name}</span>
-                                  <KindBadge kind={ext.kind} />
-                                  {ext.description && (
-                                    <span className="text-xs text-muted-foreground truncate ml-auto">{ext.description}</span>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  )}
+            {projects.map((project) => (
+              <div
+                key={project.id}
+                className="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-sm border border-border bg-card shadow-sm"
+              >
+                <FolderOpen size={14} className="shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <span className="font-medium text-foreground">{project.name}</span>
+                  <span className="ml-2 text-xs text-muted-foreground truncate">{project.path}</span>
                 </div>
-              );
-            })}
+                <button
+                  type="button"
+                  onClick={() => { removeProject(project.id); toast.success("Project removed"); }}
+                  className="text-muted-foreground hover:text-destructive transition-colors cursor-pointer focus:outline-none"
+                  aria-label={`Remove ${project.name}`}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
           </div>
         )}
+
       </section>
     </div></div></div>
   );

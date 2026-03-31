@@ -850,12 +850,27 @@ fn discover_projects_recursive(
         return;
     }
 
-    // Check if this directory is a project
-    let has_claude_skills = dir.join(".claude").join("skills").is_dir();
-    let has_mcp_json = dir.join(".mcp.json").is_file();
-    let has_claude_settings = dir.join(".claude").join("settings.json").is_file();
+    // Check if this directory is a project (any agent's config present)
+    let is_project =
+        // Claude Code: .claude/ directory
+        dir.join(".claude").is_dir()
+        // Claude Code: .mcp.json
+        || dir.join(".mcp.json").is_file()
+        // Codex: .codex/ directory
+        || dir.join(".codex").is_dir()
+        // Gemini: .gemini/ directory
+        || dir.join(".gemini").is_dir()
+        // Cursor: .cursor/rules/ directory or .cursorrules file
+        || dir.join(".cursor").join("rules").is_dir()
+        || dir.join(".cursorrules").is_file()
+        // Copilot: .github/copilot-instructions.md or .github/instructions/
+        || dir.join(".github").join("copilot-instructions.md").is_file()
+        || dir.join(".github").join("instructions").is_dir()
+        // Antigravity: .agent/rules/ or .agent/skills/
+        || dir.join(".agent").join("rules").is_dir()
+        || dir.join(".agent").join("skills").is_dir();
 
-    if has_claude_skills || has_mcp_json || has_claude_settings {
+    if is_project {
         let name = dir.file_name()
             .unwrap_or_default()
             .to_string_lossy()
@@ -1440,24 +1455,44 @@ mod tests {
     fn test_discover_projects() {
         let root = TempDir::new().unwrap();
 
-        // Project with .mcp.json
+        // Project with .mcp.json (Claude Code)
         let proj1 = root.path().join("project-a");
         std::fs::create_dir_all(&proj1).unwrap();
         std::fs::write(proj1.join(".mcp.json"), r#"{"mcpServers":{}}"#).unwrap();
 
-        // Project with .claude/skills/
+        // Project with .claude/ (Claude Code)
         let proj2 = root.path().join("project-b");
         std::fs::create_dir_all(proj2.join(".claude").join("skills")).unwrap();
+
+        // Project with .codex/ (Codex)
+        let proj3 = root.path().join("project-c");
+        std::fs::create_dir_all(proj3.join(".codex")).unwrap();
+
+        // Project with .cursor/rules/ (Cursor)
+        let proj4 = root.path().join("project-d");
+        std::fs::create_dir_all(proj4.join(".cursor").join("rules")).unwrap();
+
+        // Project with .gemini/ (Gemini)
+        let proj5 = root.path().join("project-e");
+        std::fs::create_dir_all(proj5.join(".gemini")).unwrap();
 
         // Not a project
         let non_proj = root.path().join("not-a-project");
         std::fs::create_dir_all(&non_proj).unwrap();
 
+        // .github/ alone is NOT a project (too generic)
+        let github_only = root.path().join("github-repo");
+        std::fs::create_dir_all(github_only.join(".github")).unwrap();
+
         let discovered = discover_projects(root.path(), 4);
-        assert_eq!(discovered.len(), 2);
+        assert_eq!(discovered.len(), 5);
         let names: Vec<&str> = discovered.iter().map(|d| d.name.as_str()).collect();
         assert!(names.contains(&"project-a"));
         assert!(names.contains(&"project-b"));
+        assert!(names.contains(&"project-c"));
+        assert!(names.contains(&"project-d"));
+        assert!(names.contains(&"project-e"));
+        assert!(!names.contains(&"github-repo"));
     }
 
     #[test]

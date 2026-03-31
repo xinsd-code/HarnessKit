@@ -1,19 +1,25 @@
 import type { AgentConfigFile, ConfigCategory } from "@/lib/types";
 import { CONFIG_CATEGORY_LABELS } from "@/lib/types";
 import { ConfigFileEntry } from "./config-file-entry";
-import { FileText, Brain, Settings, EyeOff } from "lucide-react";
+import { FileText, Brain, Settings, EyeOff, FolderCog } from "lucide-react";
 
-const CATEGORY_ICONS: Record<ConfigCategory, React.ElementType> = {
+const CATEGORY_ICONS: Record<string, React.ElementType> = {
   rules: FileText,
   memory: Brain,
   settings: Settings,
   ignore: EyeOff,
+  custom: FolderCog,
 };
 
-export function ConfigSection({ category, files }: { category: ConfigCategory; files: AgentConfigFile[] }) {
+const CATEGORY_LABELS: Record<string, string> = {
+  ...CONFIG_CATEGORY_LABELS,
+  custom: "Custom",
+};
+
+export function ConfigSection({ category, files }: { category: ConfigCategory | "custom"; files: AgentConfigFile[] }) {
   if (files.length === 0) return null;
-  const Icon = CATEGORY_ICONS[category];
-  const label = CONFIG_CATEGORY_LABELS[category];
+  const Icon = CATEGORY_ICONS[category] ?? Settings;
+  const label = CATEGORY_LABELS[category] ?? category;
 
   return (
     <div className="mb-5">
