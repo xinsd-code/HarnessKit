@@ -26,7 +26,7 @@ export const CATEGORIES = [
   "Productivity", "Research", "Other",
 ] as const;
 
-const kinds: (ExtensionKind | null)[] = [null, "skill", "mcp", "plugin", "hook"];
+const kinds: (ExtensionKind | null)[] = [null, "skill", "mcp", "plugin", "hook", "cli"];
 
 /** Per-agent background + text colors for the active filter state. */
 const AGENT_FILTER_COLORS: Record<string, string> = {

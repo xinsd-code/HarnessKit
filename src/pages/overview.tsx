@@ -9,6 +9,7 @@ import {
   Server,
   Puzzle,
   Webhook,
+  Terminal,
   Shield,
   ShoppingBag,
   Bot,
@@ -418,6 +419,9 @@ export default function OverviewPage() {
             )}
             {stats.hook_count > 0 && (
               <StatChip label="hooks" count={stats.hook_count} icon={Webhook} />
+            )}
+            {stats.cli_count > 0 && (
+              <StatChip label="CLIs" count={stats.cli_count} icon={Terminal} />
             )}
           </div>
         ) : (

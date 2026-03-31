@@ -232,6 +232,69 @@ export function ExtensionDetail() {
         </div>
       )}
 
+      {/* CLI Details */}
+      {group.kind === "cli" && group.instances[0]?.cli_meta && (() => {
+        const cli_meta = group.instances[0].cli_meta!;
+        return (
+          <div className="mt-4 space-y-3 text-sm">
+            <h4 className="font-medium text-foreground">CLI Details</h4>
+            <div className="grid grid-cols-2 gap-2 text-muted-foreground">
+              <span>Binary:</span>
+              <span className="font-mono">{cli_meta.binary_name}</span>
+              {cli_meta.version && <>
+                <span>Version:</span>
+                <span>{cli_meta.version}</span>
+              </>}
+              {cli_meta.install_method && <>
+                <span>Installed via:</span>
+                <span>{cli_meta.install_method}</span>
+              </>}
+              {cli_meta.binary_path && <>
+                <span>Path:</span>
+                <span className="font-mono text-xs truncate">{cli_meta.binary_path}</span>
+              </>}
+              {cli_meta.credentials_path && <>
+                <span>Credentials:</span>
+                <span className="font-mono text-xs truncate">{cli_meta.credentials_path}</span>
+              </>}
+            </div>
+            {cli_meta.api_domains.length > 0 && (
+              <div>
+                <span className="text-muted-foreground">API Domains:</span>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {cli_meta.api_domains.map(d => (
+                    <span key={d} className="text-xs px-2 py-0.5 bg-muted rounded-full">{d}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* CLI Associated Skills */}
+      {group.kind === "cli" && (() => {
+        const extensions = useExtensionStore.getState().extensions;
+        const children = extensions.filter(e => e.cli_parent_id === group.instances[0]?.id);
+        return children.length > 0 ? (
+          <div className="mt-4">
+            <h4 className="text-sm font-medium text-foreground mb-2">
+              Associated Skills ({children.length})
+            </h4>
+            <div className="space-y-1">
+              {children.map(child => (
+                <div key={child.id} className="flex items-center justify-between text-sm py-1">
+                  <span>{child.name}</span>
+                  <span className={child.enabled ? "text-green-500" : "text-muted-foreground"}>
+                    {child.enabled ? "Enabled" : "Disabled"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null;
+      })()}
+
       {/* Agent Details (per-agent breakdown) */}
       {group.instances.length > 0 && (
         <div className="mt-4">

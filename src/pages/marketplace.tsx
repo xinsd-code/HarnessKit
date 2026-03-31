@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMarketplaceStore } from "@/stores/marketplace-store";
 import { useAgentStore } from "@/stores/agent-store";
 import { InstallDialog } from "@/components/extensions/install-dialog";
-import { Search, Download, X, Loader2, Shield, ShieldCheck, ShieldAlert, TrendingUp, BadgeCheck, Server, Package, GitBranch } from "lucide-react";
+import { Search, Download, X, Loader2, Shield, ShieldCheck, ShieldAlert, TrendingUp, BadgeCheck, Server, Package, GitBranch, Terminal } from "lucide-react";
 import { sortAgents, agentDisplayName, type MarketplaceItem, type SkillAuditInfo } from "@/lib/types";
 import { humanizeError } from "@/lib/errors";
 import { Hint } from "@/components/shared/hint";
@@ -166,13 +166,24 @@ export default function MarketplacePage() {
             <button
               onClick={() => setTab("mcp")}
               className={clsx(
-                "flex items-center gap-1.5 rounded-r-lg px-3 py-1.5 text-xs font-medium transition-colors border-b-2",
+                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors border-b-2",
                 tab === "mcp"
                   ? "bg-primary text-primary-foreground border-b-primary-foreground/50"
                   : "text-muted-foreground border-b-transparent hover:bg-accent"
               )}
             >
               <Server size={12} />MCP Servers
+            </button>
+            <button
+              onClick={() => setTab("cli")}
+              className={clsx(
+                "flex items-center gap-1.5 rounded-r-lg px-3 py-1.5 text-xs font-medium transition-colors border-b-2",
+                tab === "cli"
+                  ? "bg-primary text-primary-foreground border-b-primary-foreground/50"
+                  : "text-muted-foreground border-b-transparent hover:bg-accent"
+              )}
+            >
+              <Terminal size={12} />CLI Tools
             </button>
           </div>
         </div>
@@ -185,7 +196,7 @@ export default function MarketplacePage() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              placeholder={tab === "skill" ? "Search skills..." : "Search MCP servers..."}
+              placeholder={tab === "skill" ? "Search skills..." : tab === "mcp" ? "Search MCP servers..." : "Search CLI tools..."}
               aria-label="Search marketplace"
               className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-3 text-sm placeholder:text-muted-foreground transition-[background-color,border-color,box-shadow] duration-200 focus:border-ring focus:bg-background focus:shadow-md focus:outline-none"
             />
@@ -202,7 +213,7 @@ export default function MarketplacePage() {
         <InstallDialog open={showInstall} onClose={() => setShowInstall(false)} />
 
         <Hint id="marketplace-intro">
-          Search for skills and MCP servers to install across your agents. Use
+          Search for skills, MCP servers, and CLI tools to install across your agents. Use
           'Install from Git' to install directly from a Git URL.
         </Hint>
       </div>
@@ -215,7 +226,7 @@ export default function MarketplacePage() {
         {showTrending && !trendingLoading && trending.length > 0 && (
           <div className="flex items-center gap-2 text-sm font-medium text-foreground">
             <TrendingUp size={14} className="text-primary" />
-            <span>Trending {tab === "skill" ? "Skills" : "MCP Servers"}</span>
+            <span>Trending {tab === "skill" ? "Skills" : tab === "mcp" ? "MCP Servers" : "CLI Tools"}</span>
           </div>
         )}
 
