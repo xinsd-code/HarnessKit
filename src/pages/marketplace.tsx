@@ -303,17 +303,22 @@ export default function MarketplacePage() {
             </div>
           )}
 
-          {/* GitHub link (CLI only) */}
-          {selectedItem.kind === "cli" && selectedItem.repo_url && (
+          {/* Source link */}
+          {selectedItem.source && (
             <div className="mt-4">
               <a
-                href={selectedItem.repo_url}
+                href={
+                  selectedItem.repo_url
+                    ?? (selectedItem.kind === "mcp"
+                      ? `https://smithery.ai/server/${selectedItem.source}`
+                      : `https://github.com/${selectedItem.source}`)
+                }
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:border-ring"
               >
                 <GitBranch size={12} />
-                View on GitHub
+                {selectedItem.kind === "mcp" ? "View on Smithery" : "View on GitHub"}
                 <ExternalLink size={10} className="text-muted-foreground" />
               </a>
             </div>
