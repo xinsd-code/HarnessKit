@@ -277,12 +277,29 @@ export default function MarketplacePage() {
                 <h3 className="text-lg font-semibold">{selectedItem.name}</h3>
                 {selectedItem.verified && <BadgeCheck size={16} className="shrink-0 text-primary" />}
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">{selectedItem.source}</p>
-              {selectedItem.kind === "cli" && selectedItem.stars != null ? (
-                <p className="mt-1 text-xs text-muted-foreground/70"><Star size={10} className="inline -mt-0.5 mr-0.5" />{formatInstalls(selectedItem.stars)}</p>
-              ) : (
-                <p className="mt-1 text-xs text-muted-foreground/70">{formatInstalls(selectedItem.installs)} uses</p>
+              {selectedItem.source && (
+                <a
+                  href={
+                    selectedItem.repo_url
+                      ?? (selectedItem.kind === "mcp"
+                        ? `https://smithery.ai/server/${selectedItem.source}`
+                        : `https://github.com/${selectedItem.source}`)
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {selectedItem.source}
+                  <ExternalLink size={10} className="shrink-0" />
+                </a>
               )}
+              <p className="mt-1 text-xs text-muted-foreground/70">
+                {selectedItem.kind === "cli" && selectedItem.stars != null ? (
+                  <><Star size={10} className="inline -mt-0.5 mr-0.5" />{formatInstalls(selectedItem.stars)}</>
+                ) : (
+                  <>{formatInstalls(selectedItem.installs)} uses</>
+                )}
+              </p>
             </div>
             <button onClick={closePreview} aria-label="Close details" className="shrink-0 rounded-lg p-2.5 text-muted-foreground hover:text-foreground">
               <X size={18} />
@@ -300,27 +317,6 @@ export default function MarketplacePage() {
               {selectedItem.categories.map((c) => (
                 <span key={c} className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent">{c}</span>
               ))}
-            </div>
-          )}
-
-          {/* Source link */}
-          {selectedItem.source && (
-            <div className="mt-4">
-              <a
-                href={
-                  selectedItem.repo_url
-                    ?? (selectedItem.kind === "mcp"
-                      ? `https://smithery.ai/server/${selectedItem.source}`
-                      : `https://github.com/${selectedItem.source}`)
-                }
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:border-ring"
-              >
-                <GitBranch size={12} />
-                {selectedItem.kind === "mcp" ? "View on Smithery" : "View on GitHub"}
-                <ExternalLink size={10} className="text-muted-foreground" />
-              </a>
             </div>
           )}
 
