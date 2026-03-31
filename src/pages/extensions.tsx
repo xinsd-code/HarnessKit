@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useExtensionStore } from "@/stores/extension-store";
+import { useAgentStore } from "@/stores/agent-store";
 import { ExtensionTable } from "@/components/extensions/extension-table";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
 import { ExtensionDetail } from "@/components/extensions/extension-detail";
@@ -66,7 +67,8 @@ export default function ExtensionsPage() {
     }
   }, [confirmingDelete]);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  const fetchAgents = useAgentStore((s) => s.fetch);
+  useEffect(() => { fetch(); fetchAgents(); }, [fetch, fetchAgents]);
 
   return (
     <div className="flex flex-1 flex-col min-h-0 -mb-6">
