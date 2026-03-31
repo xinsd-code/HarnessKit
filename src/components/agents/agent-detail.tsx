@@ -44,7 +44,7 @@ export function AgentDetail() {
     <div className="flex-1 overflow-y-auto overscroll-contain p-5">
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h2 className="text-xl font-bold">{agentDisplayName(agent.name)}</h2>
+          <h2 className="text-2xl font-bold tracking-tight">{agentDisplayName(agent.name)}</h2>
           {!agent.detected && (
             <p className="text-[12px] text-muted-foreground mt-0.5">Not detected</p>
           )}

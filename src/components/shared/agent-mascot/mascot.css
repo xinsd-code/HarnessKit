@@ -315,9 +315,9 @@
 }
 
 /* === Antigravity === */
-.mascot-antigravity.is-animated .ag-icon-wrapper { animation: ag-moonwalk 4s linear infinite; }
+.mascot-antigravity.is-animated .ag-icon-wrapper { animation: ag-moonwalk 2.5s linear infinite; }
 
-.mascot-antigravity.is-clicked .ag-icon-wrapper { animation: ag-launch-crouch 0.25s ease-out forwards, ag-launch-fly 0.35s ease-in 0.25s forwards !important; }
+.mascot-antigravity.is-clicked .ag-icon-wrapper { animation: ag-launch-crouch 0.18s ease-out forwards, ag-launch-fly 0.25s ease-in 0.18s forwards !important; }
 
 @keyframes ag-moonwalk {
   0%   { transform: translateY(0) rotate(7deg); }

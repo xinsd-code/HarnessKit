@@ -25,7 +25,7 @@ function SidebarLink({ to, icon: Icon, label }: { to: string; icon: React.Elemen
           "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] transition-all duration-200 ease-out",
           isActive
             ? "bg-sidebar-accent/90 text-sidebar-accent-foreground font-semibold"
-            : "text-sidebar-foreground/60 font-medium hover:bg-sidebar-accent/50 hover:text-sidebar-foreground hover:translate-x-1 hover:scale-[1.01]"
+            : "text-sidebar-foreground/60 font-medium hover:bg-sidebar-accent/50 hover:text-sidebar-foreground hover:translate-x-0.5"
         )
       }
     >
