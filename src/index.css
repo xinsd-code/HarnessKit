@@ -69,7 +69,7 @@
   --kind-hook: oklch(0.58 0.13 80);
   --kind-cli: oklch(0.58 0.14 45);
   --tag-global: oklch(0.52 0.10 250);
-  --tag-project: oklch(0.54 0.10 310);
+  --tag-project: oklch(0.54 0.10 175);
   --agent-claude: oklch(0.62 0.14 25);
   --agent-codex: oklch(0.55 0.01 250);
   --agent-gemini: oklch(0.58 0.16 260);
@@ -139,7 +139,7 @@
   --kind-hook: oklch(0.72 0.12 80);
   --kind-cli: oklch(0.65 0.14 45);
   --tag-global: oklch(0.73 0.09 250);
-  --tag-project: oklch(0.74 0.09 310);
+  --tag-project: oklch(0.74 0.09 175);
   --agent-claude: oklch(0.72 0.12 25);
   --agent-codex: oklch(0.72 0.01 250);
   --agent-gemini: oklch(0.72 0.14 260);
@@ -362,7 +362,7 @@
   --kind-hook: oklch(0.58 0.13 80);
   --kind-cli: oklch(0.58 0.14 45);
   --tag-global: oklch(0.52 0.10 250);
-  --tag-project: oklch(0.54 0.10 310);
+  --tag-project: oklch(0.54 0.10 175);
   --agent-claude: oklch(0.62 0.14 25);
   --agent-codex: oklch(0.55 0.01 250);
   --agent-gemini: oklch(0.58 0.16 260);
@@ -432,7 +432,7 @@
   --kind-hook: oklch(0.72 0.12 80);
   --kind-cli: oklch(0.65 0.14 45);
   --tag-global: oklch(0.73 0.09 250);
-  --tag-project: oklch(0.74 0.09 310);
+  --tag-project: oklch(0.74 0.09 175);
   --agent-claude: oklch(0.72 0.12 25);
   --agent-codex: oklch(0.72 0.01 250);
   --agent-gemini: oklch(0.72 0.14 260);
@@ -786,7 +786,7 @@ button:focus-visible,
     align-items: baseline;
     gap: 0.42rem;
     color: var(--primary);
-    font-size: inherit;
+    font-size: 1.04em;
     font-weight: 700;
     letter-spacing: -0.035em;
     white-space: nowrap;
