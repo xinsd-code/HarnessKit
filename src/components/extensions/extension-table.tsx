@@ -65,9 +65,9 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
         const ext = info.row.original;
         const hasUpdate = ext.instances.some(inst => updateStatuses.get(inst.id)?.status === "update_available");
         return (
-          <span className="font-medium">
+          <span className="flex items-center gap-2 font-medium">
+            {hasUpdate && <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary" title="Update available" />}
             {info.getValue()}
-            {hasUpdate && <span className="ml-1.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary" title="Update available">Update</span>}
           </span>
         );
       },

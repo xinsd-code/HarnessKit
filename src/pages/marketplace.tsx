@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMarketplaceStore } from "@/stores/marketplace-store";
 import { useAgentStore } from "@/stores/agent-store";
 import { InstallDialog } from "@/components/extensions/install-dialog";
-import { Search, Download, X, Loader2, Shield, ShieldCheck, ShieldAlert, TrendingUp, BadgeCheck, Server, Package, GitBranch, Terminal, Star, ExternalLink } from "lucide-react";
+import { Search, Download, X, Loader2, Shield, ShieldCheck, ShieldAlert, TrendingUp, BadgeCheck, Server, Package, GitBranch, FolderOpen, Terminal, Star, ExternalLink } from "lucide-react";
 import { sortAgents, agentDisplayName, type MarketplaceItem, type SkillAuditInfo } from "@/lib/types";
 import { humanizeError } from "@/lib/errors";
 import { Hint } from "@/components/shared/hint";
@@ -142,6 +142,23 @@ export default function MarketplacePage() {
     }
   };
 
+  const handleInstallLocal = async () => {
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({ directory: true, title: "Select a skill directory containing SKILL.md" });
+      if (typeof selected !== "string") return;
+      const { api } = await import("@/lib/invoke");
+      const agentNames = detectedAgents.map((a) => a.name);
+      const result = await api.installFromLocal(selected, agentNames);
+      toast.success(`${result.name} installed`);
+      const { useExtensionStore } = await import("@/stores/extension-store");
+      useExtensionStore.getState().fetch();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(msg);
+    }
+  };
+
   const detectedAgents = sortAgents(agents.filter((a) => a.detected), agentOrder);
   const displayItems = query.length >= 2 ? results : trending;
   const showTrending = query.length < 2;
@@ -159,6 +176,13 @@ export default function MarketplacePage() {
             >
               <GitBranch size={12} />
               Install from Git
+            </button>
+            <button
+              onClick={handleInstallLocal}
+              className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
+            >
+              <FolderOpen size={12} />
+              Install from Local
             </button>
           </div>
           <div className="flex rounded-lg border border-border">

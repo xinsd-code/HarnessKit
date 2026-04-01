@@ -47,8 +47,11 @@ interface ExtensionState {
   batchDelete: () => void;
   undoDelete: () => void;
   confirmDelete: () => Promise<void>;
+  checkingUpdates: boolean;
+  updatingAll: boolean;
   checkUpdates: () => Promise<void>;
   updateExtension: (id: string) => Promise<void>;
+  updateAll: () => Promise<number>;
   deleteFromAgents: (groupKey: string, agents: string[]) => Promise<void>;
   childSkillsOf: (cliId: string) => Extension[];
   grouped: () => GroupedExtension[];
@@ -161,6 +164,8 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   tagFilter: null,
   categoryFilter: null,
   pendingDelete: null,
+  checkingUpdates: false,
+  updatingAll: false,
   tableSorting: [],
   setTableSorting: (sorting) => set({ tableSorting: sorting }),
 
@@ -174,6 +179,18 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       );
       set({ extensions, loading: false });
       get().fetchTags();
+      // Restore persisted update statuses from DB on first load
+      if (get().updateStatuses.size === 0) {
+        api.getCachedUpdateStatuses().then((results) => {
+          if (results.length > 0) {
+            const map = new Map<string, UpdateStatus>();
+            for (const [id, status] of results) {
+              map.set(id, status);
+            }
+            set({ updateStatuses: map });
+          }
+        }).catch(() => {});
+      }
     } catch {
       set({ loading: false });
     }
@@ -330,22 +347,77 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   },
 
   async checkUpdates() {
-    const results = await api.checkUpdates();
-    const map = new Map<string, UpdateStatus>();
-    for (const [id, status] of results) {
-      map.set(id, status);
+    set({ checkingUpdates: true });
+    try {
+      const results = await api.checkUpdates();
+      const map = new Map<string, UpdateStatus>();
+      for (const [id, status] of results) {
+        map.set(id, status);
+      }
+      set({ updateStatuses: map });
+    } finally {
+      set({ checkingUpdates: false });
     }
-    set({ updateStatuses: map });
   },
 
   async updateExtension(id: string) {
     await api.updateExtension(id);
-    // Clear the update status for this extension
+    // Remove update status for this extension and all siblings in the same group
+    // (backend updates all siblings, so clear them all from the UI)
     const statuses = new Map(get().updateStatuses);
-    statuses.set(id, { status: "up_to_date" });
+    const group = get().grouped().find((g) => g.instances.some((i) => i.id === id));
+    if (group) {
+      for (const inst of group.instances) {
+        statuses.delete(inst.id);
+      }
+    } else {
+      statuses.delete(id);
+    }
     set({ updateStatuses: statuses });
     // Re-fetch extensions to reflect new state
     await get().fetch();
+  },
+
+  async updateAll() {
+    // Deduplicate: only update one instance per group (same skill across agents)
+    const groups = get().grouped();
+    const updateStatuses = get().updateStatuses;
+    const toUpdate: { groupName: string; id: string; siblingIds: string[] }[] = [];
+    for (const group of groups) {
+      const updatableInst = group.instances.find(
+        (inst) => updateStatuses.get(inst.id)?.status === "update_available",
+      );
+      if (updatableInst) {
+        toUpdate.push({
+          groupName: group.name,
+          id: updatableInst.id,
+          siblingIds: group.instances.map((i) => i.id),
+        });
+      }
+    }
+    if (toUpdate.length === 0) return 0;
+    set({ updatingAll: true });
+    let updated = 0;
+    try {
+      for (const { id, siblingIds } of toUpdate) {
+        try {
+          await api.updateExtension(id);
+          // Remove update status for all instances in the group
+          const statuses = new Map(get().updateStatuses);
+          for (const sid of siblingIds) {
+            statuses.delete(sid);
+          }
+          set({ updateStatuses: statuses });
+          updated++;
+        } catch {
+          // continue with remaining updates
+        }
+      }
+      await get().fetch();
+    } finally {
+      set({ updatingAll: false });
+    }
+    return updated;
   },
 
   async deleteFromAgents(groupKey, agentNames) {

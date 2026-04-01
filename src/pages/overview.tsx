@@ -160,6 +160,7 @@ export default function OverviewPage() {
   const [extensions, setExtensions] = useState<Extension[]>([]);
   const [extLoading, setExtLoading] = useState(true);
   const checkUpdates = useExtensionStore(s => s.checkUpdates);
+  const checkingUpdates = useExtensionStore(s => s.checkingUpdates);
   const auditResults = useAuditStore(s => s.results);
   const loadCached = useAuditStore(s => s.loadCached);
   const runAudit = useAuditStore(s => s.runAudit);
@@ -169,7 +170,7 @@ export default function OverviewPage() {
 
   const [agentConfigs, setAgentConfigs] = useState<AgentDetail[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
-  const [updatesLoading, setUpdatesLoading] = useState(false);
+  // updatesLoading now comes from store as checkingUpdates
   const [tips, setTips] = useState<Tip[]>([]);
 
   useEffect(() => {
@@ -586,13 +587,10 @@ export default function OverviewPage() {
               icon={RefreshCw}
               label="Check Updates"
               sublabel="Check for new versions"
-              loading={updatesLoading}
+              loading={checkingUpdates}
               onClick={() => {
-                setUpdatesLoading(true);
-                setTimeout(() => {
-                  checkUpdates().finally(() => setUpdatesLoading(false));
-                  setTimeout(() => navigate("/extensions"), 600);
-                }, 50);
+                checkUpdates();
+                setTimeout(() => navigate("/extensions"), 600);
               }}
             />
             <QuickAction

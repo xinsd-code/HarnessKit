@@ -3,6 +3,18 @@ export type SourceOrigin = "git" | "registry" | "agent" | "local";
 export type Severity = "Critical" | "High" | "Medium" | "Low";
 export type TrustTier = "Safe" | "LowRisk" | "NeedsReview";
 
+export interface InstallMeta {
+  install_type: string;
+  url: string | null;
+  url_resolved: string | null;
+  branch: string | null;
+  subpath: string | null;
+  revision: string | null;
+  remote_revision: string | null;
+  checked_at: string | null;
+  check_error: string | null;
+}
+
 export interface Extension {
   id: string;
   kind: ExtensionKind;
@@ -19,6 +31,7 @@ export interface Extension {
   updated_at: string;
   cli_parent_id: string | null;
   cli_meta: CliMeta | null;
+  install_meta: InstallMeta | null;
 }
 
 export interface Source {
@@ -96,7 +109,7 @@ export interface AuditFinding {
 }
 
 export type UpdateStatus =
-  | { status: "up_to_date" }
+  | { status: "up_to_date"; remote_hash: string }
   | { status: "update_available"; remote_hash: string }
   | { status: "error"; message: string };
 

@@ -5,7 +5,7 @@ import { useAgentStore } from "@/stores/agent-store";
 import { ExtensionTable } from "@/components/extensions/extension-table";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
 import { ExtensionDetail } from "@/components/extensions/extension-detail";
-import { RefreshCw, Plus } from "lucide-react";
+import { RefreshCw, Plus, ArrowDownCircle } from "lucide-react";
 import { Toast } from "@/components/shared/toast";
 import { toast } from "@/stores/toast-store";
 
@@ -23,7 +23,14 @@ export default function ExtensionsPage() {
       didApplyRef.current = true;
     }
   }, [searchParams, setAgentFilter]);
-  const { loading, fetch, selectedId, selectedIds, batchToggle, batchDelete, undoDelete, confirmDelete, pendingDelete, clearSelection, checkUpdates } = useExtensionStore();
+  const { loading, fetch, selectedId, selectedIds, batchToggle, batchDelete, undoDelete, confirmDelete, pendingDelete, clearSelection, checkUpdates, checkingUpdates, updateAll, updatingAll } = useExtensionStore();
+  const updateStatuses = useExtensionStore(s => s.updateStatuses);
+  const grouped = useExtensionStore(s => s.grouped);
+  const updatesAvailable = useMemo(() => {
+    return grouped().filter((g) =>
+      g.instances.some((inst) => updateStatuses.get(inst.id)?.status === "update_available"),
+    ).length;
+  }, [updateStatuses, grouped]);
   const extensions = useExtensionStore(s => s.extensions);
   const searchQuery = useExtensionStore(s => s.searchQuery);
   const categoryFilter = useExtensionStore(s => s.categoryFilter);
@@ -32,7 +39,6 @@ export default function ExtensionsPage() {
   const kindFilter = useExtensionStore(s => s.kindFilter);
   const data = useMemo(() => filtered(), [extensions, searchQuery, categoryFilter, agentFilter, kindFilter]);
   const batchMode = selectedIds.size > 0;
-  const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const confirmDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [toastDeleteCount, setToastDeleteCount] = useState<number | null>(null);
@@ -78,13 +84,15 @@ export default function ExtensionsPage() {
           <div className="flex items-center gap-3">
             <h2 className="text-2xl font-bold tracking-tight select-none">Extensions</h2>
             <button
+              onClick={() => navigate("/marketplace")}
+              className="flex items-center gap-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
+            >
+              <Plus size={12} />
+              Install New
+            </button>
+            <button
               onClick={() => {
-                setCheckingUpdates(true);
-                setTimeout(() => {
-                  checkUpdates()
-                    .then(() => toast.success("Updates checked"))
-                    .finally(() => setCheckingUpdates(false));
-                }, 100);
+                checkUpdates().then(() => toast.success("Updates checked"));
               }}
               disabled={checkingUpdates}
               className="flex items-center gap-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md disabled:opacity-50"
@@ -92,13 +100,20 @@ export default function ExtensionsPage() {
               <RefreshCw size={12} className={checkingUpdates ? "animate-spin" : ""} />
               {checkingUpdates ? "Checking..." : "Check Updates"}
             </button>
-            <button
-              onClick={() => navigate("/marketplace")}
-              className="flex items-center gap-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
-            >
-              <Plus size={12} />
-              Install New
-            </button>
+            {updatesAvailable > 0 && (
+              <button
+                onClick={() => {
+                  updateAll().then((n) => {
+                    if (n > 0) toast.success(`${n} extension${n > 1 ? "s" : ""} updated`);
+                  });
+                }}
+                disabled={updatingAll}
+                className="flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-primary/20 hover:shadow-md disabled:opacity-50"
+              >
+                <ArrowDownCircle size={12} className={updatingAll ? "animate-bounce" : ""} />
+                {updatingAll ? "Updating..." : `Update All (${updatesAvailable})`}
+              </button>
+            )}
           </div>
           {batchMode && (
             <div className="animate-fade-in flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2">

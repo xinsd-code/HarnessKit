@@ -38,12 +38,24 @@ export const api = {
     return invoke("get_extension_content", { id });
   },
 
+  getCachedUpdateStatuses(): Promise<[string, UpdateStatus][]> {
+    return invoke("get_cached_update_statuses");
+  },
+
+  getSkillLocations(name: string): Promise<[string, string][]> {
+    return invoke("get_skill_locations", { name });
+  },
+
   checkUpdates(): Promise<[string, UpdateStatus][]> {
     return invoke("check_updates");
   },
 
   updateExtension(id: string): Promise<InstallResult> {
     return invoke("update_extension", { id });
+  },
+
+  installFromLocal(path: string, targetAgents: string[]): Promise<InstallResult> {
+    return invoke("install_from_local", { path, targetAgents });
   },
 
   installFromGit(url: string, targetAgent?: string, skillId?: string): Promise<InstallResult> {

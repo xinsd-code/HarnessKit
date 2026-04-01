@@ -4,7 +4,7 @@ import { useExtensionStore } from "@/stores/extension-store";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { api } from "@/lib/invoke";
-import { X, File, Globe, Terminal, Database, Key, Calendar, GitBranch, ArrowDownCircle, CheckCircle, FolderOpen, Download, Loader2, Trash2, Link, AlertTriangle, Shield } from "lucide-react";
+import { X, File, Globe, Terminal, Database, Key, Calendar, GitBranch, ArrowDownCircle, FolderOpen, Download, Loader2, Trash2, Link, AlertTriangle, Shield } from "lucide-react";
 import type { ExtensionContent as ExtContent } from "@/lib/types";
 import { sortAgents, agentDisplayName } from "@/lib/types";
 import type { Permission } from "@/lib/types";
@@ -59,6 +59,8 @@ export function ExtensionDetail() {
   const [showDelete, setShowDelete] = useState(false);
   const [deleteAgents, setDeleteAgents] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
+  // All physical paths where this skill exists, keyed by agent name
+  const [skillLocations, setSkillLocations] = useState<[string, string][]>([]);
 
   // Reset state and load ALL instance data when group changes
   useEffect(() => {
@@ -81,9 +83,16 @@ export function ExtensionDetail() {
         setInstanceData(map);
         setLoadingContent(false);
       });
+      // Load skill locations for skills
+      if (group.kind === "skill") {
+        api.getSkillLocations(group.name).then(setSkillLocations).catch(() => setSkillLocations([]));
+      } else {
+        setSkillLocations([]);
+      }
     } else {
       setActiveInstanceId(null);
       setInstanceData(new Map());
+      setSkillLocations([]);
     }
     setShowDelete(false);
     setDeleteAgents(new Set());
@@ -120,6 +129,34 @@ export function ExtensionDetail() {
                 View Audit
               </button>
             )}
+            {(() => {
+              const hasUpdate = group.instances.some((inst) => updateStatuses.get(inst.id)?.status === "update_available");
+              if (!hasUpdate) return null;
+              const handleUpdate = async () => {
+                setUpdating(true);
+                try {
+                  const inst = group.instances.find((i) => updateStatuses.get(i.id)?.status === "update_available");
+                  if (inst) {
+                    await updateExtension(inst.id);
+                    toast.success(`${group.name} updated`);
+                  }
+                } catch (e) {
+                  toast.error(`Update failed: ${e}`);
+                } finally {
+                  setUpdating(false);
+                }
+              };
+              return (
+                <button
+                  onClick={handleUpdate}
+                  disabled={updating}
+                  className="flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
+                >
+                  {updating ? <Loader2 size={12} className="animate-spin" /> : <ArrowDownCircle size={12} />}
+                  {updating ? "Updating..." : "Update Available"}
+                </button>
+              );
+            })()}
           </div>
         </div>
         <button onClick={() => setSelectedId(null)} aria-label="Close extension details" className="shrink-0 rounded-lg p-2.5 text-muted-foreground hover:text-foreground">
@@ -159,7 +196,46 @@ export function ExtensionDetail() {
         </select>
       </div>
 
-      {/* 2. Agents + Deploy */}
+      {/* 2. Info */}
+      <div className="mt-4 space-y-2 text-sm">
+        <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Info</h4>
+        {(() => {
+          const meta = group.instances.find((i) => i.install_meta)?.install_meta;
+          const sourceUrl = meta?.url_resolved ?? meta?.url ?? group.source.url;
+          const repoPath = sourceUrl ? (() => {
+            const m = sourceUrl.match(/github\.com\/([^/]+\/[^/]+)/);
+            return m ? m[1].replace(/\.git$/, "") : null;
+          })() : null;
+          return <>
+            {repoPath && (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Globe size={14} />
+                <a
+                  href={`https://github.com/${repoPath}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="truncate hover:text-foreground transition-colors"
+                  title={`https://github.com/${repoPath}`}
+                >
+                  {repoPath}
+                </a>
+              </div>
+            )}
+          </>;
+        })()}
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Calendar size={14} />
+          <span>Installed {group.kind === "skill" ? formatDate(group.installed_at) : "\u2014"}</span>
+        </div>
+        {group.source.origin === "git" && group.source.url && !group.instances.find((i) => i.install_meta) && (
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <GitBranch size={14} />
+            <span className="truncate">{group.source.url}</span>
+          </div>
+        )}
+      </div>
+
+      {/* 3. Agents + Deploy */}
       <div className="mt-4">
         <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agents</h4>
         <div className="flex flex-wrap gap-1">
@@ -208,67 +284,6 @@ export function ExtensionDetail() {
           </div>
         );
       })()}
-
-      {/* 3. Update status for git-sourced extensions */}
-      {group.source.origin === "git" && (() => {
-        const statuses = group.instances
-          .map((inst) => updateStatuses.get(inst.id))
-          .filter(Boolean);
-        const hasUpdate = statuses.some((s) => s!.status === "update_available");
-        const allUpToDate = statuses.length > 0 && statuses.every((s) => s!.status === "up_to_date");
-        const handleUpdate = async () => {
-          setUpdating(true);
-          try {
-            const inst = group.instances.find((i) => updateStatuses.get(i.id)?.status === "update_available");
-            if (inst) {
-              await updateExtension(inst.id);
-              toast.success(`${group.name} updated`);
-            }
-          } catch (e) {
-            toast.error(`Update failed: ${e}`);
-          } finally {
-            setUpdating(false);
-          }
-        };
-        return (
-          <div className="mt-2 flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
-            <span className="text-sm">Updates</span>
-            {statuses.length === 0 ? (
-              <span className="text-xs text-muted-foreground">Not checked</span>
-            ) : hasUpdate ? (
-              <button
-                onClick={handleUpdate}
-                disabled={updating}
-                className="flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
-              >
-                {updating ? <Loader2 size={14} className="animate-spin" /> : <ArrowDownCircle size={14} />}
-                {updating ? "Updating..." : "Update available"}
-              </button>
-            ) : allUpToDate ? (
-              <span className="flex items-center gap-1 text-xs text-primary">
-                <CheckCircle size={14} /> Up to date
-              </span>
-            ) : (
-              <span className="text-xs text-muted-foreground">Check failed</span>
-            )}
-          </div>
-        );
-      })()}
-
-      {/* 4. Metadata */}
-      <div className="mt-4 space-y-2 text-sm">
-        <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Info</h4>
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <Calendar size={14} />
-          <span>Installed {group.kind === "skill" ? formatDate(group.installed_at) : "\u2014"}</span>
-        </div>
-        {group.source.origin === "git" && group.source.url && (
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <GitBranch size={14} />
-            <span className="truncate">{group.source.url}</span>
-          </div>
-        )}
-      </div>
 
       {/* 5. Permissions */}
       {group.permissions.length > 0 && (
@@ -344,48 +359,38 @@ export function ExtensionDetail() {
         ) : null;
       })()}
 
-      {/* 8. Agent Details (per-agent breakdown) */}
+      {/* 8. Paths (per-agent breakdown) */}
       {group.instances.length > 0 && (
         <div className="mt-4">
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agent Details</h4>
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Paths</h4>
           <div className="space-y-3">
             {group.instances.map((instance) => {
-              const status = updateStatuses.get(instance.id);
+              const agentName = instance.agents[0] ?? "unknown";
               const data = instanceData.get(instance.id);
+              // All physical paths for this skill under this agent (from filesystem scan)
+              const agentLocations = skillLocations.filter(([a]) => a === agentName);
               return (
                 <div key={instance.id} className="rounded-lg border border-border bg-card p-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">{agentDisplayName(instance.agents[0] ?? "unknown")}</span>
-                    {instance.source.origin === "git" && status && (
-                      <span className="text-xs">
-                        {status.status === "up_to_date" ? (
-                          <span className="flex items-center gap-1 text-primary">
-                            <CheckCircle size={12} /> Up to date
-                          </span>
-                        ) : status.status === "update_available" ? (
-                          <span className="flex items-center gap-1 text-primary">
-                            <ArrowDownCircle size={12} /> Update available
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground" title={status.message}>Check failed</span>
-                        )}
-                      </span>
-                    )}
-                  </div>
-                  {data?.path && (
-                    <div className="mt-1.5 space-y-1">
+                  <span className="text-sm font-medium">{agentDisplayName(agentName)}</span>
+                  <div className="mt-1.5 space-y-1">
+                    {agentLocations.length > 0 ? agentLocations.map(([, path]) => (
+                      <div key={path} className="flex items-start gap-2 text-muted-foreground">
+                        <FolderOpen size={12} className="mt-0.5 shrink-0" />
+                        <span className="break-all text-xs">{path}</span>
+                      </div>
+                    )) : data?.path ? (
                       <div className="flex items-start gap-2 text-muted-foreground">
                         <FolderOpen size={12} className="mt-0.5 shrink-0" />
                         <span className="break-all text-xs">{data.path}</span>
                       </div>
-                      {data.symlink_target && (
-                        <div className="flex items-start gap-2 text-muted-foreground/70">
-                          <Link size={12} className="mt-0.5 shrink-0" />
-                          <span className="break-all text-xs italic">{data.symlink_target}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                    ) : null}
+                    {data?.symlink_target && (
+                      <div className="flex items-start gap-2 text-muted-foreground/70">
+                        <Link size={12} className="mt-0.5 shrink-0" />
+                        <span className="break-all text-xs italic">{data.symlink_target}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })}
