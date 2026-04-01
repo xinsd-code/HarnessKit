@@ -159,6 +159,36 @@ Static analysis has limited coverage for MCP servers (content is empty, env vars
 
 ---
 
+## CLI Version Check Updates
+
+Extend the Check Updates system to cover CLI extensions, not just Skills.
+
+### Current State
+- CLI extensions have `cli_meta` with `version` (current) and `install_method` (npm, pip, cargo, homebrew, go, etc.)
+- Scanner already runs `get_binary_version()` to detect installed version
+- No mechanism to check for latest available version
+
+### Design Notes
+- **npm**: `npm view <pkg> version`
+- **pip**: `pip index versions <pkg> --pre` or PyPI JSON API
+- **cargo**: `cargo search <crate> --limit 1`
+- **homebrew**: `brew info <formula> --json` → `versions.stable`
+- **go**: `go list -m -versions <module>@latest`
+- Use `install_method` from `cli_meta` to pick the right check strategy
+- Store result in `install_meta` (reuse existing columns: `install_revision` = current version, `remote_revision` = latest version)
+- Show in same UI flow as skill updates (dot indicator, Update All, detail panel button)
+
+### Implementation Steps
+1. Add `check_cli_version(meta: &CliMeta) -> Option<(String, String)>` in manager.rs (returns current, latest)
+2. Include CLI extensions in `check_updates` command alongside skills
+3. Add `update_cli(id)` command that re-runs the install command
+4. Wire into existing frontend update UI (already generic enough)
+
+### Blockers
+- No CLIs currently installed to test against; implement when users have CLI extensions
+
+---
+
 ## CLI Marketplace — Automated GitHub Discovery
 
 Daily background scan to discover new agent-oriented CLI tools on GitHub, supplementing the hardcoded CLI_REGISTRY.
