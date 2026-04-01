@@ -145,6 +145,7 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
             }),
             cli_parent_id: None,
             cli_meta: None,
+            install_meta: None,
         });
     }
     extensions
@@ -227,6 +228,7 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             source_path: None,
             cli_parent_id: None,
             cli_meta: None,
+            install_meta: None,
         }
     }).collect()
 }
@@ -269,6 +271,7 @@ pub fn scan_hooks(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             source_path: None,
             cli_parent_id: None,
             cli_meta: None,
+            install_meta: None,
         }
     }).collect()
 }
@@ -324,6 +327,7 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             source_path: None,
             cli_parent_id: None,
             cli_meta: None,
+            install_meta: None,
         }
     }).collect()
 }
@@ -491,6 +495,7 @@ fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, Hash
                 version,
                 api_domains,
             }),
+            install_meta: None,
         });
     }
 

@@ -67,6 +67,16 @@ impl Store {
         let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN cli_parent_id TEXT", []);
         // Migration: add cli_meta_json for CLI-specific metadata
         let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN cli_meta_json TEXT", []);
+        // Migration: add install meta columns for install-source tracking
+        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_type TEXT", []);
+        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_url TEXT", []);
+        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_url_resolved TEXT", []);
+        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_branch TEXT", []);
+        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_subpath TEXT", []);
+        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_revision TEXT", []);
+        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN remote_revision TEXT", []);
+        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN checked_at TEXT", []);
+        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN check_error TEXT", []);
         // Migration: hidden_extensions table for surviving re-scans
         self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS hidden_extensions (id TEXT PRIMARY KEY)"
@@ -192,11 +202,12 @@ impl Store {
     }
 
     /// Upsert an extension: insert if new, update scanner-derived fields if existing.
-    /// Preserves user-set fields: enabled, tags, category, trust_score.
+    /// Preserves user-set fields: enabled, tags, category, trust_score, and install meta.
     pub fn insert_extension(&self, ext: &Extension) -> Result<()> {
+        let im = ext.install_meta.as_ref();
         self.conn.execute(
-            "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+            "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)
              ON CONFLICT(id) DO UPDATE SET
                kind = excluded.kind,
                name = excluded.name,
@@ -226,6 +237,15 @@ impl Store {
                 ext.source_path,
                 ext.cli_parent_id,
                 ext.cli_meta.as_ref().map(|m| serde_json::to_string(m).unwrap_or_default()),
+                im.map(|m| m.install_type.as_str()),
+                im.and_then(|m| m.url.as_deref()),
+                im.and_then(|m| m.url_resolved.as_deref()),
+                im.and_then(|m| m.branch.as_deref()),
+                im.and_then(|m| m.subpath.as_deref()),
+                im.and_then(|m| m.revision.as_deref()),
+                im.and_then(|m| m.remote_revision.as_deref()),
+                im.and_then(|m| m.checked_at.map(|t| t.to_rfc3339())),
+                im.and_then(|m| m.check_error.as_deref()),
             ],
         )?;
         Ok(())
@@ -233,7 +253,7 @@ impl Store {
 
     pub fn get_extension(&self, id: &str) -> Result<Option<Extension>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json
+            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error
              FROM extensions WHERE id = ?1"
         )?;
         let mut rows = stmt.query_map(params![id], |row| Ok(self.row_to_extension(row)))?;
@@ -246,7 +266,7 @@ impl Store {
     }
 
     pub fn list_extensions(&self, kind: Option<ExtensionKind>, agent: Option<&str>) -> Result<Vec<Extension>> {
-        let mut sql = "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json FROM extensions WHERE 1=1".to_string();
+        let mut sql = "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error FROM extensions WHERE 1=1".to_string();
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
         if let Some(k) = kind {
@@ -296,6 +316,41 @@ impl Store {
         self.conn.execute(
             "UPDATE extensions SET disabled_config = ?1 WHERE id = ?2",
             params![config, id],
+        )?;
+        Ok(())
+    }
+
+    /// Persist install source metadata for an extension.
+    pub fn set_install_meta(&self, id: &str, meta: &InstallMeta) -> Result<()> {
+        self.conn.execute(
+            "UPDATE extensions SET install_type = ?1, install_url = ?2, install_url_resolved = ?3, install_branch = ?4, install_subpath = ?5, install_revision = ?6, remote_revision = ?7, checked_at = ?8, check_error = ?9 WHERE id = ?10",
+            params![
+                meta.install_type,
+                meta.url,
+                meta.url_resolved,
+                meta.branch,
+                meta.subpath,
+                meta.revision,
+                meta.remote_revision,
+                meta.checked_at.map(|t| t.to_rfc3339()),
+                meta.check_error,
+                id,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Update remote revision check state for an extension.
+    pub fn update_check_state(
+        &self,
+        id: &str,
+        remote_revision: Option<&str>,
+        checked_at: DateTime<Utc>,
+        check_error: Option<&str>,
+    ) -> Result<()> {
+        self.conn.execute(
+            "UPDATE extensions SET remote_revision = ?1, checked_at = ?2, check_error = ?3 WHERE id = ?4",
+            params![remote_revision, checked_at.to_rfc3339(), check_error, id],
         )?;
         Ok(())
     }
@@ -351,7 +406,7 @@ impl Store {
     /// Get all child skills linked to a CLI extension
     pub fn get_child_skills(&self, cli_id: &str) -> Result<Vec<Extension>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json
+            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error
              FROM extensions WHERE cli_parent_id = ?1"
         )?;
         let rows = stmt.query_map(params![cli_id], |row| Ok(self.row_to_extension(row)))?;
@@ -390,6 +445,8 @@ impl Store {
     /// Sync all scanned extensions in a single transaction.
     /// Upserts every extension and removes stale entries that no longer exist on disk.
     /// Much faster than individual insert_extension calls (one fsync instead of N).
+    /// NOTE: The ON CONFLICT clause intentionally does NOT touch install meta columns
+    /// so that install source metadata survives re-scans.
     pub fn sync_extensions(&self, extensions: &[Extension]) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
 
@@ -408,7 +465,8 @@ impl Store {
                    category = extensions.category,
                    source_path = excluded.source_path,
                    cli_parent_id = excluded.cli_parent_id,
-                   cli_meta_json = excluded.cli_meta_json",
+                   cli_meta_json = excluded.cli_meta_json
+                   /* install meta columns intentionally excluded — preserved across re-scans */",
                 params![
                     ext.id,
                     ext.kind.as_str(),
@@ -445,6 +503,20 @@ impl Store {
                 tx.execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
             }
         }
+
+        // Backfill install_meta from scanner-detected git source for extensions
+        // that have no install metadata yet. This covers:
+        // - Skills that existed before harnesskit was installed (user git-cloned them)
+        // - Skills from previous versions before install tracking was added
+        tx.execute_batch(
+            "UPDATE extensions
+             SET install_type = 'git',
+                 install_url = json_extract(source_json, '$.url'),
+                 install_revision = json_extract(source_json, '$.commit_hash')
+             WHERE install_type IS NULL
+               AND json_extract(source_json, '$.origin') = 'git'
+               AND json_extract(source_json, '$.url') IS NOT NULL"
+        )?;
 
         tx.commit()?;
         Ok(())
@@ -559,6 +631,23 @@ impl Store {
         let updated_at_str: String = row.get(11)?;
         let cli_meta_json: Option<String> = row.get::<_, Option<String>>(15).ok().flatten();
 
+        // Install meta columns (16-24)
+        let install_type: Option<String> = row.get::<_, Option<String>>(16).ok().flatten();
+        let install_meta = install_type.map(|it| {
+            let checked_at_str: Option<String> = row.get::<_, Option<String>>(23).ok().flatten();
+            InstallMeta {
+                install_type: it,
+                url: row.get::<_, Option<String>>(17).ok().flatten(),
+                url_resolved: row.get::<_, Option<String>>(18).ok().flatten(),
+                branch: row.get::<_, Option<String>>(19).ok().flatten(),
+                subpath: row.get::<_, Option<String>>(20).ok().flatten(),
+                revision: row.get::<_, Option<String>>(21).ok().flatten(),
+                remote_revision: row.get::<_, Option<String>>(22).ok().flatten(),
+                checked_at: checked_at_str.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&Utc))),
+                check_error: row.get::<_, Option<String>>(24).ok().flatten(),
+            }
+        });
+
         Ok(Extension {
             id: row.get(0)?,
             kind: kind_str.parse()?,
@@ -578,6 +667,7 @@ impl Store {
             source_path: row.get::<_, Option<String>>(13).ok().flatten(),
             cli_parent_id: row.get::<_, Option<String>>(14).ok().flatten(),
             cli_meta: cli_meta_json.and_then(|s| serde_json::from_str::<CliMeta>(&s).ok()),
+            install_meta,
         })
     }
 }
@@ -619,6 +709,7 @@ mod tests {
             source_path: None,
             cli_parent_id: None,
             cli_meta: None,
+            install_meta: None,
         }
     }
 
@@ -1028,5 +1119,237 @@ mod tests {
 
         let children = store.get_child_skills("cli-parent").unwrap();
         assert_eq!(children.len(), 2);
+    }
+
+    #[test]
+    fn test_install_meta_roundtrip() {
+        let (store, _dir) = test_store();
+        let ext = sample_extension();
+        store.insert_extension(&ext).unwrap();
+
+        // Initially no install meta
+        let fetched = store.get_extension(&ext.id).unwrap().unwrap();
+        assert!(fetched.install_meta.is_none());
+
+        // Set install meta
+        let meta = InstallMeta {
+            install_type: "git".into(),
+            url: Some("https://github.com/user/repo".into()),
+            url_resolved: Some("https://github.com/user/repo.git".into()),
+            branch: Some("main".into()),
+            subpath: Some("skills/my-skill".into()),
+            revision: Some("abc123".into()),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+        store.set_install_meta(&ext.id, &meta).unwrap();
+
+        let fetched = store.get_extension(&ext.id).unwrap().unwrap();
+        let im = fetched.install_meta.unwrap();
+        assert_eq!(im.install_type, "git");
+        assert_eq!(im.url.as_deref(), Some("https://github.com/user/repo"));
+        assert_eq!(im.url_resolved.as_deref(), Some("https://github.com/user/repo.git"));
+        assert_eq!(im.branch.as_deref(), Some("main"));
+        assert_eq!(im.subpath.as_deref(), Some("skills/my-skill"));
+        assert_eq!(im.revision.as_deref(), Some("abc123"));
+        assert!(im.remote_revision.is_none());
+        assert!(im.checked_at.is_none());
+        assert!(im.check_error.is_none());
+    }
+
+    #[test]
+    fn test_update_check_state_roundtrip() {
+        let (store, _dir) = test_store();
+        let ext = sample_extension();
+        store.insert_extension(&ext).unwrap();
+
+        // Set initial install meta
+        let meta = InstallMeta {
+            install_type: "git".into(),
+            url: Some("https://github.com/user/repo".into()),
+            url_resolved: None,
+            branch: None,
+            subpath: None,
+            revision: Some("abc123".into()),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+        store.set_install_meta(&ext.id, &meta).unwrap();
+
+        // Update check state
+        let now = Utc::now();
+        store.update_check_state(&ext.id, Some("def456"), now, None).unwrap();
+
+        let fetched = store.get_extension(&ext.id).unwrap().unwrap();
+        let im = fetched.install_meta.unwrap();
+        assert_eq!(im.install_type, "git");
+        assert_eq!(im.revision.as_deref(), Some("abc123"));
+        assert_eq!(im.remote_revision.as_deref(), Some("def456"));
+        assert!(im.checked_at.is_some());
+        assert!(im.check_error.is_none());
+
+        // Update check state with error
+        store.update_check_state(&ext.id, None, now, Some("network timeout")).unwrap();
+        let fetched = store.get_extension(&ext.id).unwrap().unwrap();
+        let im = fetched.install_meta.unwrap();
+        assert!(im.remote_revision.is_none());
+        assert_eq!(im.check_error.as_deref(), Some("network timeout"));
+    }
+
+    #[test]
+    fn test_sync_preserves_install_meta() {
+        let (store, _dir) = test_store();
+
+        // Insert extension with install meta
+        let mut ext = sample_extension();
+        ext.id = "git-skill".into();
+        ext.name = "git-skill".into();
+        ext.install_meta = Some(InstallMeta {
+            install_type: "git".into(),
+            url: Some("https://github.com/user/repo".into()),
+            url_resolved: None,
+            branch: None,
+            subpath: None,
+            revision: Some("abc123".into()),
+            remote_revision: Some("def456".into()),
+            checked_at: None,
+            check_error: None,
+        });
+        store.insert_extension(&ext).unwrap();
+
+        // Verify install meta was stored
+        let fetched = store.get_extension("git-skill").unwrap().unwrap();
+        assert!(fetched.install_meta.is_some());
+        assert_eq!(fetched.install_meta.as_ref().unwrap().revision.as_deref(), Some("abc123"));
+
+        // Sync with the same extension (scanner doesn't know about install meta)
+        let mut synced = ext.clone();
+        synced.install_meta = None;
+        store.sync_extensions(&[synced]).unwrap();
+
+        // Install meta should survive the sync
+        let fetched = store.get_extension("git-skill").unwrap().unwrap();
+        let im = fetched.install_meta.unwrap();
+        assert_eq!(im.install_type, "git");
+        assert_eq!(im.revision.as_deref(), Some("abc123"));
+        assert_eq!(im.remote_revision.as_deref(), Some("def456"));
+    }
+
+    #[test]
+    fn test_sync_backfills_install_meta_from_git_source() {
+        let (store, _dir) = test_store();
+
+        // Create an extension with git source but no install_meta
+        // (simulates a skill that existed before harnesskit was installed)
+        let mut ext = sample_extension();
+        ext.id = "pre-existing".into();
+        ext.name = "pre-existing".into();
+        ext.source = Source {
+            origin: SourceOrigin::Git,
+            url: Some("https://github.com/user/old-skill".into()),
+            version: None,
+            commit_hash: Some("aaa111".into()),
+        };
+        ext.install_meta = None;
+
+        // Sync (as if scanner discovered it for the first time)
+        store.sync_extensions(&[ext.clone()]).unwrap();
+
+        // install_meta should be backfilled from source_json
+        let fetched = store.get_extension("pre-existing").unwrap().unwrap();
+        let im = fetched.install_meta.expect("install_meta should be backfilled");
+        assert_eq!(im.install_type, "git");
+        assert_eq!(im.url.as_deref(), Some("https://github.com/user/old-skill"));
+        assert_eq!(im.revision.as_deref(), Some("aaa111"));
+        // Fields not derivable from Source should remain None
+        assert!(im.branch.is_none());
+        assert!(im.subpath.is_none());
+    }
+
+    #[test]
+    fn test_sync_backfill_does_not_overwrite_existing_install_meta() {
+        let (store, _dir) = test_store();
+
+        // Extension with explicit install_meta (installed through our UI)
+        let mut ext = sample_extension();
+        ext.id = "our-install".into();
+        ext.name = "our-install".into();
+        ext.source = Source {
+            origin: SourceOrigin::Git,
+            url: Some("https://github.com/user/skill".into()),
+            version: None,
+            commit_hash: Some("new-scan-hash".into()),
+        };
+        ext.install_meta = Some(InstallMeta {
+            install_type: "marketplace".into(),
+            url: Some("marketplace-source".into()),
+            url_resolved: Some("https://github.com/user/skill".into()),
+            branch: None,
+            subpath: Some("my-skill".into()),
+            revision: Some("original-hash".into()),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        });
+        store.insert_extension(&ext).unwrap();
+
+        // Sync with scanner data (install_meta = None from scanner)
+        ext.install_meta = None;
+        store.sync_extensions(&[ext]).unwrap();
+
+        // Backfill should NOT overwrite — install_type is already set
+        let fetched = store.get_extension("our-install").unwrap().unwrap();
+        let im = fetched.install_meta.unwrap();
+        assert_eq!(im.install_type, "marketplace"); // NOT overwritten to "git"
+        assert_eq!(im.url.as_deref(), Some("marketplace-source")); // preserved
+        assert_eq!(im.revision.as_deref(), Some("original-hash")); // NOT overwritten
+    }
+
+    #[test]
+    fn test_sync_backfill_skips_non_git_sources() {
+        let (store, _dir) = test_store();
+
+        // Extension with agent source (no .git detected)
+        let mut ext = sample_extension();
+        ext.id = "agent-skill".into();
+        ext.name = "agent-skill".into();
+        ext.source = Source {
+            origin: SourceOrigin::Agent,
+            url: None,
+            version: None,
+            commit_hash: None,
+        };
+        ext.install_meta = None;
+
+        store.sync_extensions(&[ext]).unwrap();
+
+        // Should NOT be backfilled
+        let fetched = store.get_extension("agent-skill").unwrap().unwrap();
+        assert!(fetched.install_meta.is_none());
+    }
+
+    #[test]
+    fn test_insert_extension_with_install_meta() {
+        let (store, _dir) = test_store();
+        let mut ext = sample_extension();
+        ext.install_meta = Some(InstallMeta {
+            install_type: "marketplace".into(),
+            url: Some("https://marketplace.example.com/skill/42".into()),
+            url_resolved: None,
+            branch: None,
+            subpath: Some("42".into()),
+            revision: None,
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        });
+        store.insert_extension(&ext).unwrap();
+
+        let fetched = store.get_extension(&ext.id).unwrap().unwrap();
+        let im = fetched.install_meta.unwrap();
+        assert_eq!(im.install_type, "marketplace");
+        assert_eq!(im.subpath.as_deref(), Some("42"));
     }
 }

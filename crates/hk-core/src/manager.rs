@@ -9,6 +9,7 @@ use std::process::Command;
 pub struct InstallResult {
     pub name: String,
     pub was_update: bool,
+    pub revision: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -192,33 +193,31 @@ impl Manager {
     }
 }
 
-/// Check if a git-sourced extension has an update available
-pub fn check_update(source: &Source) -> UpdateStatus {
-    if source.origin != SourceOrigin::Git {
-        return UpdateStatus::Error { message: "Not a git-sourced extension".into() };
-    }
-    let url = match &source.url {
+/// Check if an installed extension has an update available.
+/// Uses `InstallMeta` (persisted install source) for the remote URL and local revision.
+pub fn check_update(meta: &InstallMeta) -> UpdateStatus {
+    let url = match meta.url_resolved.as_deref().or(meta.url.as_deref()) {
         Some(u) => u,
         None => return UpdateStatus::Error { message: "No remote URL".into() },
     };
-    let local_hash = match &source.commit_hash {
-        Some(h) => h,
-        None => return UpdateStatus::Error { message: "No local commit hash".into() },
-    };
-
     match get_remote_head(url) {
         Ok(remote_hash) => {
-            if remote_hash.starts_with(local_hash) || local_hash.starts_with(&remote_hash) {
-                UpdateStatus::UpToDate
-            } else {
-                UpdateStatus::UpdateAvailable { remote_hash }
+            match meta.revision.as_deref() {
+                Some(local_hash) if remote_hash.starts_with(local_hash) || local_hash.starts_with(&remote_hash) => {
+                    UpdateStatus::UpToDate { remote_hash }
+                }
+                _ => {
+                    // No local revision (e.g. pre-existing skill matched via marketplace)
+                    // or revision differs — treat as update available
+                    UpdateStatus::UpdateAvailable { remote_hash }
+                }
             }
         }
         Err(e) => UpdateStatus::Error { message: e.to_string() },
     }
 }
 
-fn get_remote_head(url: &str) -> Result<String> {
+pub fn get_remote_head(url: &str) -> Result<String> {
     let output = Command::new("git")
         .args(["ls-remote", "--heads", url])
         .output()
@@ -270,7 +269,12 @@ pub fn install_from_git_with_id(url: &str, target_dir: &Path, skill_id: Option<&
         anyhow::bail!("git clone failed: {}", stderr.trim());
     }
 
-    resolve_and_copy_skill(&clone_dir, target_dir, skill_id, url)
+    // Capture git revision before temp dir is dropped
+    let revision = capture_git_revision(&clone_dir);
+
+    let mut result = resolve_and_copy_skill(&clone_dir, target_dir, skill_id, url)?;
+    result.revision = revision;
+    Ok(result)
 }
 
 /// Given an already-cloned repo directory, resolve which skill to install and copy it.
@@ -292,7 +296,7 @@ fn resolve_and_copy_skill(clone_dir: &Path, target_dir: &Path, skill_id: Option<
                 let dest = target_dir.join(&name);
                 let was_update = dest.is_dir();
                 copy_dir_contents(candidate, &dest)?;
-                return Ok(InstallResult { name, was_update });
+                return Ok(InstallResult { name, was_update, revision: None });
             }
         }
         // Fallback: root-level SKILL.md, but only for genuine single-skill repos.
@@ -320,10 +324,21 @@ fn resolve_and_copy_skill(clone_dir: &Path, target_dir: &Path, skill_id: Option<
                 let dest = target_dir.join(&name);
                 let was_update = dest.is_dir();
                 copy_dir_contents(clone_dir, &dest)?;
-                return Ok(InstallResult { name, was_update });
+                return Ok(InstallResult { name, was_update, revision: None });
             }
         }
-        anyhow::bail!("Skill '{}' not found in repository. Looked in skills/{0}/, {0}/, and root", sid);
+        // Fallback: search the repo tree for a directory whose name exactly matches
+        // skill_id and contains SKILL.md. This handles repos like impeccable that nest
+        // skills under agent directories (e.g. .claude/skills/typeset/SKILL.md).
+        if let Some(found) = find_skill_dir_in_tree(clone_dir, sid, 4) {
+            let name = crate::scanner::parse_skill_name(&found.join("SKILL.md"))
+                .unwrap_or_else(|| sid.to_string());
+            let dest = target_dir.join(&name);
+            let was_update = dest.is_dir();
+            copy_dir_contents(&found, &dest)?;
+            return Ok(InstallResult { name, was_update, revision: None });
+        }
+        anyhow::bail!("Skill '{}' not found in repository. Looked in skills/{0}/, {0}/, root, and searched the repo tree", sid);
     }
 
     // Generic: look for SKILL.md in root or immediate subdirectories
@@ -333,7 +348,7 @@ fn resolve_and_copy_skill(clone_dir: &Path, target_dir: &Path, skill_id: Option<
         let dest = target_dir.join(&name);
         let was_update = dest.is_dir();
         copy_dir_contents(clone_dir, &dest)?;
-        return Ok(InstallResult { name, was_update });
+        return Ok(InstallResult { name, was_update, revision: None });
     }
 
     if let Ok(entries) = std::fs::read_dir(clone_dir) {
@@ -345,7 +360,7 @@ fn resolve_and_copy_skill(clone_dir: &Path, target_dir: &Path, skill_id: Option<
                 let dest = target_dir.join(&name);
                 let was_update = dest.is_dir();
                 copy_dir_contents(&p, &dest)?;
-                return Ok(InstallResult { name, was_update });
+                return Ok(InstallResult { name, was_update, revision: None });
             }
         }
     }
@@ -447,7 +462,100 @@ fn has_subdirectory_skills(clone_dir: &Path) -> bool {
 
 /// Install a specific skill from an already-cloned repository directory.
 pub fn install_from_clone(clone_dir: &Path, target_dir: &Path, skill_id: Option<&str>, url: &str) -> Result<InstallResult> {
-    resolve_and_copy_skill(clone_dir, target_dir, skill_id, url)
+    let revision = capture_git_revision(clone_dir);
+    let mut result = resolve_and_copy_skill(clone_dir, target_dir, skill_id, url)?;
+    result.revision = revision;
+    Ok(result)
+}
+
+/// Find a skill directory by name in a cloned repo.
+/// 1. Try exact directory name match at common locations (skills/{name}/, {name}/)
+/// 2. Recursive directory name match in tree
+/// 3. Recursive SKILL.md frontmatter name match (handles repos where directory
+///    name differs from skill name, e.g. "rag-pinecone" dir with name: "pinecone")
+pub fn find_skill_in_repo(clone_dir: &Path, skill_name: &str) -> Option<std::path::PathBuf> {
+    // Try common locations first (exact directory name)
+    for prefix in &["skills", ""] {
+        let candidate = if prefix.is_empty() {
+            clone_dir.join(skill_name)
+        } else {
+            clone_dir.join(prefix).join(skill_name)
+        };
+        if candidate.is_dir() && candidate.join("SKILL.md").exists() {
+            return Some(candidate);
+        }
+    }
+    // Recursive directory name match
+    if let Some(found) = find_skill_dir_in_tree(clone_dir, skill_name, 4) {
+        return Some(found);
+    }
+    // Last resort: scan all SKILL.md files and match by frontmatter name.
+    // Safe because the repo is already the confirmed source.
+    find_skill_by_frontmatter_name(clone_dir, skill_name, 5)
+}
+
+/// Recursively search for a SKILL.md whose frontmatter `name` field matches `skill_name`.
+fn find_skill_by_frontmatter_name(dir: &Path, skill_name: &str, max_depth: u32) -> Option<std::path::PathBuf> {
+    if max_depth == 0 { return None; }
+    let entries = std::fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if !p.is_dir() { continue; }
+        if entry.file_name() == ".git" { continue; }
+        let skill_md = p.join("SKILL.md");
+        if skill_md.exists() {
+            if let Some(parsed_name) = crate::scanner::parse_skill_name(&skill_md) {
+                if parsed_name.eq_ignore_ascii_case(skill_name) {
+                    return Some(p);
+                }
+            }
+        }
+        if let Some(found) = find_skill_by_frontmatter_name(&p, skill_name, max_depth - 1) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+/// Public wrapper for `capture_git_revision` (used by commands.rs).
+pub fn capture_git_revision_pub(repo_dir: &Path) -> Option<String> {
+    capture_git_revision(repo_dir)
+}
+
+/// Recursively search a directory tree for a subdirectory whose name exactly matches
+/// `skill_id` and contains a SKILL.md file. Returns the first match found.
+/// `max_depth` limits recursion to avoid scanning huge trees.
+fn find_skill_dir_in_tree(dir: &Path, skill_id: &str, max_depth: u32) -> Option<std::path::PathBuf> {
+    if max_depth == 0 { return None; }
+    let entries = std::fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if !p.is_dir() { continue; }
+        let name = entry.file_name();
+        if name == ".git" { continue; }
+        // Exact directory name match + has SKILL.md
+        if name.to_string_lossy() == skill_id && p.join("SKILL.md").exists() {
+            return Some(p);
+        }
+        // Recurse into subdirectories
+        if let Some(found) = find_skill_dir_in_tree(&p, skill_id, max_depth - 1) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+/// Run `git rev-parse HEAD` in the given directory to capture the current revision.
+/// Returns None if the command fails (e.g. not a git repo).
+fn capture_git_revision(repo_dir: &Path) -> Option<String> {
+    Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(repo_dir)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 fn repo_name_from_url(url: &str) -> String {
@@ -509,6 +617,7 @@ mod tests {
             source_path: Some(skill_file.to_string_lossy().to_string()),
             cli_parent_id: None,
             cli_meta: None,
+            install_meta: None,
         };
         store.insert_extension(&ext).unwrap();
 
@@ -548,6 +657,7 @@ mod tests {
             source_path: Some(skill_file.to_string_lossy().to_string()),
             cli_parent_id: None,
             cli_meta: None,
+            install_meta: None,
         };
         store.insert_extension(&ext).unwrap();
 
@@ -591,6 +701,7 @@ mod tests {
             source_path: None,
             cli_parent_id: None,
             cli_meta: None,
+            install_meta: None,
         };
         store.insert_extension(&ext).unwrap();
 

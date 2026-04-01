@@ -22,6 +22,7 @@ pub struct Extension {
     pub source_path: Option<String>,
     pub cli_parent_id: Option<String>,
     pub cli_meta: Option<CliMeta>,
+    pub install_meta: Option<InstallMeta>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -126,6 +127,21 @@ pub struct CliMeta {
     pub api_domains: Vec<String>,
 }
 
+// --- Install Metadata ---
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct InstallMeta {
+    pub install_type: String,
+    pub url: Option<String>,
+    pub url_resolved: Option<String>,
+    pub branch: Option<String>,
+    pub subpath: Option<String>,
+    pub revision: Option<String>,
+    pub remote_revision: Option<String>,
+    pub checked_at: Option<DateTime<Utc>>,
+    pub check_error: Option<String>,
+}
+
 // --- Audit ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -221,7 +237,7 @@ pub struct DiscoveredProject {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum UpdateStatus {
-    UpToDate,
+    UpToDate { remote_hash: String },
     UpdateAvailable { remote_hash: String },
     Error { message: String },
 }

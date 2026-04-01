@@ -110,6 +110,7 @@ fn test_disabled_mcp_survives_rescan() {
         source_path: None,
         cli_parent_id: None,
         cli_meta: None,
+        install_meta: None,
     };
     store.insert_extension(&ext).unwrap();
     store.set_enabled("mcp-test", false).unwrap();
@@ -167,6 +168,7 @@ fn test_shared_skill_sibling_detection() {
         source_path: Some(shared_path.to_string_lossy().to_string()),
         cli_parent_id: None,
         cli_meta: None,
+        install_meta: None,
     };
     store.insert_extension(&ext1).unwrap();
 
