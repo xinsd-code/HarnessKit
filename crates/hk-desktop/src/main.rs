@@ -4,6 +4,7 @@ mod icon;
 use commands::AppState;
 use hk_core::store::Store;
 use std::sync::{Arc, Mutex};
+use tauri::Manager;
 
 #[cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 fn main() {
@@ -61,6 +62,23 @@ fn main() {
             commands::remove_custom_config_path,
             icon::set_app_icon,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Hide instead of quit on macOS red X
+                window.hide().unwrap_or_default();
+                api.prevent_close();
+            }
+        })
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                // Re-show window when dock icon is clicked
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        });
 }
