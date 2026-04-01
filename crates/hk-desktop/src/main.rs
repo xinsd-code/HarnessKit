@@ -1,4 +1,5 @@
 mod commands;
+mod icon;
 
 use commands::AppState;
 use hk_core::store::Store;
@@ -58,6 +59,7 @@ fn main() {
             commands::add_custom_config_path,
             commands::update_custom_config_path,
             commands::remove_custom_config_path,
+            icon::set_app_icon,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
