@@ -17,7 +17,6 @@ export interface Extension {
   trust_score: number | null;
   installed_at: string;
   updated_at: string;
-  last_used_at: string | null;
   cli_parent_id: string | null;
   cli_meta: CliMeta | null;
 }
@@ -60,7 +59,6 @@ export interface GroupedExtension {
   trust_score: number | null;
   installed_at: string;
   updated_at: string;
-  last_used_at: string | null;
   instances: Extension[];
 }
 

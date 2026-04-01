@@ -7,9 +7,9 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { GroupedExtension } from "@/lib/types";
-import { formatRelativeTime, agentDisplayName, sortAgentNames } from "@/lib/types";
+import { agentDisplayName, sortAgentNames } from "@/lib/types";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { PermissionTags } from "@/components/shared/permission-tags";
@@ -100,20 +100,6 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
         return val != null ? <TrustBadge score={val} size="sm" /> : <span className="text-muted-foreground">--</span>;
       },
     }),
-    col.accessor("last_used_at", {
-      header: "Last Used",
-      cell: (info) => {
-        const ext = info.row.original;
-        if (ext.kind !== "skill") {
-          return <span className="text-muted-foreground">—</span>;
-        }
-        const val = info.getValue();
-        if (!val) {
-          return <span className="text-muted-foreground">Unused</span>;
-        }
-        return <span className="text-muted-foreground">{formatRelativeTime(val)}</span>;
-      },
-    }),
     col.accessor("enabled", {
       header: "Status",
       cell: (info) => {
@@ -133,7 +119,12 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
       },
     }),
   ], [agentOrder, selectedIds, selectAll, clearSelection, filtered, toggleSelected, updateStatuses, toggle]);
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const sorting = useExtensionStore(s => s.tableSorting) as SortingState;
+  const setStoreSorting = useExtensionStore(s => s.setTableSorting);
+  const setSorting = useCallback((updater: SortingState | ((prev: SortingState) => SortingState)) => {
+    const next = typeof updater === "function" ? updater(useExtensionStore.getState().tableSorting as SortingState) : updater;
+    setStoreSorting(next);
+  }, [setStoreSorting]);
   const selectedId = useExtensionStore(s => s.selectedId);
   const setSelectedId = useExtensionStore(s => s.setSelectedId);
   const searchQuery = useExtensionStore(s => s.searchQuery);

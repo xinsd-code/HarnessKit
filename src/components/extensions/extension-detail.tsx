@@ -4,9 +4,9 @@ import { useExtensionStore } from "@/stores/extension-store";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { api } from "@/lib/invoke";
-import { X, File, Globe, Terminal, Database, Key, Calendar, Clock, GitBranch, ArrowDownCircle, CheckCircle, FolderOpen, Download, Loader2, Trash2, Link, AlertTriangle, Shield } from "lucide-react";
+import { X, File, Globe, Terminal, Database, Key, Calendar, GitBranch, ArrowDownCircle, CheckCircle, FolderOpen, Download, Loader2, Trash2, Link, AlertTriangle, Shield } from "lucide-react";
 import type { ExtensionContent as ExtContent } from "@/lib/types";
-import { formatRelativeTime, sortAgents, agentDisplayName } from "@/lib/types";
+import { sortAgents, agentDisplayName } from "@/lib/types";
 import type { Permission } from "@/lib/types";
 import { CATEGORIES } from "@/components/extensions/extension-filters";
 import { useAgentStore } from "@/stores/agent-store";
@@ -261,10 +261,6 @@ export function ExtensionDetail() {
         <div className="flex items-center gap-2 text-muted-foreground">
           <Calendar size={14} />
           <span>Installed {group.kind === "skill" ? formatDate(group.installed_at) : "\u2014"}</span>
-        </div>
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <Clock size={14} />
-          <span>Last used {group.kind === "skill" ? (group.last_used_at ? formatRelativeTime(group.last_used_at) : "Never") : "\u2014"}</span>
         </div>
         {group.source.origin === "git" && group.source.url && (
           <div className="flex items-center gap-2 text-muted-foreground">

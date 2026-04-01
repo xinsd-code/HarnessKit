@@ -25,6 +25,8 @@ interface ExtensionState {
   tagFilter: string | null;
   categoryFilter: string | null;
   pendingDelete: PendingDelete | null;
+  tableSorting: { id: string; desc: boolean }[];
+  setTableSorting: (sorting: { id: string; desc: boolean }[]) => void;
   fetch: () => Promise<void>;
   setKindFilter: (kind: ExtensionKind | null) => void;
   setAgentFilter: (agent: string | null) => void;
@@ -96,11 +98,6 @@ export function buildGroups(extensions: Extension[]): GroupedExtension[] {
         (latest, e) => (e.updated_at > latest ? e.updated_at : latest),
         first.updated_at,
       ),
-      last_used_at: instances.reduce<string | null>((latest, e) => {
-        if (!e.last_used_at) return latest;
-        if (!latest) return e.last_used_at;
-        return e.last_used_at > latest ? e.last_used_at : latest;
-      }, null),
       instances,
     });
   }
@@ -164,6 +161,8 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   tagFilter: null,
   categoryFilter: null,
   pendingDelete: null,
+  tableSorting: [],
+  setTableSorting: (sorting) => set({ tableSorting: sorting }),
 
   async fetch() {
     set({ loading: true });

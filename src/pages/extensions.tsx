@@ -126,7 +126,7 @@ export default function ExtensionsPage() {
       {/* Scrollable content */}
       <div className="relative flex-1 min-h-0">
         <div className="absolute inset-0 overflow-y-auto pb-4">
-          {loading ? (
+          {loading && extensions.length === 0 ? (
             <div className="rounded-xl border border-border overflow-hidden shadow-sm" aria-live="polite" role="status">
               <div className="bg-muted/20 px-4 py-3">
                 <div className="h-3 w-20 rounded animate-shimmer" />

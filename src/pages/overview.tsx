@@ -14,12 +14,9 @@ import {
   ShoppingBag,
   Bot,
   RefreshCw,
-  Clock,
   Sparkles,
   FilePenLine,
-  TrendingUp,
   Lightbulb,
-  BarChart3,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { DashboardStats, Extension, AgentDetail } from "@/lib/types";
@@ -319,50 +316,6 @@ export default function OverviewPage() {
 
   const hasActivity = activityItems.length > 0;
 
-  // -----------------------------------------------------------------------
-  // Section B: Usage Insights
-  // -----------------------------------------------------------------------
-  const usageInsights = useMemo(() => {
-    // Use grouped data (deduplicated) so same skill across agents counts once
-    const allSkills = visibleGroups.filter((g) => g.kind === "skill");
-    const usedSkills = allSkills.filter((g) => g.last_used_at);
-    if (usedSkills.length === 0) return null;
-
-    // Most active = most recent last_used_at
-    const sorted = [...usedSkills].sort(
-      (a, b) => new Date(b.last_used_at!).getTime() - new Date(a.last_used_at!).getTime(),
-    );
-    const mostActive = sorted[0];
-
-    // Longest unused
-    const neverUsed = allSkills.filter((g) => !g.last_used_at);
-    let longestUnused: { name: string; detail: string };
-    if (neverUsed.length > 0) {
-      longestUnused = { name: neverUsed[0].name, detail: "Never used" };
-    } else {
-      const oldest = sorted[sorted.length - 1];
-      longestUnused = {
-        name: oldest.name,
-        detail: `Unused for ${formatRelativeTime(oldest.last_used_at!).replace(" ago", "")}`,
-      };
-    }
-
-    // Recently used count (within 7 days)
-    const sevenDays = 7 * 24 * 60 * 60 * 1000;
-    const recentlyUsedCount = usedSkills.filter(
-      (g) => Date.now() - new Date(g.last_used_at!).getTime() < sevenDays,
-    ).length;
-
-    return {
-      mostActive: {
-        name: mostActive.name,
-        detail: `Used ${formatRelativeTime(mostActive.last_used_at!)}`,
-      },
-      longestUnused,
-      recentlyUsedCount,
-      totalSkills: allSkills.length,
-    };
-  }, [visibleGroups]);
 
   // -----------------------------------------------------------------------
   // Section C: Tip of the Day
@@ -502,7 +455,7 @@ export default function OverviewPage() {
       {/* ----------------------------------------------------------------- */}
       {/* 2-column grid: Activity | Usage Insights                          */}
       {/* ----------------------------------------------------------------- */}
-      {(hasActivity || usageInsights) && (
+      {hasActivity && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {/* Recent Activity */}
           <section className="space-y-3">
@@ -543,41 +496,9 @@ export default function OverviewPage() {
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Usage insights
             </h3>
-            {usageInsights ? (
-              <div className="rounded-xl border border-border/60 bg-card/40 divide-y divide-border/40">
-                <div className="flex items-center gap-2.5 px-3 py-2.5">
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <TrendingUp size={13} strokeWidth={1.75} aria-hidden="true" />
-                  </span>
-                  <div className="min-w-0">
-                    <span className="block text-sm font-medium text-foreground truncate">{usageInsights.mostActive.name}</span>
-                    <span className="block text-xs text-muted-foreground truncate">Most active · {usageInsights.mostActive.detail}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2.5 px-3 py-2.5">
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <Clock size={13} strokeWidth={1.75} aria-hidden="true" />
-                  </span>
-                  <div className="min-w-0">
-                    <span className="block text-sm font-medium text-foreground truncate">{usageInsights.longestUnused.name}</span>
-                    <span className="block text-xs text-muted-foreground truncate">Longest unused · {usageInsights.longestUnused.detail}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2.5 px-3 py-2.5">
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <BarChart3 size={13} strokeWidth={1.75} aria-hidden="true" />
-                  </span>
-                  <div className="min-w-0">
-                    <span className="block text-sm font-medium text-foreground">{usageInsights.recentlyUsedCount} of {usageInsights.totalSkills} skills</span>
-                    <span className="block text-xs text-muted-foreground">Used in the last 7 days</span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-border/60 bg-card/40 flex items-center justify-center px-3 py-6 text-xs text-muted-foreground">
-                No usage data yet
-              </div>
-            )}
+            <div className="rounded-xl border border-border/60 bg-card/40 flex items-center justify-center px-3 py-6 text-xs text-muted-foreground">
+              Usage insights coming soon
+            </div>
           </section>
         </div>
       )}
