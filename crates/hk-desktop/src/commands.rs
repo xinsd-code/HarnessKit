@@ -782,6 +782,29 @@ pub fn open_in_system(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// For a given skill name, find all physical paths where it exists across all agents.
+/// Returns Vec<(agent_name, path)> for display in the detail panel.
+#[tauri::command]
+pub fn get_skill_locations(name: String) -> Vec<(String, String)> {
+    let adapters = adapter::all_adapters();
+    let mut locations = Vec::new();
+    for adapter in &adapters {
+        if !adapter.detect() { continue; }
+        for skill_dir in adapter.skill_dirs() {
+            let skill_path = skill_dir.join(&name);
+            let has_skill = skill_path.join("SKILL.md").exists()
+                || skill_path.join("SKILL.md.disabled").exists();
+            if has_skill {
+                locations.push((
+                    adapter.name().to_string(),
+                    skill_path.to_string_lossy().to_string(),
+                ));
+            }
+        }
+    }
+    locations
+}
+
 #[tauri::command]
 pub fn get_extension_content(state: State<AppState>, id: String) -> Result<ExtensionContent, String> {
     // Read extension metadata and release lock before file I/O
@@ -950,63 +973,311 @@ pub fn scan_and_sync(state: State<AppState>) -> Result<usize, String> {
 }
 
 #[tauri::command]
-pub fn check_updates(state: State<AppState>) -> Result<Vec<(String, UpdateStatus)>, String> {
-    // Read extensions and release the lock before doing slow git ls-remote calls
-    let git_extensions: Vec<_> = {
-        let store = state.store.lock().map_err(|e| e.to_string())?;
-        let extensions = store.list_extensions(None, None).map_err(|e| e.to_string())?;
-        extensions.into_iter()
-            .filter(|e| e.source.origin == SourceOrigin::Git)
-            .collect()
-    };
-    let results: Vec<(String, UpdateStatus)> = git_extensions
-        .iter()
-        .map(|e| {
-            let status = manager::check_update(&e.source);
-            (e.id.clone(), status)
-        })
-        .collect();
+pub fn get_cached_update_statuses(state: State<AppState>) -> Result<Vec<(String, UpdateStatus)>, String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let extensions = store.list_extensions(None, None).map_err(|e| e.to_string())?;
+    let mut results = Vec::new();
+    for ext in extensions {
+        let Some(meta) = ext.install_meta else { continue };
+        // Only include extensions that have been checked before
+        if meta.checked_at.is_none() { continue; }
+        let status = match (meta.revision.as_deref(), meta.remote_revision.as_deref()) {
+            (Some(local), Some(remote)) => {
+                if local.starts_with(remote) || remote.starts_with(local) {
+                    UpdateStatus::UpToDate { remote_hash: remote.to_string() }
+                } else {
+                    UpdateStatus::UpdateAvailable { remote_hash: remote.to_string() }
+                }
+            }
+            (None, Some(remote)) => {
+                // No local revision (pre-existing skill) — treat as update available
+                UpdateStatus::UpdateAvailable { remote_hash: remote.to_string() }
+            }
+            _ => {
+                if let Some(err) = meta.check_error {
+                    UpdateStatus::Error { message: err }
+                } else {
+                    continue; // No remote_revision and no error — nothing to report
+                }
+            }
+        };
+        results.push((ext.id, status));
+    }
     Ok(results)
 }
 
 #[tauri::command]
-pub fn update_extension(state: State<AppState>, id: String) -> Result<manager::InstallResult, String> {
-    let ext = {
-        let store = state.store.lock().map_err(|e| e.to_string())?;
-        store.get_extension(&id).map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Extension '{}' not found", id))?
-    };
-    if ext.source.origin != SourceOrigin::Git {
-        return Err("Only git-sourced extensions can be updated".into());
-    }
-    let url = ext.source.url.as_deref()
-        .ok_or("Extension has no remote URL")?;
-    let source_path = ext.source_path.as_deref()
-        .ok_or("Extension has no source path")?;
-    // source_path points to SKILL.md; go up 2 levels to get the target dir
-    // e.g. ~/.claude/skills/my-skill/SKILL.md -> ~/.claude/skills/
-    let target_dir = std::path::Path::new(source_path)
-        .parent().and_then(|p| p.parent())
-        .ok_or("Cannot determine target directory from source path")?;
+pub async fn check_updates(state: State<'_, AppState>) -> Result<Vec<(String, UpdateStatus)>, String> {
+    let store_clone = state.store.clone();
 
-    let result = manager::install_from_git(url, target_dir).map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<(String, UpdateStatus)>, String> {
+        // Read all extensions and release the lock before doing slow network calls
+        let (updatable, unlinked): (Vec<(String, InstallMeta)>, Vec<(String, String)>) = {
+            let store = store_clone.lock().map_err(|e| e.to_string())?;
+            let extensions = store.list_extensions(None, None).map_err(|e| e.to_string())?;
+            let mut has_meta = Vec::new();
+            let mut no_meta = Vec::new();
+            for e in extensions {
+                if let Some(meta) = e.install_meta {
+                    match meta.install_type.as_str() {
+                        "git" | "marketplace" => has_meta.push((e.id, meta)),
+                        _ => {}
+                    }
+                } else if e.kind == ExtensionKind::Skill {
+                    no_meta.push((e.id, e.name));
+                }
+            }
+            (has_meta, no_meta)
+        };
+
+        // Try to match unlinked skills against marketplace by name.
+        // Only link when there is exactly one result with an exact name match.
+        if !unlinked.is_empty() {
+            let unique_names: std::collections::HashSet<&str> =
+                unlinked.iter().map(|(_, name)| name.as_str()).collect();
+
+            // For each unique name, search marketplace and resolve remote revision
+            let mut matched: std::collections::HashMap<String, (String, String, Option<String>)> = std::collections::HashMap::new();
+            for name in &unique_names {
+                if let Ok(results) = marketplace::search_skills(name, 5) {
+                    let exact: Vec<_> = results.iter()
+                        .filter(|r| r.name.eq_ignore_ascii_case(name))
+                        .collect();
+                    if exact.len() == 1 {
+                        let item = exact[0];
+                        let git_url = marketplace::git_url_for_source(&item.source);
+                        // Get current remote HEAD as baseline — so we don't falsely
+                        // show "update available" when we don't know the local version
+                        let remote_rev = manager::get_remote_head(&git_url).ok();
+                        matched.insert(
+                            name.to_string(),
+                            (git_url, item.skill_id.clone(), remote_rev),
+                        );
+                    }
+                }
+            }
+
+            if !matched.is_empty() {
+                let store = store_clone.lock().map_err(|e| e.to_string())?;
+                let now = Utc::now();
+                for (id, name) in &unlinked {
+                    if let Some((git_url, skill_id, remote_rev)) = matched.get(name.as_str()) {
+                        // Set revision = remote_rev as baseline: "assume local is at this version"
+                        // Next check_updates will detect if remote moved past this point
+                        let meta = InstallMeta {
+                            install_type: "marketplace".into(),
+                            url: Some(format!("{}/{}", &git_url.trim_end_matches(".git"), skill_id)),
+                            url_resolved: Some(git_url.clone()),
+                            branch: None,
+                            subpath: if skill_id.is_empty() { None } else { Some(skill_id.clone()) },
+                            revision: remote_rev.clone(),
+                            remote_revision: remote_rev.clone(),
+                            checked_at: Some(now),
+                            check_error: None,
+                        };
+                        let _ = store.set_install_meta(id, &meta);
+                        // Don't push to updatable — we already know the status (up-to-date)
+                        // and don't need to call get_remote_head again
+                    }
+                }
+            }
+        }
+
+        // Check each extension for updates (network-heavy: git ls-remote per extension)
+        let statuses: Vec<_> = updatable
+            .iter()
+            .map(|(id, meta)| {
+                let status = manager::check_update(meta);
+                (id.clone(), meta.clone(), status)
+            })
+            .collect();
+
+        // Persist check state
+        let store = store_clone.lock().map_err(|e| e.to_string())?;
+        let now = Utc::now();
+        for (id, _meta, status) in &statuses {
+            let (remote_rev, check_err) = match status {
+                UpdateStatus::UpToDate { remote_hash } => (Some(remote_hash.as_str()), None),
+                UpdateStatus::UpdateAvailable { remote_hash } => (Some(remote_hash.as_str()), None),
+                UpdateStatus::Error { message } => (None, Some(message.as_str())),
+            };
+            let _ = store.update_check_state(id, remote_rev, now, check_err);
+        }
+
+        Ok(statuses.into_iter().map(|(id, _, status)| (id, status)).collect())
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn update_extension(state: State<'_, AppState>, id: String) -> Result<manager::InstallResult, String> {
+    let store_clone = state.store.clone();
+
+    tauri::async_runtime::spawn_blocking(move || -> Result<manager::InstallResult, String> {
+    let (ext, install_meta) = {
+        let store = store_clone.lock().map_err(|e| e.to_string())?;
+        let ext = store.get_extension(&id).map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Extension '{}' not found", id))?;
+        let meta = ext.install_meta.clone()
+            .ok_or("Extension has no install metadata — cannot update")?;
+        match meta.install_type.as_str() {
+            "git" | "marketplace" => {}
+            _ => return Err(format!("Extensions with install type '{}' cannot be updated", meta.install_type)),
+        }
+        (ext, meta)
+    };
+    let url = install_meta.url_resolved.as_deref()
+        .or(install_meta.url.as_deref())
+        .ok_or("Extension has no remote URL")?;
+
+    // Clone the repo once
+    let temp = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let clone_dir = temp.path().join("repo");
+    let output = std::process::Command::new("git")
+        .args(["clone", "--depth", "1", url, &clone_dir.to_string_lossy()])
+        .output()
+        .map_err(|e| format!("Failed to run git clone: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git clone failed: {}", stderr.trim()));
+    }
+    let revision = manager::capture_git_revision_pub(&clone_dir);
+
+    let skill_name = &ext.name;
+    let skill_source = manager::find_skill_in_repo(&clone_dir, skill_name)
+        .ok_or_else(|| format!("Skill '{}' not found in repository", skill_name))?;
+
+    // Find all installed paths (deduplicated) and copy the latest version to each
+    let all_siblings: Vec<Extension> = {
+        let store = store_clone.lock().map_err(|e| e.to_string())?;
+        let all = store.list_extensions(Some(ext.kind), None).map_err(|e| e.to_string())?;
+        all.into_iter()
+            .filter(|e| e.name == ext.name && e.source_path.is_some())
+            .collect()
+    };
+
+    let mut updated_dirs = std::collections::HashSet::new();
+    for sibling in &all_siblings {
+        let source_path = sibling.source_path.as_deref().unwrap();
+        let skill_dir = std::path::Path::new(source_path).parent()
+            .ok_or("Cannot determine skill directory from source path")?;
+        if !updated_dirs.insert(skill_dir.to_string_lossy().to_string()) {
+            continue;
+        }
+        deployer::deploy_skill(&skill_source, skill_dir.parent().unwrap_or(skill_dir))
+            .map_err(|e| e.to_string())?;
+    }
+
+    // Update install metadata for all siblings
+    {
+        let store = store_clone.lock().map_err(|e| e.to_string())?;
+        let updated_meta = InstallMeta {
+            revision: revision.clone().or(install_meta.revision.clone()),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+            ..install_meta
+        };
+        for sibling in &all_siblings {
+            let _ = store.set_install_meta(&sibling.id, &updated_meta);
+        }
+    }
 
     // Re-scan and persist
     let adapters = adapter::all_adapters();
     let extensions = scanner::scan_all(&adapters);
     {
-        let store = state.store.lock().map_err(|e| e.to_string())?;
+        let store = store_clone.lock().map_err(|e| e.to_string())?;
         for e in &extensions {
             let _ = store.insert_extension(e);
         }
     }
+    Ok(manager::InstallResult {
+        name: skill_name.clone(),
+        was_update: true,
+        revision,
+    })
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub fn install_from_local(state: State<AppState>, path: String, target_agents: Vec<String>) -> Result<manager::InstallResult, String> {
+    let source_path = std::path::Path::new(&path);
+    if !source_path.is_dir() {
+        return Err("Selected path is not a directory".into());
+    }
+    // Must contain SKILL.md at root or be a parent of skill subdirectories
+    let skill_md = source_path.join("SKILL.md");
+    if !skill_md.exists() {
+        return Err("Selected directory does not contain a SKILL.md file".into());
+    }
+
+    let skill_name = scanner::parse_skill_name(&skill_md)
+        .unwrap_or_else(|| source_path.file_name().unwrap_or_default().to_string_lossy().to_string());
+
+    let adapters = adapter::all_adapters();
+    let agents: Vec<String> = if target_agents.is_empty() {
+        adapters.iter().filter(|a| a.detect()).map(|a| a.name().to_string()).collect()
+    } else {
+        target_agents
+    };
+
+    for agent_name in &agents {
+        let a = adapters.iter()
+            .find(|a| a.name() == agent_name.as_str())
+            .ok_or_else(|| format!("Agent '{}' not found", agent_name))?;
+        let target_dir = a.skill_dirs().into_iter().next()
+            .ok_or_else(|| format!("No skill directory for agent '{}'", agent_name))?;
+        std::fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
+        deployer::deploy_skill(source_path, &target_dir).map_err(|e| e.to_string())?;
+    }
+
+    let result = manager::InstallResult {
+        name: skill_name.clone(),
+        was_update: false,
+        revision: None,
+    };
+
+    // Re-scan and persist
+    let extensions = scanner::scan_all(&adapters);
+    {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        for ext in &extensions {
+            let _ = store.insert_extension(ext);
+        }
+        // Save install metadata for each agent
+        let meta = InstallMeta {
+            install_type: "local".into(),
+            url: Some(path.clone()),
+            url_resolved: None,
+            branch: None,
+            subpath: None,
+            revision: None,
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+        for agent_name in &agents {
+            let ext_id = scanner::stable_id_for(&skill_name, "skill", agent_name);
+            let _ = store.set_install_meta(&ext_id, &meta);
+        }
+    }
+
+    // Audit
+    let audit_results = audit_extension_by_name(&result.name, &extensions, &adapters);
+    if !audit_results.is_empty() {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        for r in &audit_results {
+            let _ = store.insert_audit_result(r);
+        }
+    }
+
     Ok(result)
 }
 
 #[tauri::command]
 pub fn install_from_git(state: State<AppState>, url: String, target_agent: Option<String>, skill_id: Option<String>) -> Result<manager::InstallResult, String> {
     let adapters = adapter::all_adapters();
-    let (target_dir, _agent_name) = if let Some(ref agent) = target_agent {
+    let (target_dir, agent_name) = if let Some(ref agent) = target_agent {
         let a = adapters.iter()
             .find(|a| a.name() == agent.as_str())
             .ok_or_else(|| format!("Agent '{}' not found", agent))?;
@@ -1034,6 +1305,20 @@ pub fn install_from_git(state: State<AppState>, url: String, target_agent: Optio
         for ext in &extensions {
             let _ = store.insert_extension(ext);
         }
+        // Persist install source metadata
+        let ext_id = scanner::stable_id_for(&result.name, "skill", &agent_name);
+        let meta = InstallMeta {
+            install_type: "git".into(),
+            url: Some(url.clone()),
+            url_resolved: None,
+            branch: None,
+            subpath: sid.map(|s| s.to_string()),
+            revision: result.revision.clone(),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+        let _ = store.set_install_meta(&ext_id, &meta);
     } // Lock released before slow file I/O
 
     // Audit the newly installed extension (no lock held)
@@ -1099,6 +1384,7 @@ pub async fn scan_git_repo(state: State<'_, AppState>, url: String, target_agent
 
                 let skill_id = if skills[0].skill_id.is_empty() { None } else { Some(skills[0].skill_id.as_str()) };
                 let mut last_result = None;
+                let mut installed_agents = Vec::new();
                 for agent_name in &agents {
                     let a = adapters.iter()
                         .find(|a| a.name() == agent_name.as_str())
@@ -1108,6 +1394,7 @@ pub async fn scan_git_repo(state: State<'_, AppState>, url: String, target_agent
                     std::fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
                     let result = manager::install_from_git_with_id(&url, &target_dir, skill_id)
                         .map_err(|e| e.to_string())?;
+                    installed_agents.push(agent_name.clone());
                     last_result = Some(result);
                 }
 
@@ -1117,6 +1404,24 @@ pub async fn scan_git_repo(state: State<'_, AppState>, url: String, target_agent
                     let store = store_clone.lock().map_err(|e| e.to_string())?;
                     for ext in &extensions {
                         let _ = store.insert_extension(ext);
+                    }
+                    // Persist install source metadata for each agent
+                    if let Some(ref result) = last_result {
+                        let meta = InstallMeta {
+                            install_type: "git".into(),
+                            url: Some(url.clone()),
+                            url_resolved: None,
+                            branch: None,
+                            subpath: skill_id.map(|s| s.to_string()),
+                            revision: result.revision.clone(),
+                            remote_revision: None,
+                            checked_at: None,
+                            check_error: None,
+                        };
+                        for agent_name in &installed_agents {
+                            let ext_id = scanner::stable_id_for(&result.name, "skill", agent_name);
+                            let _ = store.set_install_meta(&ext_id, &meta);
+                        }
                     }
                 }
 
@@ -1169,7 +1474,7 @@ pub async fn install_scanned_skills(
                 let skill_id_opt = if sid.is_empty() { None } else { Some(sid.as_str()) };
                 let result = manager::install_from_clone(&pending.clone_dir, &target_dir, skill_id_opt, &pending.url)
                     .map_err(|e| e.to_string())?;
-                results.push(result);
+                results.push((agent_name.clone(), sid.clone(), result));
             }
         }
 
@@ -1180,9 +1485,26 @@ pub async fn install_scanned_skills(
             for ext in &extensions {
                 let _ = store.insert_extension(ext);
             }
+            // Persist install source metadata for each installed skill+agent
+            for (agent_name, sid, result) in &results {
+                let ext_id = scanner::stable_id_for(&result.name, "skill", agent_name);
+                let meta = InstallMeta {
+                    install_type: "git".into(),
+                    url: Some(pending.url.clone()),
+                    url_resolved: None,
+                    branch: None,
+                    subpath: if sid.is_empty() { None } else { Some(sid.clone()) },
+                    revision: result.revision.clone(),
+                    remote_revision: None,
+                    checked_at: None,
+                    check_error: None,
+                };
+                let _ = store.set_install_meta(&ext_id, &meta);
+            }
         }
 
         // pending._temp_dir is dropped here, cleaning up the clone
+        let results = results.into_iter().map(|(_, _, r)| r).collect();
         Ok(results)
     }).await.map_err(|e| e.to_string())?
 }
@@ -1240,7 +1562,7 @@ pub fn fetch_skill_audit(source: String, skill_id: String) -> Result<Option<hk_c
 #[tauri::command]
 pub fn install_from_marketplace(state: State<AppState>, source: String, skill_id: String, target_agent: Option<String>) -> Result<manager::InstallResult, String> {
     let adapters = adapter::all_adapters();
-    let (target_dir, _agent_name) = if let Some(ref agent) = target_agent {
+    let (target_dir, agent_name) = if let Some(ref agent) = target_agent {
         let a = adapters.iter()
             .find(|a| a.name() == agent.as_str())
             .ok_or_else(|| format!("Agent '{}' not found", agent))?;
@@ -1266,6 +1588,20 @@ pub fn install_from_marketplace(state: State<AppState>, source: String, skill_id
         for ext in &extensions {
             let _ = store.insert_extension(ext);
         }
+        // Persist install source metadata
+        let ext_id = scanner::stable_id_for(&result.name, "skill", &agent_name);
+        let meta = InstallMeta {
+            install_type: "marketplace".into(),
+            url: Some(source.clone()),
+            url_resolved: Some(git_url),
+            branch: None,
+            subpath: if skill_id.is_empty() { None } else { Some(skill_id.clone()) },
+            revision: result.revision.clone(),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+        let _ = store.set_install_meta(&ext_id, &meta);
     } // Lock released before slow file I/O
 
     // Audit the newly installed extension (no lock held)
