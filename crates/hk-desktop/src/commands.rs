@@ -1328,8 +1328,8 @@ pub async fn trending_marketplace(kind: String, limit: Option<usize>) -> Result<
 }
 
 #[tauri::command]
-pub async fn fetch_skill_preview(source: String, skill_id: String) -> Result<String, String> {
-    hk_core::marketplace::fetch_skill_content_async(&source, &skill_id).await.map_err(|e| e.to_string())
+pub async fn fetch_skill_preview(source: String, skill_id: String, git_url: Option<String>) -> Result<String, String> {
+    hk_core::marketplace::fetch_skill_content_async(&source, &skill_id, git_url.as_deref()).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

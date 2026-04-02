@@ -21,6 +21,10 @@ interface MarketplaceState {
   auditInfo: SkillAuditInfo | null;
   auditLoading: boolean;
   installing: string | null;
+  /** Cache for skill preview content, keyed by item.id */
+  previewCache: Map<string, string | null>;
+  /** Cache for skill audit info, keyed by item.id */
+  auditCache: Map<string, SkillAuditInfo | null>;
   setTab: (tab: TabKind) => void;
   setQuery: (query: string) => void;
   search: () => Promise<void>;
@@ -28,6 +32,50 @@ interface MarketplaceState {
   selectItem: (item: MarketplaceItem) => void;
   closePreview: () => void;
   install: (item: MarketplaceItem, targetAgent?: string) => Promise<InstallResult>;
+}
+
+/** Background pre-fetch preview + audit for trending skill items */
+function prefetchSkillData(
+  items: MarketplaceItem[],
+  get: () => MarketplaceState,
+) {
+  for (const item of items) {
+    if (item.kind !== "skill") continue;
+    const { previewCache, auditCache } = get();
+    if (previewCache.has(item.id) && auditCache.has(item.id)) continue;
+
+    const doFetch = (source: string, skillId: string, gitUrl?: string | null) => {
+      if (!get().previewCache.has(item.id)) {
+        api.fetchSkillPreview(source, skillId, gitUrl)
+          .then((content) => { get().previewCache.set(item.id, content); })
+          .catch(() => { get().previewCache.set(item.id, null); });
+      }
+      if (!get().auditCache.has(item.id)) {
+        api.fetchSkillAudit(source, skillId)
+          .then((info) => { get().auditCache.set(item.id, info); })
+          .catch(() => { get().auditCache.set(item.id, null); });
+      }
+    };
+
+    if (item.source && item.skill_id && item.skill_id.length > 0) {
+      doFetch(item.source, item.skill_id, item.repo_url);
+    } else {
+      api.searchMarketplace(item.name, "skill", 5)
+        .then((results) => {
+          const match = results.find((r) => r.source === item.source && r.name === item.name)
+            ?? results.find((r) => r.source === item.source)
+            ?? results.find((r) => r.name === item.name);
+          if (match) {
+            doFetch(match.source, match.skill_id, item.repo_url);
+          } else if (item.source) {
+            doFetch(item.source, "", item.repo_url);
+          }
+        })
+        .catch(() => {
+          if (item.source) doFetch(item.source, "", item.repo_url);
+        });
+    }
+  }
 }
 
 export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
@@ -45,6 +93,8 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   auditInfo: null,
   auditLoading: false,
   installing: null,
+  previewCache: new Map(),
+  auditCache: new Map(),
   setTab(tab) {
     const { trendingCache } = get();
     set({ tab, results: [], query: "", selectedItem: null, trending: trendingCache[tab] });
@@ -76,7 +126,8 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   async loadTrending() {
     const { tab, trendingFetchedAt } = get();
     if (Date.now() - trendingFetchedAt[tab] < TRENDING_TTL) return;
-    set({ trendingLoading: true });
+    // Clear detail caches on refresh so stale data doesn't linger
+    set({ trendingLoading: true, previewCache: new Map(), auditCache: new Map() });
     try {
       if (tab === "cli") {
         const trending = await api.listCliMarketplace();
@@ -95,67 +146,94 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         trendingCache: { ...get().trendingCache, [tab]: trending },
         trendingFetchedAt: { ...get().trendingFetchedAt, [tab]: Date.now() },
       });
+      // Pre-fetch preview + audit for skill items in background
+      if (tab === "skill") {
+        prefetchSkillData(trending, get);
+      }
     } catch {
       set({ trending: [], trendingLoading: false });
     }
   },
   selectItem(item) {
+    const { previewCache, auditCache } = get();
+    const hasPreview = previewCache.has(item.id);
+    const hasAudit = auditCache.has(item.id);
+
     set({
       selectedItem: item,
-      previewContent: null, previewLoading: item.kind === "skill",
-      auditInfo: null, auditLoading: item.kind === "skill",
+      previewContent: hasPreview ? (previewCache.get(item.id) ?? null) : null,
+      previewLoading: item.kind === "skill" && !hasPreview,
+      auditInfo: hasAudit ? (auditCache.get(item.id) ?? null) : null,
+      auditLoading: item.kind === "skill" && !hasAudit,
     });
-    if (item.kind === "skill") {
-      const expectedId = item.id;
-      const resolve = (source: string, skill_id: string) => {
-        api.fetchSkillPreview(source, skill_id)
+
+    // If both cached or not a skill, nothing more to do
+    if (item.kind !== "skill" || (hasPreview && hasAudit)) return;
+
+    const expectedId = item.id;
+    const resolve = (source: string, skill_id: string, gitUrl?: string | null) => {
+      if (!hasPreview) {
+        api.fetchSkillPreview(source, skill_id, gitUrl)
           .then((content) => {
+            get().previewCache.set(item.id, content);
             if (get().selectedItem?.id === expectedId) {
               set({ previewContent: content, previewLoading: false });
             }
           })
           .catch(() => {
+            get().previewCache.set(item.id, null);
             if (get().selectedItem?.id === expectedId) {
               set({ previewContent: null, previewLoading: false });
             }
           });
+      }
+      if (!hasAudit) {
         api.fetchSkillAudit(source, skill_id)
           .then((auditInfo) => {
+            get().auditCache.set(item.id, auditInfo);
             if (get().selectedItem?.id === expectedId) {
               set({ auditInfo, auditLoading: false });
             }
           })
           .catch(() => {
+            get().auditCache.set(item.id, null);
             if (get().selectedItem?.id === expectedId) {
               set({ auditInfo: null, auditLoading: false });
             }
           });
-      };
-
-      if (item.source && item.skill_id && item.skill_id.length > 0) {
-        resolve(item.source, item.skill_id);
-      } else {
-        api.searchMarketplace(item.name, "skill", 5).then((results) => {
-          if (get().selectedItem?.id !== expectedId) return;
-          const match = results.find((r) => r.source === item.source && r.name === item.name)
-            ?? results.find((r) => r.source === item.source)
-            ?? results.find((r) => r.name === item.name);
-          if (!match) {
-            set({ previewLoading: false, auditLoading: false });
-            return;
-          }
-          resolve(match.source, match.skill_id);
-        }).catch(() => {
-          if (get().selectedItem?.id === expectedId) {
-            set({ previewLoading: false, auditLoading: false });
-          }
-        });
       }
+    };
+
+    if (item.source && item.skill_id && item.skill_id.length > 0) {
+      resolve(item.source, item.skill_id, item.repo_url);
+    } else {
+      api.searchMarketplace(item.name, "skill", 5).then((results) => {
+        if (get().selectedItem?.id !== expectedId) return;
+        const match = results.find((r) => r.source === item.source && r.name === item.name)
+          ?? results.find((r) => r.source === item.source)
+          ?? results.find((r) => r.name === item.name);
+        if (match) {
+          resolve(match.source, match.skill_id, item.repo_url);
+        } else if (item.source) {
+          // Fallback: try fetching directly with item.source and empty skill_id
+          resolve(item.source, "", item.repo_url);
+        } else {
+          set({ previewLoading: false, auditLoading: false });
+        }
+      }).catch(() => {
+        if (get().selectedItem?.id === expectedId) {
+          if (item.source) {
+            resolve(item.source, "", item.repo_url);
+          } else {
+            set({ previewLoading: false, auditLoading: false });
+          }
+        }
+      });
     }
   },
   closePreview() { set({ selectedItem: null, previewContent: null, auditInfo: null }); },
   async install(item, targetAgent) {
-    set({ installing: item.id });
+    set({ installing: `${item.id}:${targetAgent ?? ""}` });
     try {
       let { source, skill_id } = item;
       // If skill_id is empty (trending items), resolve via skills.sh first

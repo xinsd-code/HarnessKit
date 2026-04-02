@@ -90,8 +90,8 @@ export const api = {
     return invoke("trending_marketplace", { kind, limit });
   },
 
-  fetchSkillPreview(source: string, skillId: string): Promise<string> {
-    return invoke("fetch_skill_preview", { source, skillId });
+  fetchSkillPreview(source: string, skillId: string, gitUrl?: string | null): Promise<string> {
+    return invoke("fetch_skill_preview", { source, skillId, gitUrl: gitUrl ?? null });
   },
 
   fetchSkillAudit(source: string, skillId: string): Promise<SkillAuditInfo | null> {

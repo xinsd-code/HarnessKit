@@ -9,6 +9,13 @@ const SMITHERY_API: &str = "https://api.smithery.ai";
 const SKILLS_SH_API: &str = "https://skills.sh/api";
 const AUDIT_API: &str = "https://add-skill.vercel.sh";
 
+// --- Caches for skill content & audit ---
+static SKILL_CONTENT_CACHE: LazyLock<Mutex<HashMap<String, (Instant, Option<String>)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+static AUDIT_INFO_CACHE: LazyLock<Mutex<HashMap<String, (Instant, Option<SkillAuditInfo>)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+const DETAIL_CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
+
 fn client() -> Result<reqwest::blocking::Client> {
     reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(10))
@@ -118,11 +125,38 @@ fn truncate(s: &str, max: usize) -> String {
     format!("{}...", &s[..end])
 }
 
-/// Extract "owner/repo" from a GitHub URL
+/// Extract "owner/repo" from a GitHub URL (strips tree/branch/path suffixes).
 fn github_repo_from_url(url: &str) -> Option<String> {
-    url.strip_prefix("https://github.com/")
-        .or_else(|| url.strip_prefix("http://github.com/"))
-        .map(|s| s.trim_end_matches('/').trim_end_matches(".git").to_string())
+    let rest = url.strip_prefix("https://github.com/")
+        .or_else(|| url.strip_prefix("http://github.com/"))?;
+    let rest = rest.trim_end_matches('/').trim_end_matches(".git");
+    // "owner/repo/tree/main/..." → take only first two segments
+    let parts: Vec<&str> = rest.splitn(3, '/').collect();
+    if parts.len() >= 2 {
+        Some(format!("{}/{}", parts[0], parts[1]))
+    } else {
+        None
+    }
+}
+
+/// Parse a full GitHub tree URL into (owner/repo, branch, subdir_path).
+/// e.g. "https://github.com/anthropics/claude-code/tree/main/plugins/skills/foo"
+///   → Some(("anthropics/claude-code", "main", "plugins/skills/foo"))
+fn parse_github_tree_url(url: &str) -> Option<(String, String, String)> {
+    let rest = url.strip_prefix("https://github.com/")
+        .or_else(|| url.strip_prefix("http://github.com/"))?;
+    // Expected: "owner/repo/tree/branch/path..."
+    let parts: Vec<&str> = rest.splitn(5, '/').collect();
+    // parts: [owner, repo, "tree", branch, path]
+    if parts.len() == 5 && parts[2] == "tree" {
+        Some((
+            format!("{}/{}", parts[0], parts[1]),
+            parts[3].to_string(),
+            parts[4].trim_end_matches('/').to_string(),
+        ))
+    } else {
+        None
+    }
 }
 
 // --- Public API: Skills (via skills.sh) ---
@@ -250,6 +284,8 @@ pub fn trending_skills(limit: usize) -> Result<Vec<MarketplaceItem>> {
         let github_source = s.git_url.as_deref()
             .and_then(github_repo_from_url)
             .unwrap_or_else(|| format!("{}/{}", s.namespace, s.slug));
+        // Preserve full git_url as repo_url for direct SKILL.md fetching
+        let repo_url = s.git_url.clone();
         MarketplaceItem {
             id: format!("{}/{}", s.namespace, s.slug),
             name: s.display_name,
@@ -264,7 +300,7 @@ pub fn trending_skills(limit: usize) -> Result<Vec<MarketplaceItem>> {
             verified: s.verified,
             categories: s.categories,
             stars: None,
-            repo_url: None,
+            repo_url,
         }
     }).collect())
 }
@@ -307,6 +343,7 @@ pub async fn trending_skills_async(limit: usize) -> Result<Vec<MarketplaceItem>>
         let github_source = s.git_url.as_deref()
             .and_then(github_repo_from_url)
             .unwrap_or_else(|| format!("{}/{}", s.namespace, s.slug));
+        let repo_url = s.git_url.clone();
         MarketplaceItem {
             id: format!("{}/{}", s.namespace, s.slug),
             name: s.display_name,
@@ -319,7 +356,7 @@ pub async fn trending_skills_async(limit: usize) -> Result<Vec<MarketplaceItem>>
             verified: s.verified,
             categories: s.categories,
             stars: None,
-            repo_url: None,
+            repo_url,
         }
     }).collect())
 }
@@ -350,25 +387,81 @@ pub async fn trending_servers_async(limit: usize) -> Result<Vec<MarketplaceItem>
 
 // --- Content & Audit fetching (uses GitHub source format) ---
 
-/// Fetch SKILL.md from GitHub. source = "owner/repo", skill_id = "skill-name"
-pub fn fetch_skill_content(source: &str, skill_id: &str) -> Result<String> {
-    let c = client()?;
-    for branch in &["main", "master"] {
-        let paths = [
+/// Build the list of candidate paths for SKILL.md.
+/// When `skill_id` is empty, only tries root-level SKILL.md.
+fn skill_md_paths(skill_id: &str) -> Vec<String> {
+    if skill_id.is_empty() {
+        vec!["SKILL.md".to_string(), "skill.md".to_string()]
+    } else {
+        vec![
             format!("skills/{skill_id}/SKILL.md"),
+            format!("skills/{skill_id}/skill.md"),
             format!("{skill_id}/SKILL.md"),
+            format!("{skill_id}/skill.md"),
             "SKILL.md".to_string(),
-        ];
+            "skill.md".to_string(),
+        ]
+    }
+}
+
+/// Fetch SKILL.md from GitHub.
+/// - `source`: "owner/repo"
+/// - `skill_id`: skill name for path probing
+/// - `git_url`: optional full GitHub tree URL (e.g. from Smithery gitUrl) for direct fetch
+pub fn fetch_skill_content(source: &str, skill_id: &str, git_url: Option<&str>) -> Result<String> {
+    let cache_key = format!("{source}/{skill_id}");
+    if let Ok(cache) = SKILL_CONTENT_CACHE.lock() {
+        if let Some((ts, cached)) = cache.get(&cache_key) {
+            if ts.elapsed() < DETAIL_CACHE_TTL {
+                return match cached {
+                    Some(content) => Ok(content.clone()),
+                    None => anyhow::bail!("Could not find SKILL.md for {source}/{skill_id} (cached)"),
+                };
+            }
+        }
+    }
+    let c = client()?;
+    // Phase 1: if git_url provides exact path, try it directly
+    if let Some(url) = git_url {
+        if let Some((repo, branch, subdir)) = parse_github_tree_url(url) {
+            for filename in &["SKILL.md", "skill.md"] {
+                let raw = format!("https://raw.githubusercontent.com/{repo}/{branch}/{subdir}/{filename}");
+                if let Ok(resp) = c.get(&raw).send() {
+                    if resp.status().is_success() {
+                        if let Ok(text) = resp.text() {
+                            if !text.is_empty() {
+                                if let Ok(mut cache) = SKILL_CONTENT_CACHE.lock() {
+                                    cache.insert(cache_key, (Instant::now(), Some(text.clone())));
+                                }
+                                return Ok(text);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Phase 2: try well-known paths
+    let paths = skill_md_paths(skill_id);
+    for branch in &["main", "master"] {
         for path in &paths {
             let url = format!("https://raw.githubusercontent.com/{source}/{branch}/{path}");
             if let Ok(resp) = c.get(&url).send() {
                 if resp.status().is_success() {
                     if let Ok(text) = resp.text() {
-                        if !text.is_empty() { return Ok(text); }
+                        if !text.is_empty() {
+                            if let Ok(mut cache) = SKILL_CONTENT_CACHE.lock() {
+                                cache.insert(cache_key, (Instant::now(), Some(text.clone())));
+                            }
+                            return Ok(text);
+                        }
                     }
                 }
             }
         }
+    }
+    if let Ok(mut cache) = SKILL_CONTENT_CACHE.lock() {
+        cache.insert(cache_key, (Instant::now(), None));
     }
     anyhow::bail!("Could not find SKILL.md for {source}/{skill_id}")
 }
@@ -393,49 +486,115 @@ pub struct AuditPartner {
 
 /// Fetch audit info from skills.sh audit service. source = "owner/repo", skill_id = "skill-name"
 pub fn fetch_audit_info(source: &str, skill_id: &str) -> Result<Option<SkillAuditInfo>> {
+    let cache_key = format!("{source}/{skill_id}");
+    if let Ok(cache) = AUDIT_INFO_CACHE.lock() {
+        if let Some((ts, cached)) = cache.get(&cache_key) {
+            if ts.elapsed() < DETAIL_CACHE_TTL {
+                return Ok(cached.clone());
+            }
+        }
+    }
     let resp = client()?
         .get(format!("{AUDIT_API}/audit"))
         .query(&[("source", source), ("skills", skill_id)])
         .send()
         .context("Failed to reach audit service")?;
-    if !resp.status().is_success() { return Ok(None); }
-    let data: HashMap<String, SkillAuditInfo> = resp.json().unwrap_or_default();
-    Ok(data.into_values().next())
+    let result = if resp.status().is_success() {
+        let data: HashMap<String, SkillAuditInfo> = resp.json().unwrap_or_default();
+        data.into_values().next()
+    } else {
+        None
+    };
+    if let Ok(mut cache) = AUDIT_INFO_CACHE.lock() {
+        cache.insert(cache_key, (Instant::now(), result.clone()));
+    }
+    Ok(result)
 }
 
 /// Async version of [`fetch_skill_content`] for use in Tauri commands.
-pub async fn fetch_skill_content_async(source: &str, skill_id: &str) -> Result<String> {
+pub async fn fetch_skill_content_async(source: &str, skill_id: &str, git_url: Option<&str>) -> Result<String> {
+    let cache_key = format!("{source}/{skill_id}");
+    if let Ok(cache) = SKILL_CONTENT_CACHE.lock() {
+        if let Some((ts, cached)) = cache.get(&cache_key) {
+            if ts.elapsed() < DETAIL_CACHE_TTL {
+                return match cached {
+                    Some(content) => Ok(content.clone()),
+                    None => anyhow::bail!("Could not find SKILL.md for {source}/{skill_id} (cached)"),
+                };
+            }
+        }
+    }
     let c = async_client()?;
+    // Phase 1: if git_url provides exact path, try it directly
+    if let Some(url) = git_url {
+        if let Some((repo, branch, subdir)) = parse_github_tree_url(url) {
+            for filename in &["SKILL.md", "skill.md"] {
+                let raw = format!("https://raw.githubusercontent.com/{repo}/{branch}/{subdir}/{filename}");
+                if let Ok(resp) = c.get(&raw).send().await {
+                    if resp.status().is_success() {
+                        if let Ok(text) = resp.text().await {
+                            if !text.is_empty() {
+                                if let Ok(mut cache) = SKILL_CONTENT_CACHE.lock() {
+                                    cache.insert(cache_key, (Instant::now(), Some(text.clone())));
+                                }
+                                return Ok(text);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Phase 2: try well-known paths
+    let paths = skill_md_paths(skill_id);
     for branch in &["main", "master"] {
-        let paths = [
-            format!("skills/{skill_id}/SKILL.md"),
-            format!("{skill_id}/SKILL.md"),
-            "SKILL.md".to_string(),
-        ];
         for path in &paths {
             let url = format!("https://raw.githubusercontent.com/{source}/{branch}/{path}");
             if let Ok(resp) = c.get(&url).send().await {
                 if resp.status().is_success() {
                     if let Ok(text) = resp.text().await {
-                        if !text.is_empty() { return Ok(text); }
+                        if !text.is_empty() {
+                            if let Ok(mut cache) = SKILL_CONTENT_CACHE.lock() {
+                                cache.insert(cache_key, (Instant::now(), Some(text.clone())));
+                            }
+                            return Ok(text);
+                        }
                     }
                 }
             }
         }
+    }
+    if let Ok(mut cache) = SKILL_CONTENT_CACHE.lock() {
+        cache.insert(cache_key, (Instant::now(), None));
     }
     anyhow::bail!("Could not find SKILL.md for {source}/{skill_id}")
 }
 
 /// Async version of [`fetch_audit_info`] for use in Tauri commands.
 pub async fn fetch_audit_info_async(source: &str, skill_id: &str) -> Result<Option<SkillAuditInfo>> {
+    let cache_key = format!("{source}/{skill_id}");
+    if let Ok(cache) = AUDIT_INFO_CACHE.lock() {
+        if let Some((ts, cached)) = cache.get(&cache_key) {
+            if ts.elapsed() < DETAIL_CACHE_TTL {
+                return Ok(cached.clone());
+            }
+        }
+    }
     let resp = async_client()?
         .get(format!("{AUDIT_API}/audit"))
         .query(&[("source", source), ("skills", skill_id)])
         .send().await
         .context("Failed to reach audit service")?;
-    if !resp.status().is_success() { return Ok(None); }
-    let data: HashMap<String, SkillAuditInfo> = resp.json().await.unwrap_or_default();
-    Ok(data.into_values().next())
+    let result = if resp.status().is_success() {
+        let data: HashMap<String, SkillAuditInfo> = resp.json().await.unwrap_or_default();
+        data.into_values().next()
+    } else {
+        None
+    };
+    if let Ok(mut cache) = AUDIT_INFO_CACHE.lock() {
+        cache.insert(cache_key, (Instant::now(), result.clone()));
+    }
+    Ok(result)
 }
 
 pub fn git_url_for_source(source: &str) -> String {
