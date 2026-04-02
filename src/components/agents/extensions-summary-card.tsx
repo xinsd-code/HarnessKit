@@ -4,7 +4,7 @@ import type { ExtensionCounts } from "@/lib/types";
 
 export function ExtensionsSummaryCard({ counts, agentName }: { counts: ExtensionCounts; agentName: string }) {
   const navigate = useNavigate();
-  const total = counts.skill + counts.mcp + counts.plugin + counts.hook;
+  const total = counts.skill + counts.mcp + counts.plugin + counts.hook + counts.cli;
   if (total === 0) return null;
 
   return (
@@ -23,6 +23,7 @@ export function ExtensionsSummaryCard({ counts, agentName }: { counts: Extension
           {counts.mcp > 0 && <span><strong>{counts.mcp}</strong> <span className="text-muted-foreground">MCP</span></span>}
           {counts.plugin > 0 && <span><strong>{counts.plugin}</strong> <span className="text-muted-foreground">Plugins</span></span>}
           {counts.hook > 0 && <span><strong>{counts.hook}</strong> <span className="text-muted-foreground">Hooks</span></span>}
+          {counts.cli > 0 && <span><strong>{counts.cli}</strong> <span className="text-muted-foreground">CLIs</span></span>}
         </div>
         <span className="flex items-center gap-1 text-[12px] font-medium text-primary">
           View in Extensions <ArrowRight size={14} />

@@ -146,6 +146,7 @@ export interface ExtensionCounts {
   mcp: number;
   plugin: number;
   hook: number;
+  cli: number;
 }
 
 export interface AgentDetail {
