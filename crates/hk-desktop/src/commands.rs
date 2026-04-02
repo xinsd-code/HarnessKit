@@ -1880,6 +1880,25 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, St
     Ok(results)
 }
 
+/// Validate that a path is within a known agent directory, registered project, or the app data dir.
+fn is_path_within_allowed_dirs(path: &std::path::Path, state: &AppState) -> Result<bool, String> {
+    let canonical = path.canonicalize().map_err(|e| format!("Invalid path: {}", e))?;
+    let adapters = adapter::all_adapters();
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let projects = store.list_projects().unwrap_or_default();
+
+    let allowed = adapters.iter().any(|a| {
+            a.base_dir().canonicalize().map_or(false, |d| canonical.starts_with(&d))
+        })
+        || projects.iter().any(|p| {
+            std::path::Path::new(&p.path).canonicalize().map_or(false, |d| canonical.starts_with(&d))
+        })
+        || dirs::home_dir().map(|h| h.join(".harnesskit"))
+            .and_then(|d| d.canonicalize().ok())
+            .map_or(false, |d| canonical.starts_with(&d));
+    Ok(allowed)
+}
+
 #[tauri::command]
 pub fn read_config_file_preview(state: State<AppState>, path: String, max_lines: Option<usize>) -> Result<String, String> {
     let file_path = std::path::Path::new(&path);
@@ -1887,23 +1906,9 @@ pub fn read_config_file_preview(state: State<AppState>, path: String, max_lines:
         return Err("File not found".into());
     }
 
-    // Validate path is under a known agent dir or registered project
-    let canonical = file_path.canonicalize().map_err(|e| format!("Invalid path: {}", e))?;
-    let adapters = adapter::all_adapters();
-    let store = state.store.lock().map_err(|e| e.to_string())?;
-    let projects = store.list_projects().unwrap_or_default();
-
-    let allowed = adapters.iter().any(|a| {
-            a.base_dir().canonicalize().map_or(false, |d| canonical.starts_with(d))
-        })
-        || projects.iter().any(|p| {
-            std::path::Path::new(&p.path).canonicalize().map_or(false, |d| canonical.starts_with(d))
-        });
-
-    if !allowed {
+    if !is_path_within_allowed_dirs(file_path, &state)? {
         return Err("Path is not within a known agent or project directory".into());
     }
-    drop(store); // Release lock before file I/O
 
     if file_path.is_dir() {
         return Ok(format_dir_tree(file_path, "", 0, 3));
