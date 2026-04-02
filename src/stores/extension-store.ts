@@ -271,22 +271,30 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   async toggle(groupKey, enabled) {
     const group = get().grouped().find((g) => g.groupKey === groupKey);
     if (!group) return;
-    // Optimistic update — avoids full re-fetch which resets scroll position
     const ids = new Set(group.instances.map((e) => e.id));
+    // Optimistic update
     set((s) => ({
       extensions: s.extensions.map((e) =>
         ids.has(e.id) ? { ...e, enabled } : e,
       ),
     }));
-    try {
-      await Promise.all(
-        group.instances.map((e) => api.toggleExtension(e.id, enabled)),
-      );
-    } catch {
-      // Revert optimistic update on failure and re-fetch actual state
+
+    const results = await Promise.allSettled(
+      group.instances.map((e) => api.toggleExtension(e.id, enabled)),
+    );
+
+    const failedIds = new Set<string>();
+    results.forEach((result, index) => {
+      if (result.status === "rejected") {
+        failedIds.add(group.instances[index].id);
+      }
+    });
+
+    if (failedIds.size > 0) {
+      // Revert only the failed instances
       set((s) => ({
         extensions: s.extensions.map((e) =>
-          ids.has(e.id) ? { ...e, enabled: !enabled } : e,
+          failedIds.has(e.id) ? { ...e, enabled: !enabled } : e,
         ),
       }));
       get().fetch();
@@ -295,7 +303,15 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
 
   async batchToggle(enabled) {
     const ids = expandGroupKeys(get().grouped(), get().selectedIds);
-    await Promise.all(ids.map((id) => api.toggleExtension(id, enabled)));
+    const results = await Promise.allSettled(
+      ids.map((id) => api.toggleExtension(id, enabled)),
+    );
+    const failedIds = new Set<string>();
+    results.forEach((result, index) => {
+      if (result.status === "rejected") {
+        failedIds.add(ids[index]);
+      }
+    });
     set({ selectedIds: new Set() });
     get().fetch();
   },
