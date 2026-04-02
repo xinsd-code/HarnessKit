@@ -120,9 +120,12 @@ pub fn get_dashboard_stats(state: State<AppState>) -> Result<DashboardStats, Str
 }
 
 #[tauri::command]
-pub fn toggle_extension(state: State<AppState>, id: String, enabled: bool) -> Result<(), String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
-    manager::toggle_extension(&store, &id, enabled).map_err(|e| e.to_string())
+pub async fn toggle_extension(state: State<'_, AppState>, id: String, enabled: bool) -> Result<(), String> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = store.lock().map_err(|e| e.to_string())?;
+        manager::toggle_extension(&store, &id, enabled).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
