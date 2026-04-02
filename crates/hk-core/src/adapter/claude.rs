@@ -201,24 +201,64 @@ impl AgentAdapter for ClaudeAdapter {
     }
 
     fn read_plugins(&self) -> Vec<PluginEntry> {
-        let Some(settings) = self.read_settings() else { return vec![] };
-        let Some(plugins) = settings.get("enabledPlugins").and_then(|v| v.as_object()) else { return vec![] };
+        // Read from installed_plugins.json which has precise per-plugin timestamps
+        let registry_path = self.base_dir().join("plugins").join("installed_plugins.json");
+        let content = match std::fs::read_to_string(&registry_path) {
+            Ok(c) => c,
+            Err(_) => return vec![],
+        };
+        let json: serde_json::Value = match serde_json::from_str(&content) {
+            Ok(v) => v,
+            Err(_) => return vec![],
+        };
+        let Some(plugins) = json.get("plugins").and_then(|v| v.as_object()) else {
+            return vec![];
+        };
 
-        plugins
-            .iter()
-            .map(|(key, val)| {
-                // key format: "plugin-name@source"
-                let (name, source) = key.rsplit_once('@')
-                    .map(|(n, s)| (n.to_string(), s.to_string()))
-                    .unwrap_or_else(|| (key.clone(), String::new()));
-                PluginEntry {
-                    name,
-                    source,
-                    enabled: val.as_bool().unwrap_or(false),
-                    path: Some(self.base_dir().join("settings.json")),
-                }
-            })
-            .collect()
+        // Also read enabledPlugins from settings.json to know which are enabled
+        let enabled_set: std::collections::HashSet<String> = self.read_settings()
+            .and_then(|s| s.get("enabledPlugins")?.as_object().cloned())
+            .map(|obj| obj.into_iter()
+                .filter(|(_, v)| v.as_bool().unwrap_or(false))
+                .map(|(k, _)| k)
+                .collect())
+            .unwrap_or_default();
+
+        let mut entries = Vec::new();
+        for (key, installs) in plugins {
+            // key format: "plugin-name@marketplace"
+            let (name, source) = key.rsplit_once('@')
+                .map(|(n, s)| (n.to_string(), s.to_string()))
+                .unwrap_or_else(|| (key.clone(), String::new()));
+
+            // installs is an array; take the first entry (user scope)
+            let Some(install) = installs.as_array().and_then(|a| a.first()) else { continue };
+
+            let install_path = install.get("installPath")
+                .and_then(|v| v.as_str())
+                .map(PathBuf::from)
+                .and_then(|p| p.parent().map(PathBuf::from)); // strip version component
+
+            let installed_at = install.get("installedAt")
+                .and_then(|v| v.as_str())
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.with_timezone(&chrono::Utc));
+
+            let updated_at = install.get("lastUpdated")
+                .and_then(|v| v.as_str())
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.with_timezone(&chrono::Utc));
+
+            entries.push(PluginEntry {
+                name,
+                source: source.clone(),
+                enabled: enabled_set.contains(key),
+                path: install_path,
+                installed_at,
+                updated_at,
+            });
+        }
+        entries
     }
 }
 

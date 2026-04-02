@@ -1,4 +1,4 @@
-use super::{AgentAdapter, HookEntry, McpServerEntry};
+use super::{AgentAdapter, HookEntry, McpServerEntry, PluginEntry};
 use std::path::PathBuf;
 
 pub struct GeminiAdapter { home: PathBuf }
@@ -94,6 +94,34 @@ impl AgentAdapter for GeminiAdapter {
                 .map(|obj| obj.iter().filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string()))).collect())
                 .unwrap_or_default(),
         }).collect()
+    }
+
+    fn read_plugins(&self) -> Vec<PluginEntry> {
+        // Gemini extensions: ~/.gemini/extensions/{name}/gemini-extension.json
+        let ext_dir = self.base_dir().join("extensions");
+        let Ok(dirs) = std::fs::read_dir(&ext_dir) else { return vec![] };
+        let mut entries = Vec::new();
+        for dir in dirs.flatten() {
+            if !dir.path().is_dir() { continue; }
+            let manifest = dir.path().join("gemini-extension.json");
+            let name = if manifest.exists() {
+                std::fs::read_to_string(&manifest).ok()
+                    .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+                    .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(String::from))
+                    .unwrap_or_else(|| dir.file_name().to_string_lossy().to_string())
+            } else {
+                continue; // not a valid extension
+            };
+            entries.push(PluginEntry {
+                name,
+                source: "gemini".into(),
+                enabled: true,
+                path: Some(dir.path()),
+                installed_at: None,
+                updated_at: None,
+            });
+        }
+        entries
     }
 
     fn read_hooks(&self) -> Vec<HookEntry> {

@@ -1,4 +1,4 @@
-use super::{AgentAdapter, HookEntry, McpServerEntry};
+use super::{AgentAdapter, HookEntry, McpServerEntry, PluginEntry};
 use std::path::PathBuf;
 
 pub struct CopilotAdapter { home: PathBuf }
@@ -60,6 +60,41 @@ impl AgentAdapter for CopilotAdapter {
 
     fn project_ignore_patterns(&self) -> Vec<String> {
         vec![".copilotignore".into()]
+    }
+
+    fn read_plugins(&self) -> Vec<PluginEntry> {
+        // Copilot plugins: ~/.copilot/installed-plugins/{marketplace}/{plugin}/plugin.json
+        let base = self.base_dir().join("installed-plugins");
+        let Ok(marketplaces) = std::fs::read_dir(&base) else { return vec![] };
+        let mut entries = Vec::new();
+        for marketplace in marketplaces.flatten() {
+            if !marketplace.path().is_dir() { continue; }
+            let mp_name = marketplace.file_name().to_string_lossy().to_string();
+            let Ok(plugins) = std::fs::read_dir(marketplace.path()) else { continue };
+            for plugin in plugins.flatten() {
+                if !plugin.path().is_dir() { continue; }
+                // Try plugin.json in several locations
+                let manifest_paths = [
+                    plugin.path().join("plugin.json"),
+                    plugin.path().join(".plugin").join("plugin.json"),
+                ];
+                let name = manifest_paths.iter()
+                    .find(|p| p.exists())
+                    .and_then(|p| std::fs::read_to_string(p).ok())
+                    .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+                    .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(String::from))
+                    .unwrap_or_else(|| plugin.file_name().to_string_lossy().to_string());
+                entries.push(PluginEntry {
+                    name,
+                    source: mp_name.clone(),
+                    enabled: true,
+                    path: Some(plugin.path()),
+                    installed_at: None,
+                    updated_at: None,
+                });
+            }
+        }
+        entries
     }
 
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {

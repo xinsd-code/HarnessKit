@@ -31,6 +31,10 @@ pub struct PluginEntry {
     pub source: String,
     pub enabled: bool,
     pub path: Option<std::path::PathBuf>,
+    /// Precise install timestamp (e.g. from a registry file). Overrides file-system heuristic.
+    pub installed_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Precise last-updated timestamp. Overrides file-system heuristic.
+    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 pub trait AgentAdapter: Send + Sync {

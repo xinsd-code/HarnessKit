@@ -149,7 +149,9 @@ impl AgentAdapter for CodexAdapter {
                         name,
                         source: marketplace_name.clone(),
                         enabled: true,
-                        path: Some(version_dir.path()),
+                        path: Some(plugin.path()), // plugin name level, not version/commit level
+                        installed_at: None,
+                        updated_at: None,
                     });
                     break; // Take the latest version after sorting
                 }

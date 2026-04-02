@@ -305,9 +305,12 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             Permission::FileSystem { paths: vec![] },
         ];
 
-        let (installed_at, updated_at) = plugin.path.as_ref()
-            .map(|p| (file_created_time(p), file_modified_time(p)))
-            .unwrap_or_else(|| (Utc::now(), Utc::now()));
+        let (installed_at, updated_at) = match (plugin.installed_at, plugin.updated_at) {
+            (Some(i), Some(u)) => (i, u),
+            _ => plugin.path.as_ref()
+                .map(|p| (file_created_time(p), file_modified_time(p)))
+                .unwrap_or_else(|| (Utc::now(), Utc::now())),
+        };
 
         Extension {
             id: stable_id(&format!("{}:{}", plugin.name, plugin.source), "plugin", adapter.name()),
