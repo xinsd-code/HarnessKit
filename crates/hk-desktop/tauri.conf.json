@@ -29,7 +29,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self' ipc: asset: https://ipc.localhost; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' asset: https://ipc.localhost data: https://raw.githubusercontent.com https://api.smithery.ai; connect-src ipc: https://ipc.localhost https://skills.sh https://api.smithery.ai https://raw.githubusercontent.com https://api.github.com https://add-skill.vercel.sh; font-src 'self' https://fonts.gstatic.com data:"
     }
   },
   "bundle": {
