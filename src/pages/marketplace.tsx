@@ -230,7 +230,7 @@ export default function MarketplacePage() {
             type="text"
             value={query}
             onChange={(e) => handleQueryChange(e.target.value)}
-            placeholder={tab === "skill" ? "Search skills..." : tab === "mcp" ? "Search MCP servers..." : "Search agent-first CLIs..."}
+            placeholder={tab === "skill" ? "Search skills..." : tab === "mcp" ? "Search MCP servers..." : "Search Agent-first CLIs..."}
             aria-label="Search marketplace"
             className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-3 text-sm placeholder:text-muted-foreground transition-[background-color,border-color,box-shadow] duration-200 focus:border-ring focus:bg-background focus:shadow-md focus:outline-none"
           />
@@ -238,7 +238,8 @@ export default function MarketplacePage() {
 
         <Hint id="marketplace-intro">
           Search for skills, MCP servers, and agent-first CLIs to install across your agents. Use
-          'Install from Git' to install directly from a Git URL.
+          'Install from Git' to install from a Git URL, or 'Install from Local' to install from a
+          local directory.
         </Hint>
       </div>
 
