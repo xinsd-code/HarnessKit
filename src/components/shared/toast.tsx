@@ -20,7 +20,7 @@ export function Toast({ message, onUndo, onDismiss, duration = 5000 }: ToastProp
     <div
       role="status"
       aria-live="polite"
-      className="animate-toast-in fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-foreground px-4 py-3 shadow-lg"
+      className="animate-toast-in fixed top-4 right-4 z-50 flex items-center gap-3 rounded-lg bg-foreground px-4 py-3 shadow-lg"
     >
       <span className="text-sm text-background">{message}</span>
       <button

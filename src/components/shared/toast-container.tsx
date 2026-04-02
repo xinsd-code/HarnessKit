@@ -15,7 +15,7 @@ export function ToastContainer() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+    <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
       {toasts.map((t) => {
         const Icon = icons[t.type];
         return (
@@ -23,9 +23,9 @@ export function ToastContainer() {
             key={t.id}
             className={clsx(
               "pointer-events-auto flex items-center gap-2 rounded-lg border px-3 py-2 text-sm shadow-lg animate-toast-in select-none",
-              t.type === "success" && "border-border bg-card text-foreground",
-              t.type === "error" && "border-destructive/30 bg-card text-destructive",
-              t.type === "info" && "border-border bg-card text-foreground",
+              t.type === "success" && "border-toast-success-border bg-toast-success-bg text-toast-success-text",
+              t.type === "error" && "border-toast-error-border bg-toast-error-bg text-toast-error-text",
+              t.type === "info" && "border-toast-info-border bg-toast-info-bg text-toast-info-text",
             )}
           >
             <Icon size={14} strokeWidth={2.5} className="shrink-0" />

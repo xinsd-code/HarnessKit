@@ -76,6 +76,15 @@
   --agent-cursor: oklch(0.55 0.00 0);
   --agent-antigravity: oklch(0.58 0.12 250);
   --agent-copilot: oklch(0.52 0.14 290);
+  --toast-success-bg: oklch(0.94 0.06 155);
+  --toast-success-border: oklch(0.72 0.16 155);
+  --toast-success-text: oklch(0.40 0.10 155);
+  --toast-error-bg: oklch(0.94 0.05 27);
+  --toast-error-border: oklch(0.62 0.20 27);
+  --toast-error-text: oklch(0.47 0.16 27);
+  --toast-info-bg: oklch(0.94 0.04 260);
+  --toast-info-border: oklch(0.58 0.14 260);
+  --toast-info-text: oklch(0.45 0.12 260);
 }
 
 .dark {
@@ -146,6 +155,15 @@
   --agent-cursor: oklch(0.72 0.00 0);
   --agent-antigravity: oklch(0.72 0.10 250);
   --agent-copilot: oklch(0.72 0.12 290);
+  --toast-success-bg: oklch(0.23 0.04 155);
+  --toast-success-border: oklch(0.55 0.14 155);
+  --toast-success-text: oklch(0.78 0.12 155);
+  --toast-error-bg: oklch(0.23 0.04 25);
+  --toast-error-border: oklch(0.62 0.18 25);
+  --toast-error-text: oklch(0.78 0.14 25);
+  --toast-info-bg: oklch(0.23 0.03 260);
+  --toast-info-border: oklch(0.52 0.12 260);
+  --toast-info-text: oklch(0.78 0.10 260);
 }
 
 /* ============================================================
@@ -222,6 +240,15 @@
   --agent-cursor: oklch(0.55 0.00 0);
   --agent-antigravity: oklch(0.58 0.12 250);
   --agent-copilot: oklch(0.52 0.14 290);
+  --toast-success-bg: oklch(0.94 0.06 155);
+  --toast-success-border: oklch(0.65 0.15 155);
+  --toast-success-text: oklch(0.40 0.10 155);
+  --toast-error-bg: oklch(0.94 0.05 30);
+  --toast-error-border: oklch(0.58 0.18 30);
+  --toast-error-text: oklch(0.47 0.15 30);
+  --toast-info-bg: oklch(0.94 0.04 250);
+  --toast-info-border: oklch(0.58 0.12 250);
+  --toast-info-text: oklch(0.45 0.10 250);
 }
 
 :root[data-theme="claude"].dark {
@@ -292,6 +319,15 @@
   --agent-cursor: oklch(0.72 0.00 0);
   --agent-antigravity: oklch(0.72 0.10 250);
   --agent-copilot: oklch(0.72 0.12 290);
+  --toast-success-bg: oklch(0.26 0.04 155);
+  --toast-success-border: oklch(0.55 0.14 155);
+  --toast-success-text: oklch(0.78 0.12 155);
+  --toast-error-bg: oklch(0.26 0.04 25);
+  --toast-error-border: oklch(0.62 0.18 25);
+  --toast-error-text: oklch(0.78 0.14 25);
+  --toast-info-bg: oklch(0.26 0.03 250);
+  --toast-info-border: oklch(0.55 0.10 250);
+  --toast-info-text: oklch(0.78 0.08 250);
 }
 
 
@@ -369,6 +405,15 @@
   --agent-cursor: oklch(0.55 0.00 0);
   --agent-antigravity: oklch(0.58 0.12 250);
   --agent-copilot: oklch(0.52 0.14 290);
+  --toast-success-bg: oklch(0.94 0.06 155);
+  --toast-success-border: oklch(0.72 0.16 155);
+  --toast-success-text: oklch(0.40 0.10 155);
+  --toast-error-bg: oklch(0.94 0.05 27);
+  --toast-error-border: oklch(0.62 0.20 27);
+  --toast-error-text: oklch(0.47 0.16 27);
+  --toast-info-bg: oklch(0.94 0.04 260);
+  --toast-info-border: oklch(0.58 0.14 260);
+  --toast-info-text: oklch(0.45 0.12 260);
 }
 
 :root[data-theme="tiesen"].dark {
@@ -439,6 +484,15 @@
   --agent-cursor: oklch(0.72 0.00 0);
   --agent-antigravity: oklch(0.72 0.10 250);
   --agent-copilot: oklch(0.72 0.12 290);
+  --toast-success-bg: oklch(0.23 0.04 155);
+  --toast-success-border: oklch(0.55 0.14 155);
+  --toast-success-text: oklch(0.78 0.12 155);
+  --toast-error-bg: oklch(0.23 0.04 25);
+  --toast-error-border: oklch(0.62 0.18 25);
+  --toast-error-text: oklch(0.78 0.14 25);
+  --toast-info-bg: oklch(0.23 0.03 260);
+  --toast-info-border: oklch(0.52 0.12 260);
+  --toast-info-text: oklch(0.78 0.10 260);
 }
 
 /* ============================================================
@@ -495,6 +549,15 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-toast-success-bg: var(--toast-success-bg);
+  --color-toast-success-border: var(--toast-success-border);
+  --color-toast-success-text: var(--toast-success-text);
+  --color-toast-error-bg: var(--toast-error-bg);
+  --color-toast-error-border: var(--toast-error-border);
+  --color-toast-error-text: var(--toast-error-text);
+  --color-toast-info-bg: var(--toast-info-bg);
+  --color-toast-info-border: var(--toast-info-border);
+  --color-toast-info-text: var(--toast-info-text);
 
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
@@ -697,7 +760,7 @@ button:focus-visible,
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(-8px);
   }
   to {
     opacity: 1;
