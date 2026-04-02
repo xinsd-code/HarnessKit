@@ -175,7 +175,12 @@ impl Store {
             "INSERT OR IGNORE INTO custom_config_paths (agent, path, label, category) VALUES (?1, ?2, ?3, ?4)",
             params![agent, path, label, category],
         )?;
-        Ok(self.conn.last_insert_rowid())
+        let id: i64 = self.conn.query_row(
+            "SELECT id FROM custom_config_paths WHERE agent = ?1 AND path = ?2",
+            params![agent, path],
+            |row| row.get(0),
+        )?;
+        Ok(id)
     }
 
     pub fn update_custom_config_path(&self, id: i64, path: &str, label: &str, category: &str) -> Result<()> {
@@ -1358,5 +1363,18 @@ mod tests {
         let im = fetched.install_meta.unwrap();
         assert_eq!(im.install_type, "marketplace");
         assert_eq!(im.subpath.as_deref(), Some("42"));
+    }
+
+    #[test]
+    fn test_add_custom_config_path_returns_correct_id_on_duplicate() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+        let id1 = store.add_custom_config_path("claude", "/some/path", "label", "settings").unwrap();
+        // Insert a different path to change last_insert_rowid
+        let _id_other = store.add_custom_config_path("claude", "/other/path", "label", "settings").unwrap();
+        // Now try to insert the first path again - this should return id1, not id_other
+        let id2 = store.add_custom_config_path("claude", "/some/path", "label", "settings").unwrap();
+        assert_eq!(id1, id2, "Duplicate insert should return the same ID");
+        assert!(id1 > 0, "ID should be positive");
     }
 }
