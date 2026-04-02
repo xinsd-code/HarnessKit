@@ -757,7 +757,14 @@ fn list_dir_entries(dir: &std::path::Path, depth: u8) -> Result<Vec<FileEntry>, 
 
 /// Open a file or directory in the system's default application.
 #[tauri::command]
-pub fn open_in_system(path: String) -> Result<(), String> {
+pub fn open_in_system(state: State<AppState>, path: String) -> Result<(), String> {
+    let file_path = std::path::Path::new(&path);
+    if !file_path.exists() {
+        return Err("Path does not exist".into());
+    }
+    if !is_path_within_allowed_dirs(file_path, &state)? {
+        return Err("Path is not within a known agent or project directory".into());
+    }
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("open")
