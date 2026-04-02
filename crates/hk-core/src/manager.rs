@@ -30,156 +30,7 @@ impl Manager {
     }
 
     pub fn toggle(&self, id: &str, enabled: bool) -> Result<()> {
-        let ext = self.store.get_extension(id)?
-            .ok_or_else(|| anyhow::anyhow!("Extension not found: {}", id))?;
-
-        match ext.kind {
-            ExtensionKind::Skill => self.toggle_skill(&ext, enabled)?,
-            ExtensionKind::Mcp => self.toggle_mcp(&ext, enabled)?,
-            ExtensionKind::Hook => self.toggle_hook(&ext, enabled)?,
-            ExtensionKind::Plugin => self.toggle_plugin(&ext, enabled)?,
-            ExtensionKind::Cli => {} // CLI toggle not yet implemented
-        }
-
-        // For skills: toggle all siblings (shared skills in ~/.agents/skills/)
-        if ext.kind == ExtensionKind::Skill {
-            let sibling_ids = self.store.find_siblings_by_source_path(id)?;
-            for sib_id in &sibling_ids {
-                self.store.set_enabled(sib_id, enabled)?;
-            }
-        } else {
-            self.store.set_enabled(id, enabled)?;
-        }
-
-        Ok(())
-    }
-
-    fn toggle_skill(&self, ext: &Extension, enabled: bool) -> Result<()> {
-        let source_path = ext.source_path.as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Skill has no source_path"))?;
-        let skill_file = PathBuf::from(source_path);
-        let disabled_file = skill_file.with_file_name("SKILL.md.disabled");
-
-        if enabled {
-            if disabled_file.exists() {
-                std::fs::rename(&disabled_file, &skill_file)
-                    .context("Failed to re-enable skill")?;
-            }
-        } else if skill_file.exists() {
-            std::fs::rename(&skill_file, &disabled_file)
-                .context("Failed to disable skill")?;
-        }
-        Ok(())
-    }
-
-    fn toggle_mcp(&self, ext: &Extension, enabled: bool) -> Result<()> {
-        let adapters = adapter::all_adapters();
-        for adapter in &adapters {
-            if !ext.agents.contains(&adapter.name().to_string()) { continue; }
-            let config_path = adapter.mcp_config_path();
-
-            if enabled {
-                let saved = self.store.get_disabled_config(&ext.id)?
-                    .ok_or_else(|| anyhow::anyhow!("No saved config for MCP server '{}'", ext.name))?;
-                let entry: serde_json::Value = serde_json::from_str(&saved)?;
-                deployer::restore_mcp_server(&config_path, &ext.name, &entry)?;
-                self.store.set_disabled_config(&ext.id, None)?;
-            } else {
-                let entry = deployer::read_mcp_server_config(&config_path, &ext.name)?
-                    .ok_or_else(|| anyhow::anyhow!("MCP server '{}' not found in config", ext.name))?;
-                self.store.set_disabled_config(&ext.id, Some(&entry.to_string()))?;
-                deployer::remove_mcp_server(&config_path, &ext.name)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn toggle_hook(&self, ext: &Extension, enabled: bool) -> Result<()> {
-        let adapters = adapter::all_adapters();
-        // Hook name format: "event:matcher:command"
-        let parts: Vec<&str> = ext.name.splitn(3, ':').collect();
-        if parts.len() < 3 {
-            anyhow::bail!("Invalid hook name format: {}", ext.name);
-        }
-        let (event, matcher_str, command) = (parts[0], parts[1], parts[2]);
-        let matcher = if matcher_str == "*" { None } else { Some(matcher_str) };
-
-        for adapter in &adapters {
-            if !ext.agents.contains(&adapter.name().to_string()) { continue; }
-            let config_path = adapter.hook_config_path();
-
-            if enabled {
-                let saved = self.store.get_disabled_config(&ext.id)?
-                    .ok_or_else(|| anyhow::anyhow!("No saved config for hook '{}'", ext.name))?;
-                let entry: serde_json::Value = serde_json::from_str(&saved)?;
-                deployer::restore_hook(&config_path, event, &entry)?;
-                self.store.set_disabled_config(&ext.id, None)?;
-            } else {
-                let entry = deployer::read_hook_config(&config_path, event, matcher, command)?
-                    .ok_or_else(|| anyhow::anyhow!("Hook '{}' not found in config", ext.name))?;
-                self.store.set_disabled_config(&ext.id, Some(&entry.to_string()))?;
-                deployer::remove_hook(&config_path, event, matcher, command)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn toggle_plugin(&self, ext: &Extension, enabled: bool) -> Result<()> {
-        let adapters = adapter::all_adapters();
-        for adapter in &adapters {
-            if !ext.agents.contains(&adapter.name().to_string()) { continue; }
-
-            if adapter.name() == "claude" {
-                // Claude: config-driven (enabledPlugins in settings.json)
-                // Must reconstruct the full "name@source" key used in enabledPlugins.
-                let config_path = adapter.mcp_config_path();
-                let plugin_key = {
-                    let mut found_key = None;
-                    for plugin in adapter.read_plugins() {
-                        let id_name = format!("{}:{}", plugin.name, plugin.source);
-                        if scanner::stable_id_for(&id_name, "plugin", adapter.name()) == ext.id {
-                            found_key = Some(if plugin.source.is_empty() {
-                                plugin.name.clone()
-                            } else {
-                                format!("{}@{}", plugin.name, plugin.source)
-                            });
-                            break;
-                        }
-                    }
-                    found_key.ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found in agent config", ext.name))?
-                };
-                if enabled {
-                    let saved = self.store.get_disabled_config(&ext.id)?
-                        .ok_or_else(|| anyhow::anyhow!("No saved config for plugin '{}'", ext.name))?;
-                    let value: serde_json::Value = serde_json::from_str(&saved)?;
-                    deployer::restore_plugin_entry(&config_path, &plugin_key, &value)?;
-                    self.store.set_disabled_config(&ext.id, None)?;
-                } else {
-                    let value = deployer::read_plugin_config(&config_path, &plugin_key)?
-                        .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found in config", ext.name))?;
-                    self.store.set_disabled_config(&ext.id, Some(&value.to_string()))?;
-                    deployer::remove_plugin_entry(&config_path, &plugin_key)?;
-                }
-            } else {
-                // Cursor/Codex: filesystem-driven — rename manifest
-                for plugin in adapter.read_plugins() {
-                    let plugin_id_name = format!("{}:{}", plugin.name, plugin.source);
-                    if scanner::stable_id_for(&plugin_id_name, "plugin", adapter.name()) != ext.id {
-                        continue;
-                    }
-                    if let Some(ref path) = plugin.path {
-                        let manifest = path.join("plugin.json");
-                        let disabled_manifest = path.join("plugin.json.disabled");
-                        if enabled && disabled_manifest.exists() {
-                            std::fs::rename(&disabled_manifest, &manifest)?;
-                        } else if !enabled && manifest.exists() {
-                            std::fs::rename(&manifest, &disabled_manifest)?;
-                        }
-                    }
-                }
-            }
-        }
-        Ok(())
+        toggle_extension(&self.store, id, enabled)
     }
 
     pub fn uninstall(&self, id: &str) -> Result<()> {
@@ -191,6 +42,264 @@ impl Manager {
         // Implementation: read extension, modify tags, write back
         Ok(())
     }
+}
+
+/// Toggle an extension's enabled state. Handles all 5 kinds:
+/// Skill (file rename), MCP (config read/write), Hook (config read/write),
+/// Plugin (Claude config-driven or non-Claude manifest rename), CLI (cascade to children).
+pub fn toggle_extension(store: &Store, id: &str, enabled: bool) -> Result<()> {
+    let ext = store.get_extension(id)?
+        .ok_or_else(|| anyhow::anyhow!("Extension not found: {}", id))?;
+
+    match ext.kind {
+        ExtensionKind::Skill => {
+            toggle_skill(&ext, enabled)?;
+            let sibling_ids = store.find_siblings_by_source_path(id)?;
+            for sib_id in &sibling_ids {
+                store.set_enabled(sib_id, enabled)?;
+            }
+        }
+        ExtensionKind::Mcp => {
+            toggle_mcp(&ext, enabled, store)?;
+            store.set_enabled(id, enabled)?;
+        }
+        ExtensionKind::Hook => {
+            toggle_hook(&ext, enabled, store)?;
+            store.set_enabled(id, enabled)?;
+        }
+        ExtensionKind::Plugin => {
+            toggle_plugin(&ext, enabled, store)?;
+            store.set_enabled(id, enabled)?;
+        }
+        ExtensionKind::Cli => {
+            let children = store.get_child_skills(id)?;
+            for child in &children {
+                toggle_skill(child, enabled)?;
+                let sibling_ids = store.find_siblings_by_source_path(&child.id)?;
+                for sib_id in &sibling_ids {
+                    store.set_enabled(sib_id, enabled)?;
+                }
+            }
+            store.set_enabled(id, enabled)?;
+        }
+    }
+    Ok(())
+}
+
+fn toggle_skill(ext: &Extension, enabled: bool) -> Result<()> {
+    let source_path = ext.source_path.as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Skill has no source_path"))?;
+    let skill_file = PathBuf::from(source_path);
+    let disabled_file = skill_file.with_file_name("SKILL.md.disabled");
+    if enabled {
+        if disabled_file.exists() { std::fs::rename(&disabled_file, &skill_file)?; }
+    } else if skill_file.exists() {
+        std::fs::rename(&skill_file, &disabled_file)?;
+    }
+    Ok(())
+}
+
+fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
+    let adapters = adapter::all_adapters();
+    for a in &adapters {
+        if !ext.agents.contains(&a.name().to_string()) { continue; }
+        let config_path = a.mcp_config_path();
+        if enabled {
+            let saved = store.get_disabled_config(&ext.id)?
+                .ok_or_else(|| anyhow::anyhow!("No saved config for MCP server '{}'", ext.name))?;
+            let entry: serde_json::Value = serde_json::from_str(&saved)?;
+            deployer::restore_mcp_server(&config_path, &ext.name, &entry)?;
+            store.set_disabled_config(&ext.id, None)?;
+        } else {
+            let entry = deployer::read_mcp_server_config(&config_path, &ext.name)?
+                .ok_or_else(|| anyhow::anyhow!("MCP server '{}' not found in config", ext.name))?;
+            store.set_disabled_config(&ext.id, Some(&entry.to_string()))?;
+            deployer::remove_mcp_server(&config_path, &ext.name)?;
+        }
+    }
+    Ok(())
+}
+
+fn toggle_hook(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
+    let adapters = adapter::all_adapters();
+    let parts: Vec<&str> = ext.name.splitn(3, ':').collect();
+    if parts.len() < 3 { anyhow::bail!("Invalid hook name: {}", ext.name); }
+    let (event, matcher_str, command) = (parts[0], parts[1], parts[2]);
+    let matcher = if matcher_str == "*" { None } else { Some(matcher_str) };
+    for a in &adapters {
+        if !ext.agents.contains(&a.name().to_string()) { continue; }
+        let config_path = a.hook_config_path();
+        if enabled {
+            let saved = store.get_disabled_config(&ext.id)?
+                .ok_or_else(|| anyhow::anyhow!("No saved config for hook '{}'", ext.name))?;
+            let entry: serde_json::Value = serde_json::from_str(&saved)?;
+            deployer::restore_hook(&config_path, event, &entry)?;
+            store.set_disabled_config(&ext.id, None)?;
+        } else {
+            let entry = deployer::read_hook_config(&config_path, event, matcher, command)?
+                .ok_or_else(|| anyhow::anyhow!("Hook '{}' not found in config", ext.name))?;
+            store.set_disabled_config(&ext.id, Some(&entry.to_string()))?;
+            deployer::remove_hook(&config_path, event, matcher, command)?;
+        }
+    }
+    Ok(())
+}
+
+fn toggle_plugin(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
+    let adapters = adapter::all_adapters();
+    for a in &adapters {
+        if !ext.agents.contains(&a.name().to_string()) { continue; }
+        if a.name() == "claude" {
+            let config_path = a.mcp_config_path();
+            if enabled {
+                // Re-enable: read plugin_key and value from saved disabled_config
+                let saved = store.get_disabled_config(&ext.id)?
+                    .ok_or_else(|| anyhow::anyhow!("No saved config for plugin '{}'", ext.name))?;
+                let saved_obj: serde_json::Value = serde_json::from_str(&saved)?;
+
+                // New format: {"plugin_key": "name@source", "value": <json>}
+                // Old format: just the raw value (e.g., true) — reconstruct plugin_key from extension data
+                let (plugin_key, value) = if let Some(key) = saved_obj.get("plugin_key").and_then(|v| v.as_str()) {
+                    let val = saved_obj.get("value").cloned().unwrap_or(serde_json::Value::Bool(true));
+                    (key.to_string(), val)
+                } else {
+                    // Old format fallback: reconstruct plugin_key from ext.description
+                    // Scanner sets description to "Plugin from {source}" or "Plugin for {agent}"
+                    let source = ext.description.strip_prefix("Plugin from ").unwrap_or("");
+                    let key = if source.is_empty() {
+                        ext.name.clone()
+                    } else {
+                        format!("{}@{}", ext.name, source)
+                    };
+                    (key, saved_obj)
+                };
+
+                deployer::restore_plugin_entry(&config_path, &plugin_key, &value)?;
+                store.set_disabled_config(&ext.id, None)?;
+            } else {
+                // Disable: find plugin_key from live config, save both key and value
+                let plugin_key = {
+                    let mut found_key = None;
+                    for plugin in a.read_plugins() {
+                        let id_name = format!("{}:{}", plugin.name, plugin.source);
+                        if scanner::stable_id_for(&id_name, "plugin", a.name()) == ext.id {
+                            found_key = Some(if plugin.source.is_empty() {
+                                plugin.name.clone()
+                            } else {
+                                format!("{}@{}", plugin.name, plugin.source)
+                            });
+                            break;
+                        }
+                    }
+                    found_key.ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found in agent config", ext.name))?
+                };
+                let value = deployer::read_plugin_config(&config_path, &plugin_key)?
+                    .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found in config", ext.name))?;
+                // Store both plugin_key and value so re-enable doesn't need the live config
+                let saved = serde_json::json!({ "plugin_key": plugin_key, "value": value });
+                store.set_disabled_config(&ext.id, Some(&saved.to_string()))?;
+                deployer::remove_plugin_entry(&config_path, &plugin_key)?;
+            }
+        } else {
+            if enabled {
+                // Re-enable: try new format first, then search plugin dirs as fallback
+                let disabled_manifest = if let Some(saved) = store.get_disabled_config(&ext.id)? {
+                    let saved_obj: serde_json::Value = serde_json::from_str(&saved)?;
+                    saved_obj.get("manifest_path").and_then(|v| v.as_str())
+                        .map(PathBuf::from)
+                } else {
+                    None
+                };
+
+                // Old format fallback: search plugin_dirs for disabled manifests
+                let disabled_manifest = if let Some(p) = disabled_manifest {
+                    Some(p)
+                } else {
+                    find_disabled_manifest(a.as_ref(), &ext.id)
+                };
+
+                if let Some(disabled) = disabled_manifest {
+                    let s = disabled.to_string_lossy();
+                    let manifest = if s.ends_with(".disabled") {
+                        PathBuf::from(&s[..s.len() - ".disabled".len()])
+                    } else {
+                        disabled.clone()
+                    };
+                    if disabled.exists() {
+                        std::fs::rename(&disabled, &manifest)?;
+                    }
+                }
+                store.set_disabled_config(&ext.id, None)?;
+            } else {
+                // Disable: find plugin via live scan, rename manifest, save path
+                for plugin in a.read_plugins() {
+                    let plugin_id_name = format!("{}:{}", plugin.name, plugin.source);
+                    if scanner::stable_id_for(&plugin_id_name, "plugin", a.name()) != ext.id { continue; }
+                    if let Some(ref path) = plugin.path {
+                        // Try known manifest locations
+                        for manifest_name in &["plugin.json", ".cursor-plugin/plugin.json", ".codex-plugin/plugin.json"] {
+                            let manifest = path.join(manifest_name);
+                            if manifest.exists() {
+                                let disabled_manifest = PathBuf::from(
+                                    format!("{}.disabled", manifest.to_string_lossy())
+                                );
+                                let saved = serde_json::json!({ "manifest_path": disabled_manifest.to_string_lossy() });
+                                store.set_disabled_config(&ext.id, Some(&saved.to_string()))?;
+                                std::fs::rename(&manifest, &disabled_manifest)?;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Search plugin directories for a disabled manifest matching the given extension ID.
+/// Used as a fallback for plugins disabled before we started saving the manifest path.
+fn find_disabled_manifest(adapter: &dyn adapter::AgentAdapter, ext_id: &str) -> Option<PathBuf> {
+    for plugin_dir in adapter.plugin_dirs() {
+        if let Ok(entries) = std::fs::read_dir(&plugin_dir) {
+            for entry in entries.flatten() {
+                if !entry.path().is_dir() { continue; }
+                // Check known manifest locations with .disabled suffix
+                for manifest_name in &["plugin.json.disabled", ".cursor-plugin/plugin.json.disabled", ".codex-plugin/plugin.json.disabled"] {
+                    let disabled = entry.path().join(manifest_name);
+                    if disabled.exists() {
+                        // Read the disabled manifest to get the plugin name
+                        if let Ok(content) = std::fs::read_to_string(&disabled) {
+                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                                let fallback_name = entry.file_name().to_string_lossy().to_string();
+                                let name = val.get("name").and_then(|v| v.as_str())
+                                    .unwrap_or(&fallback_name);
+                                // Reconstruct the stable ID to check if it matches
+                                let dir_name = plugin_dir.file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_default();
+                                let source = if dir_name == "local" { "local" } else { &dir_name };
+                                let id_name = format!("{}:{}", name, source);
+                                if scanner::stable_id_for(&id_name, "plugin", adapter.name()) == ext_id {
+                                    return Some(disabled);
+                                }
+                            }
+                        }
+                        // If we can't read the manifest, try matching by directory name
+                        let dir_name_str = entry.file_name().to_string_lossy().to_string();
+                        let source = plugin_dir.file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        let id_name = format!("{}:{}", dir_name_str, source);
+                        if scanner::stable_id_for(&id_name, "plugin", adapter.name()) == ext_id {
+                            return Some(disabled);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Check if an installed extension has an update available.
