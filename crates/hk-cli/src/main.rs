@@ -5,6 +5,7 @@ use comfy_table::{Table, presets::UTF8_FULL_CONDENSED, ContentArrangement};
 use hk_core::{
     adapter,
     auditor::{AuditInput, Auditor},
+    manager,
     models::*,
     scanner,
     store::Store,
@@ -220,7 +221,7 @@ fn cmd_audit(extensions: &[Extension], name: Option<&str>, _kind: Option<&str>, 
 fn cmd_toggle(store: &Store, extensions: &[Extension], name: &str, enabled: bool) -> Result<()> {
     let ext = extensions.iter().find(|e| e.name == name)
         .ok_or_else(|| anyhow::anyhow!("Extension not found: {name}"))?;
-    store.set_enabled(&ext.id, enabled)?;
+    manager::toggle_extension(store, &ext.id, enabled)?;
     let action = if enabled { "Enabled" } else { "Disabled" };
     println!("{} {}", action.green(), name);
     Ok(())
