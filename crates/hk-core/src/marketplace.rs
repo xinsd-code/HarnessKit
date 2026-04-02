@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use chrono::Datelike;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::LazyLock;
-use std::time::Duration;
+use std::sync::{LazyLock, Mutex};
+use std::time::{Duration, Instant};
 
 const SMITHERY_API: &str = "https://api.smithery.ai";
 const SKILLS_SH_API: &str = "https://skills.sh/api";
@@ -307,6 +307,32 @@ pub struct CliRegistryEntry {
     pub credentials_path: Option<String>,
 }
 
+struct CliRegistryCache {
+    entries: Vec<CliRegistryEntry>,
+    fetched_at: Instant,
+}
+
+static CLI_REGISTRY_CACHE: LazyLock<Mutex<Option<CliRegistryCache>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+const CLI_REGISTRY_URL: &str =
+    "https://raw.githubusercontent.com/RealZST/harnesskit-resources/main/cli-registry/registry.json";
+const CLI_REGISTRY_TTL: Duration = Duration::from_secs(300); // 5 minutes
+
+fn fetch_remote_cli_registry() -> Result<Vec<CliRegistryEntry>> {
+    let resp = client()?
+        .get(CLI_REGISTRY_URL)
+        .send()
+        .context("Failed to fetch remote CLI registry")?
+        .error_for_status()
+        .context("Remote CLI registry returned error status")?;
+    let entries: Vec<CliRegistryEntry> = resp
+        .json()
+        .context("Failed to parse remote CLI registry JSON")?;
+    Ok(entries)
+}
+
+/// Embedded fallback registry — used when remote fetch fails
 static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
     vec![
         CliRegistryEntry {
@@ -414,6 +440,45 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             api_domains: vec![],
             credentials_path: None,
         },
+        CliRegistryEntry {
+            binary_name: "agent-browser".into(),
+            display_name: "Agent Browser".into(),
+            description: "Browser automation CLI for AI agents — CDP snapshots, screenshots, form interaction, and session management".into(),
+            install_command: "npm install -g agent-browser".into(),
+            skills_repo: "vercel-labs/agent-browser".into(),
+            skills_install_command: Some("npx skills add vercel-labs/agent-browser".into()),
+            icon_url: None,
+            categories: vec!["browser-automation".into(), "web-testing".into()],
+            verified: false,
+            api_domains: vec![],
+            credentials_path: Some("~/.agent-browser/sessions/".into()),
+        },
+        CliRegistryEntry {
+            binary_name: "rtk".into(),
+            display_name: "RTK".into(),
+            description: "CLI proxy that filters and compresses command output — reduces LLM token consumption by 60-90% on common dev commands".into(),
+            install_command: "brew install rtk".into(),
+            skills_repo: "rtk-ai/rtk".into(),
+            skills_install_command: None,
+            icon_url: None,
+            categories: vec!["token-optimization".into(), "developer-tools".into(), "cli-proxy".into()],
+            verified: false,
+            api_domains: vec![],
+            credentials_path: None,
+        },
+        CliRegistryEntry {
+            binary_name: "open-pencil".into(),
+            display_name: "OpenPencil".into(),
+            description: "Open-source design editor CLI — inspect, lint, export, and script .fig and .pen design files with JSON output".into(),
+            install_command: "bun add -g @open-pencil/cli".into(),
+            skills_repo: "open-pencil/open-pencil".into(),
+            skills_install_command: Some("npx skills add open-pencil/skills@open-pencil".into()),
+            icon_url: None,
+            categories: vec!["design-tools".into(), "figma".into()],
+            verified: false,
+            api_domains: vec![],
+            credentials_path: None,
+        },
     ]
 });
 
@@ -448,15 +513,18 @@ fn fetch_github_stars(owner_repo: &str) -> Option<u64> {
 }
 
 pub fn list_cli_registry() -> Vec<MarketplaceItem> {
+    // Resolve the registry entries: try cache, then remote, then embedded fallback
+    let registry = resolve_cli_registry();
+
     // Fetch stars for all repos in parallel to avoid serial latency
     let star_results: Vec<Option<u64>> = std::thread::scope(|s| {
-        let handles: Vec<_> = CLI_REGISTRY.iter()
+        let handles: Vec<_> = registry.iter()
             .map(|entry| s.spawn(|| fetch_github_stars(&entry.skills_repo)))
             .collect();
         handles.into_iter().map(|h| h.join().unwrap_or(None)).collect()
     });
 
-    let mut items: Vec<MarketplaceItem> = CLI_REGISTRY.iter().zip(star_results).map(|(entry, stars)| {
+    let mut items: Vec<MarketplaceItem> = registry.iter().zip(star_results).map(|(entry, stars)| {
         let repo_url = Some(format!("https://github.com/{}", entry.skills_repo));
         MarketplaceItem {
             id: format!("cli:{}", entry.binary_name),
@@ -478,6 +546,37 @@ pub fn list_cli_registry() -> Vec<MarketplaceItem> {
     items
 }
 
-pub fn get_cli_registry_entry(binary_name: &str) -> Option<&'static CliRegistryEntry> {
-    CLI_REGISTRY.iter().find(|e| e.binary_name == binary_name)
+/// Resolve CLI registry entries: check cache, try remote fetch, fall back to embedded.
+fn resolve_cli_registry() -> Vec<CliRegistryEntry> {
+    // Check cache first
+    if let Ok(guard) = CLI_REGISTRY_CACHE.lock() {
+        if let Some(ref cache) = *guard {
+            if cache.fetched_at.elapsed() < CLI_REGISTRY_TTL {
+                return cache.entries.clone();
+            }
+        }
+    }
+
+    // Try remote fetch
+    match fetch_remote_cli_registry() {
+        Ok(entries) => {
+            if let Ok(mut guard) = CLI_REGISTRY_CACHE.lock() {
+                *guard = Some(CliRegistryCache {
+                    entries: entries.clone(),
+                    fetched_at: Instant::now(),
+                });
+            }
+            entries
+        }
+        Err(e) => {
+            eprintln!("[cli-registry] remote fetch failed, using embedded fallback: {e}");
+            CLI_REGISTRY.clone()
+        }
+    }
+}
+
+pub fn get_cli_registry_entry(binary_name: &str) -> Option<CliRegistryEntry> {
+    resolve_cli_registry()
+        .into_iter()
+        .find(|e| e.binary_name == binary_name)
 }
