@@ -120,7 +120,21 @@ export function ExtensionDetail() {
       {/* Fixed header */}
       <div className="shrink-0 flex items-start justify-between border-b border-border px-5 py-4">
         <div>
-          <h3 className="text-lg font-semibold">{group.name}</h3>
+          <h3 className="text-lg font-semibold">
+            {group.kind === "hook"
+              ? (() => {
+                  const parts = group.name.split(":");
+                  if (parts.length >= 3) {
+                    const event = parts[0];
+                    const command = parts.slice(2).join(":");
+                    const basename =
+                      command.split("/").pop()?.split(" ")[0] || command;
+                    return `${basename} (${event})`;
+                  }
+                  return group.name;
+                })()
+              : group.name}
+          </h3>
           <div className="mt-1 flex items-center gap-2">
             <KindBadge kind={group.kind} />
             {group.trust_score != null && (
@@ -306,8 +320,14 @@ export function ExtensionDetail() {
               agents.filter((a) => a.detected),
               agentOrder,
             );
+            const AGENTS_WITHOUT_HOOKS = new Set(["antigravity"]);
             const otherAgents = detectedAgents.filter(
-              (a) => !group.agents.includes(a.name),
+              (a) =>
+                !group.agents.includes(a.name) &&
+                !(
+                  group.kind === "hook" &&
+                  AGENTS_WITHOUT_HOOKS.has(a.name)
+                ),
             );
             if (otherAgents.length === 0) return null;
             return (
@@ -521,46 +541,46 @@ export function ExtensionDetail() {
         )}
 
         {/* 9. Content / Documentation */}
-        <div className="mt-4">
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            {group.kind === "skill"
-              ? "Documentation"
-              : group.kind === "mcp"
-                ? "Configuration"
-                : group.kind === "hook"
-                  ? "Command"
+        {group.kind !== "hook" && (
+          <div className="mt-4">
+            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {group.kind === "skill"
+                ? "Documentation"
+                : group.kind === "mcp"
+                  ? "Configuration"
                   : "Details"}
-          </h4>
-          {/* Agent tabs for switching instance content */}
-          {group.instances.length > 1 && (
-            <div className="mb-2 flex flex-wrap gap-1">
-              {group.instances.map((instance) => (
-                <button
-                  key={instance.id}
-                  onClick={() => setActiveInstanceId(instance.id)}
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
-                    activeInstanceId === instance.id
-                      ? "bg-primary/20 text-primary"
-                      : "bg-muted text-muted-foreground hover:bg-muted/80"
-                  }`}
-                >
-                  {agentDisplayName(instance.agents[0] ?? "unknown")}
-                </button>
-              ))}
-            </div>
-          )}
+            </h4>
+            {/* Agent tabs for switching instance content */}
+            {group.instances.length > 1 && (
+              <div className="mb-2 flex flex-wrap gap-1">
+                {group.instances.map((instance) => (
+                  <button
+                    key={instance.id}
+                    onClick={() => setActiveInstanceId(instance.id)}
+                    className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                      activeInstanceId === instance.id
+                        ? "bg-primary/20 text-primary"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    }`}
+                  >
+                    {agentDisplayName(instance.agents[0] ?? "unknown")}
+                  </button>
+                ))}
+              </div>
+            )}
 
-          {/* File tree + SKILL.md content */}
-          {activeInstanceId && (
-            <SkillFileSection
-              instanceId={activeInstanceId}
-              content={instanceData.get(activeInstanceId)?.content ?? null}
-              dirPath={instanceData.get(activeInstanceId)?.path ?? null}
-              loading={loadingContent}
-              kind={group.kind}
-            />
-          )}
-        </div>
+            {/* File tree + SKILL.md content */}
+            {activeInstanceId && (
+              <SkillFileSection
+                instanceId={activeInstanceId}
+                content={instanceData.get(activeInstanceId)?.content ?? null}
+                dirPath={instanceData.get(activeInstanceId)?.path ?? null}
+                loading={loadingContent}
+                kind={group.kind}
+              />
+            )}
+          </div>
+        )}
 
         {/* 10. Delete trigger */}
         <div className="mt-4">
