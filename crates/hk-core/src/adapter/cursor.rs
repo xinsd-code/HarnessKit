@@ -191,3 +191,24 @@ impl AgentAdapter for CursorAdapter {
         entries
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::AgentAdapter;
+
+    #[test]
+    fn read_hooks_cursor_format() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cursor_dir = tmp.path().join(".cursor");
+        std::fs::create_dir_all(&cursor_dir).unwrap();
+        std::fs::write(cursor_dir.join("hooks.json"),
+            r#"{"version":1,"hooks":{"afterFileEdit":[{"command":"./audit.sh"}],"stop":[{"command":"echo done"}]}}"#
+        ).unwrap();
+        let adapter = CursorAdapter::with_home(tmp.path().to_path_buf());
+        let hooks = adapter.read_hooks();
+        assert_eq!(hooks.len(), 2);
+        assert!(hooks.iter().any(|h| h.event == "afterFileEdit" && h.command == "./audit.sh"));
+        assert!(hooks.iter().any(|h| h.event == "stop" && h.command == "echo done"));
+    }
+}

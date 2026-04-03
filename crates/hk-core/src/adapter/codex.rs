@@ -280,4 +280,19 @@ mod tests {
         let plugins = adapter.read_plugins();
         assert!(plugins.is_empty());
     }
+
+    #[test]
+    fn read_hooks_object_format() {
+        let tmp = tempfile::tempdir().unwrap();
+        let codex_dir = tmp.path().join(".codex");
+        fs::create_dir_all(&codex_dir).unwrap();
+        fs::write(codex_dir.join("hooks.json"),
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo test"}]}]}}"#
+        ).unwrap();
+        let adapter = CodexAdapter::with_home(tmp.path().to_path_buf());
+        let hooks = adapter.read_hooks();
+        assert_eq!(hooks.len(), 1);
+        assert_eq!(hooks[0].event, "PreToolUse");
+        assert_eq!(hooks[0].command, "echo test");
+    }
 }

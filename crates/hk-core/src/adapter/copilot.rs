@@ -137,3 +137,24 @@ impl AgentAdapter for CopilotAdapter {
         entries
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::AgentAdapter;
+
+    #[test]
+    fn read_hooks_copilot_format() {
+        let tmp = tempfile::tempdir().unwrap();
+        let copilot_dir = tmp.path().join(".copilot");
+        std::fs::create_dir_all(&copilot_dir).unwrap();
+        std::fs::write(copilot_dir.join("hooks.json"),
+            r#"{"version":1,"hooks":{"preToolUse":[{"type":"command","bash":"./check.sh","timeoutSec":30}]}}"#
+        ).unwrap();
+        let adapter = CopilotAdapter::with_home(tmp.path().to_path_buf());
+        let hooks = adapter.read_hooks();
+        assert_eq!(hooks.len(), 1);
+        assert_eq!(hooks[0].event, "preToolUse");
+        assert_eq!(hooks[0].command, "./check.sh");
+    }
+}

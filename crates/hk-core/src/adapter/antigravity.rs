@@ -79,5 +79,24 @@ impl AgentAdapter for AntigravityAdapter {
     fn read_hooks(&self) -> Vec<HookEntry> {
         vec![]
     }
+}
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::AgentAdapter;
+
+    #[test]
+    fn read_hooks_returns_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Even with a hooks-like config, Antigravity should return nothing
+        let ag_dir = tmp.path().join(".antigravity");
+        std::fs::create_dir_all(&ag_dir).unwrap();
+        std::fs::write(ag_dir.join("settings.json"),
+            r#"{"hooks":{"Stop":[{"hooks":["echo fake"]}]}}"#
+        ).unwrap();
+        let adapter = AntigravityAdapter::with_home(tmp.path().to_path_buf());
+        let hooks = adapter.read_hooks();
+        assert!(hooks.is_empty(), "Antigravity should not support hooks");
+    }
 }

@@ -597,4 +597,60 @@ mod tests {
         let after_restore: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         assert_eq!(after_restore["mcpServers"]["github"]["command"], "npx");
     }
+
+    #[test]
+    fn test_deploy_hook_cursor_format() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("hooks.json");
+        let entry = HookEntry { event: "stop".into(), matcher: None, command: "echo done".into() };
+        deploy_hook(&config, &entry, HookFormat::Cursor).unwrap();
+
+        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert_eq!(content["version"], 1);
+        assert_eq!(content["hooks"]["stop"][0]["command"], "echo done");
+        // Should NOT have matcher or nested hooks array
+        assert!(content["hooks"]["stop"][0].get("matcher").is_none());
+        assert!(content["hooks"]["stop"][0].get("hooks").is_none());
+    }
+
+    #[test]
+    fn test_deploy_hook_copilot_format() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("hooks.json");
+        let entry = HookEntry { event: "preToolUse".into(), matcher: None, command: "./check.sh".into() };
+        deploy_hook(&config, &entry, HookFormat::Copilot).unwrap();
+
+        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert_eq!(content["version"], 1);
+        assert_eq!(content["hooks"]["preToolUse"][0]["type"], "command");
+        assert_eq!(content["hooks"]["preToolUse"][0]["bash"], "./check.sh");
+    }
+
+    #[test]
+    fn test_remove_hook_cursor_format() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("hooks.json");
+        std::fs::write(&config, r#"{"version":1,"hooks":{"stop":[{"command":"echo done"},{"command":"echo other"}]}}"#).unwrap();
+
+        remove_hook(&config, "stop", None, "echo done", HookFormat::Cursor).unwrap();
+
+        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let stops = content["hooks"]["stop"].as_array().unwrap();
+        assert_eq!(stops.len(), 1);
+        assert_eq!(stops[0]["command"], "echo other");
+    }
+
+    #[test]
+    fn test_remove_hook_copilot_format() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("hooks.json");
+        std::fs::write(&config, r#"{"version":1,"hooks":{"preToolUse":[{"type":"command","bash":"./check.sh"},{"type":"command","bash":"./other.sh"}]}}"#).unwrap();
+
+        remove_hook(&config, "preToolUse", None, "./check.sh", HookFormat::Copilot).unwrap();
+
+        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let hooks = content["hooks"]["preToolUse"].as_array().unwrap();
+        assert_eq!(hooks.len(), 1);
+        assert_eq!(hooks[0]["bash"], "./other.sh");
+    }
 }
