@@ -9,7 +9,7 @@ import {
   Shield,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Hint } from "@/components/shared/hint";
 import { TrustBadge } from "@/components/shared/trust-badge";
@@ -402,22 +402,24 @@ export default function AuditPage() {
     return filtered;
   }, [groupedResults, searchQuery, tierFilter]);
 
-  function scrollToExtensionResult(extensionId: string) {
-    const group = groupedResults.find(
-      (g) =>
-        g.primaryId === extensionId ||
-        g.agents.some((a) => a.id === extensionId),
-    );
-    const targetId = group?.primaryId ?? extensionId;
-    setOpenId(targetId);
-    requestAnimationFrame(() => {
-      const el = document.getElementById(`audit-result-${targetId}`);
-      if (el) el.scrollIntoView({ block: "start" });
-    });
-  }
+  const scrollToExtensionResult = useCallback(
+    (extensionId: string) => {
+      const group = groupedResults.find(
+        (g) =>
+          g.primaryId === extensionId ||
+          g.agents.some((a) => a.id === extensionId),
+      );
+      const targetId = group?.primaryId ?? extensionId;
+      setOpenId(targetId);
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`audit-result-${targetId}`);
+        if (el) el.scrollIntoView({ block: "start" });
+      });
+    },
+    [groupedResults],
+  );
 
   // Scroll to target extension once groupedResults and extensions are fully loaded
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (
       !pendingScrollRef.current ||

@@ -11,7 +11,7 @@ const iconMap: Record<string, typeof File> = {
 
 export function PermissionTags({ permissions }: { permissions: Permission[] }) {
   return (
-    <div className="flex gap-1" aria-label="Permissions">
+    <div className="flex gap-1">
       {permissions.map((p) => {
         const Icon = iconMap[p.type] ?? File;
         return (
