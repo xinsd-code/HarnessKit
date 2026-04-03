@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 interface MascotSvgProps {
   size: number;
@@ -47,17 +47,27 @@ export function AntigravityMascot({ size, clicked }: MascotSvgProps) {
     for (let i = 0; i < 20; i++) spawnPuff(400 + i * 15, 10, 35, 3);
     for (let i = 0; i < 15; i++) spawnPuff(600 + i * 20, 3, 50, 0.5);
     // Clear all particles halfway through the smoke dissipation
-    setTimeout(() => {
+    const cleanupTimer = setTimeout(() => {
       if (particleRef.current) particleRef.current.innerHTML = "";
     }, 1000);
+    return cleanupTimer;
   }, [spawnPuff]);
 
   // Trigger explosion when clicked transitions to true
-  if (clicked && !prevClicked.current) {
-    // Use setTimeout(0) to run after render
-    setTimeout(() => launchExplosion(), 0);
-  }
-  prevClicked.current = !!clicked;
+  useEffect(() => {
+    let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
+    let triggerTimer: ReturnType<typeof setTimeout> | undefined;
+    if (clicked && !prevClicked.current) {
+      triggerTimer = setTimeout(() => {
+        cleanupTimer = launchExplosion();
+      }, 0);
+    }
+    prevClicked.current = !!clicked;
+    return () => {
+      if (triggerTimer) clearTimeout(triggerTimer);
+      if (cleanupTimer) clearTimeout(cleanupTimer);
+    };
+  }, [clicked, launchExplosion]);
 
   return (
     <div style={{ position: "relative", width: size, height: size, display: "flex", justifyContent: "center", alignItems: "center" }}>

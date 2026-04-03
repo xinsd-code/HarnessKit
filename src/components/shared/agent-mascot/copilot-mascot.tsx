@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 interface MascotSvgProps {
   size: number;
@@ -28,10 +28,12 @@ export function CopilotMascot({ size, clicked }: MascotSvgProps) {
     setTimeout(() => glasses.classList.remove("cp-returning"), 1900);
   }, []);
 
-  if (clicked && !prevClicked.current) {
-    setTimeout(() => launchFall(), 0);
-  }
-  prevClicked.current = !!clicked;
+  useEffect(() => {
+    if (clicked && !prevClicked.current) {
+      setTimeout(() => launchFall(), 0);
+    }
+    prevClicked.current = !!clicked;
+  }, [clicked, launchFall]);
 
   return (
     <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width={size} height={size} style={{ overflow: "visible" }}>
