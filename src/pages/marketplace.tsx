@@ -1,4 +1,5 @@
 import { clsx } from "clsx";
+import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
 import {
   BadgeCheck,
   Download,
@@ -228,6 +229,7 @@ export default function MarketplacePage() {
 
   const prefersReducedMotion = () =>
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const handleNestedWheel = useScrollPassthrough();
 
   useEffect(() => {
     fetchAgents();
@@ -584,7 +586,7 @@ export default function MarketplacePage() {
                           (() => {
                             const section = extractInstallSection(cliReadme);
                             return (
-                              <pre className="whitespace-pre-wrap text-xs text-muted-foreground max-h-[40vh] overflow-y-auto overscroll-contain">
+                              <pre onWheel={handleNestedWheel} className="whitespace-pre-wrap text-xs text-muted-foreground max-h-[40vh] overflow-y-auto">
                                 {section ?? cliReadme.slice(0, 2000)}
                               </pre>
                             );
@@ -708,7 +710,7 @@ export default function MarketplacePage() {
                           />
                         </div>
                       ) : previewContent ? (
-                        <pre className="whitespace-pre-wrap text-xs text-muted-foreground max-h-[40vh] overflow-y-auto overscroll-contain">
+                        <pre onWheel={handleNestedWheel} className="whitespace-pre-wrap text-xs text-muted-foreground max-h-[40vh] overflow-y-auto">
                           {previewContent}
                         </pre>
                       ) : (

@@ -1,4 +1,5 @@
 import { clsx } from "clsx";
+import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
 import {
   Check,
   ChevronRight,
@@ -29,6 +30,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
   const previewLoading = useAgentConfigStore((s) => s.previewLoading);
   const previewErrors = useAgentConfigStore((s) => s.previewErrors);
 
+  const handleNestedWheel = useScrollPassthrough();
   const isExpanded = expandedFiles.has(file.path);
   const preview = previewCache.get(file.path) ?? null;
   const isPreviewLoading = previewLoading.has(file.path);
@@ -120,7 +122,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
               {previewError}
             </div>
           ) : preview !== null ? (
-            <pre className="text-[11px] leading-relaxed text-muted-foreground font-mono whitespace-pre-wrap max-h-[200px] overflow-y-auto overscroll-contain mb-3">
+            <pre onWheel={handleNestedWheel} className="text-[11px] leading-relaxed text-muted-foreground font-mono whitespace-pre-wrap max-h-[200px] overflow-y-auto mb-3">
               {preview || (file.is_dir ? "(empty directory)" : "(empty file)")}
             </pre>
           ) : (
