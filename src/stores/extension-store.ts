@@ -189,9 +189,10 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
             }
             set({ updateStatuses: map });
           }
-        }).catch(() => {});
+        }).catch((e) => console.error("Failed to load cached update statuses:", e));
       }
-    } catch {
+    } catch (e) {
+      console.error("Failed to fetch extensions:", e);
       set({ loading: false });
     }
   },
@@ -333,7 +334,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     const prev = get().pendingDelete;
     if (prev) {
       clearTimeout(prev.timer);
-      Promise.all([...prev.ids].map((id) => api.deleteExtension(id))).catch(() => {});
+      Promise.all([...prev.ids].map((id) => api.deleteExtension(id))).catch((e) => console.error("Failed to delete previous pending extensions:", e));
     }
     const timer = setTimeout(() => {
       get().confirmDelete();
@@ -425,7 +426,8 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
           }
           set({ updateStatuses: statuses });
           updated++;
-        } catch {
+        } catch (e) {
+          console.error("Failed to update extension:", e);
           // continue with remaining updates
         }
       }
@@ -452,7 +454,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     const prev = get().pendingDelete;
     if (prev) {
       clearTimeout(prev.timer);
-      Promise.all([...prev.ids].map((id) => api.deleteExtension(id))).catch(() => {});
+      Promise.all([...prev.ids].map((id) => api.deleteExtension(id))).catch((e) => console.error("Failed to delete previous pending extensions:", e));
     }
     const timer = setTimeout(() => {
       get().confirmDelete();

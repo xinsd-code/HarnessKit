@@ -49,7 +49,7 @@ export default function App() {
       if (now - lastScanRef.current < SCAN_DEBOUNCE_MS) return;
       lastScanRef.current = now;
       api.scanAndSync()
-        .catch(() => {})
+        .catch((e) => console.error("Failed to scan and sync:", e))
         .then(() => {
           fetchExtensions();
           loadCachedAudit();
@@ -76,12 +76,12 @@ export default function App() {
       root.classList.remove("dark");
     }
     // Force macOS vibrancy to match — "light" | "dark" | null (system)
-    getCurrentWindow().setTheme(mode === "system" ? null : resolved).catch(() => {});
+    getCurrentWindow().setTheme(mode === "system" ? null : resolved).catch((e) => console.error("Failed to set window theme:", e));
   }, [themeName, mode, resolved]);
 
   // Restore app icon from saved preference
   useEffect(() => {
-    api.setAppIcon(appIcon).catch(() => {});
+    api.setAppIcon(appIcon).catch((e) => console.error("Failed to set app icon:", e));
   }, [appIcon]);
 
   if (showOnboarding) {

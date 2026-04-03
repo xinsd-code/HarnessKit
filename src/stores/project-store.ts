@@ -20,7 +20,8 @@ export const useProjectStore = create<ProjectState>((set) => ({
     try {
       const projects = await api.listProjects();
       set({ projects, loading: false });
-    } catch {
+    } catch (e) {
+      console.error("Failed to load projects:", e);
       set({ loading: false });
     }
   },

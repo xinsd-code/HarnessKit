@@ -25,8 +25,8 @@ export const useAuditStore = create<AuditState>((set) => ({
     try {
       const results = await api.listAuditResults();
       set({ results });
-    } catch {
-      // No cached results — that's fine
+    } catch (e) {
+      console.error("Failed to load cached audit results:", e);
     }
   },
   async runAudit() {

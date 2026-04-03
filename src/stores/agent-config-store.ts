@@ -51,7 +51,8 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
         selectedAgent: current && agentDetails.some((a) => a.name === current) ? current : firstDetected,
         loading: false,
       });
-    } catch {
+    } catch (e) {
+      console.error("Failed to fetch agent configs:", e);
       set({ loading: false });
     }
   },

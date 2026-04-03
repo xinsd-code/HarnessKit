@@ -119,7 +119,8 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       }
       const results = await api.searchMarketplace(query, tab);
       set({ results, loading: false });
-    } catch {
+    } catch (e) {
+      console.error("Failed to search marketplace:", e);
       set({ results: [], loading: false });
     }
   },
@@ -150,7 +151,8 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       if (tab === "skill") {
         prefetchSkillData(trending, get);
       }
-    } catch {
+    } catch (e) {
+      console.error("Failed to load marketplace trending data:", e);
       set({ trending: [], trendingLoading: false });
     }
   },

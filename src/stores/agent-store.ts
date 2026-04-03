@@ -28,7 +28,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         agentOrder: agents.map((a) => a.name),
         loading: false,
       });
-    } catch {
+    } catch (e) {
+      console.error("Failed to fetch agents:", e);
       set({ loading: false });
     }
   },
