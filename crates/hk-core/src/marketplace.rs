@@ -873,3 +873,222 @@ pub fn get_cli_registry_entry(binary_name: &str) -> Option<CliRegistryEntry> {
 pub fn get_embedded_cli_entry(binary_name: &str) -> Option<CliRegistryEntry> {
     CLI_REGISTRY.iter().find(|e| e.binary_name == binary_name).cloned()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncate_short_string() {
+        assert_eq!(truncate("hello", 10), "hello");
+    }
+
+    #[test]
+    fn test_truncate_exact_length() {
+        assert_eq!(truncate("hello", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_long_string() {
+        let result = truncate("hello world", 8);
+        assert!(result.ends_with("..."));
+        assert!(result.len() <= 11); // up to 8 chars + "..."
+    }
+
+    #[test]
+    fn test_truncate_empty() {
+        assert_eq!(truncate("", 5), "");
+    }
+
+    #[test]
+    fn test_truncate_one_char() {
+        assert_eq!(truncate("a", 1), "a");
+    }
+
+    #[test]
+    fn test_truncate_zero_max() {
+        let result = truncate("hello", 0);
+        assert_eq!(result, "...");
+    }
+
+    #[test]
+    fn test_truncate_unicode() {
+        // Test with multi-byte UTF-8 characters
+        let result = truncate("hello🚀world", 8);
+        assert!(result.ends_with("..."));
+        // Should not panic or produce invalid UTF-8
+        // If we got a string back, UTF-8 is valid by definition
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_github_repo_from_url_https() {
+        let url = "https://github.com/owner/repo";
+        assert_eq!(github_repo_from_url(url), Some("owner/repo".to_string()));
+    }
+
+    #[test]
+    fn test_github_repo_from_url_http() {
+        let url = "http://github.com/owner/repo";
+        assert_eq!(github_repo_from_url(url), Some("owner/repo".to_string()));
+    }
+
+    #[test]
+    fn test_github_repo_from_url_with_git_suffix() {
+        let url = "https://github.com/owner/repo.git";
+        assert_eq!(github_repo_from_url(url), Some("owner/repo".to_string()));
+    }
+
+    #[test]
+    fn test_github_repo_from_url_with_trailing_slash() {
+        let url = "https://github.com/owner/repo/";
+        assert_eq!(github_repo_from_url(url), Some("owner/repo".to_string()));
+    }
+
+    #[test]
+    fn test_github_repo_from_url_with_tree_and_branch() {
+        let url = "https://github.com/owner/repo/tree/main";
+        assert_eq!(github_repo_from_url(url), Some("owner/repo".to_string()));
+    }
+
+    #[test]
+    fn test_github_repo_from_url_with_full_path() {
+        let url = "https://github.com/owner/repo/tree/main/some/path/file.txt";
+        assert_eq!(github_repo_from_url(url), Some("owner/repo".to_string()));
+    }
+
+    #[test]
+    fn test_github_repo_from_url_invalid_prefix() {
+        let url = "https://gitlab.com/owner/repo";
+        assert_eq!(github_repo_from_url(url), None);
+    }
+
+    #[test]
+    fn test_github_repo_from_url_no_repo() {
+        let url = "https://github.com/owner";
+        assert_eq!(github_repo_from_url(url), None);
+    }
+
+    #[test]
+    fn test_parse_github_tree_url_valid() {
+        let url = "https://github.com/anthropics/claude-code/tree/main/plugins/skills/foo";
+        let result = parse_github_tree_url(url);
+        assert_eq!(
+            result,
+            Some((
+                "anthropics/claude-code".to_string(),
+                "main".to_string(),
+                "plugins/skills/foo".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_parse_github_tree_url_no_subdir() {
+        let url = "https://github.com/owner/repo/tree/main";
+        let result = parse_github_tree_url(url);
+        // Should not match because there's no path after branch
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_parse_github_tree_url_without_tree_keyword() {
+        let url = "https://github.com/owner/repo/main/path";
+        let result = parse_github_tree_url(url);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_parse_github_tree_url_http() {
+        let url = "http://github.com/owner/repo/tree/develop/src";
+        let result = parse_github_tree_url(url);
+        assert_eq!(
+            result,
+            Some((
+                "owner/repo".to_string(),
+                "develop".to_string(),
+                "src".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_parse_github_tree_url_with_trailing_slash() {
+        let url = "https://github.com/owner/repo/tree/main/path/";
+        let result = parse_github_tree_url(url);
+        assert_eq!(
+            result,
+            Some((
+                "owner/repo".to_string(),
+                "main".to_string(),
+                "path".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_git_url_for_source() {
+        assert_eq!(
+            git_url_for_source("owner/repo"),
+            "https://github.com/owner/repo.git"
+        );
+    }
+
+    #[test]
+    fn test_git_url_for_source_with_hyphens() {
+        assert_eq!(
+            git_url_for_source("my-org/my-repo"),
+            "https://github.com/my-org/my-repo.git"
+        );
+    }
+
+    #[test]
+    fn test_get_embedded_cli_entry_wecom_cli() {
+        let entry = get_embedded_cli_entry("wecom-cli");
+        assert!(entry.is_some());
+        let entry = entry.unwrap();
+        assert_eq!(entry.binary_name, "wecom-cli");
+        assert_eq!(entry.display_name, "WeChat Work CLI");
+        assert!(!entry.install_command.is_empty());
+        assert!(entry.verified);
+    }
+
+    #[test]
+    fn test_get_embedded_cli_entry_lark_cli() {
+        let entry = get_embedded_cli_entry("lark-cli");
+        assert!(entry.is_some());
+        let entry = entry.unwrap();
+        assert_eq!(entry.binary_name, "lark-cli");
+        assert_eq!(entry.display_name, "Lark / Feishu CLI");
+    }
+
+    #[test]
+    fn test_get_embedded_cli_entry_notion_cli() {
+        let entry = get_embedded_cli_entry("notion-cli");
+        assert!(entry.is_some());
+        let entry = entry.unwrap();
+        assert_eq!(entry.binary_name, "notion-cli");
+        assert!(!entry.verified); // notion-cli is not verified
+    }
+
+    #[test]
+    fn test_get_embedded_cli_entry_unknown() {
+        assert!(get_embedded_cli_entry("nonexistent-cli-xyz").is_none());
+    }
+
+    #[test]
+    fn test_get_embedded_cli_entry_empty_string() {
+        assert!(get_embedded_cli_entry("").is_none());
+    }
+
+    #[test]
+    fn test_get_embedded_cli_entry_case_sensitive() {
+        // Should be case-sensitive
+        assert!(get_embedded_cli_entry("Wecom-CLI").is_none());
+    }
+
+    // NOTE: Do NOT test get_cli_registry_entry() — it may make network calls
+    // NOTE: Do NOT test search_skills(), search_servers(), trending_* — they make HTTP calls
+    // NOTE: Do NOT test fetch_skill_content(), fetch_audit_info() — they make HTTP calls
+}
+

@@ -23,4 +23,16 @@ export default defineConfig({
     hmr: host ? { protocol: "ws", host, port: 1421 } : undefined,
     watch: { ignored: ["**/crates/**"] },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-ui': ['lucide-react', '@tanstack/react-table', '@dnd-kit/core', '@dnd-kit/sortable'],
+          'vendor-tauri': ['@tauri-apps/api', '@tauri-apps/plugin-dialog', '@tauri-apps/plugin-opener'],
+          'vendor-utils': ['zustand', 'clsx', 'tailwind-merge'],
+        },
+      },
+    },
+  },
 });

@@ -1,9 +1,9 @@
 import { create } from "zustand";
-import type { AgentDetail } from "@/lib/types";
 import { humanizeError } from "@/lib/errors";
 import { api } from "@/lib/invoke";
-import { toast } from "@/stores/toast-store";
+import type { AgentDetail } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
+import { toast } from "@/stores/toast-store";
 
 interface AgentConfigState {
   agentDetails: AgentDetail[];
@@ -21,8 +21,18 @@ interface AgentConfigState {
   fetchPreview: (path: string) => Promise<string>;
   openInEditor: (path: string) => Promise<void>;
   copyPath: (path: string) => Promise<void>;
-  addCustomPath: (agent: string, path: string, label: string, category: string) => Promise<void>;
-  updateCustomPath: (id: number, path: string, label: string, category: string) => Promise<void>;
+  addCustomPath: (
+    agent: string,
+    path: string,
+    label: string,
+    category: string,
+  ) => Promise<void>;
+  updateCustomPath: (
+    id: number,
+    path: string,
+    label: string,
+    category: string,
+  ) => Promise<void>;
   removeCustomPath: (id: number) => Promise<void>;
 }
 
@@ -42,13 +52,18 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
       // Sort by agent store order
       const order = useAgentStore.getState().agentOrder;
       const idx = new Map(order.map((n, i) => [n, i]));
-      agentDetails.sort((a, b) => (idx.get(a.name) ?? 99) - (idx.get(b.name) ?? 99));
+      agentDetails.sort(
+        (a, b) => (idx.get(a.name) ?? 99) - (idx.get(b.name) ?? 99),
+      );
 
       const current = get().selectedAgent;
       const firstDetected = agentDetails.find((a) => a.detected)?.name ?? null;
       set({
         agentDetails,
-        selectedAgent: current && agentDetails.some((a) => a.name === current) ? current : firstDetected,
+        selectedAgent:
+          current && agentDetails.some((a) => a.name === current)
+            ? current
+            : firstDetected,
         loading: false,
       });
     } catch (e) {
@@ -138,12 +153,16 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
     // Check if path already exists in auto-scanned config files
     const detail = get().agentDetails.find((a) => a.name === agent);
     if (detail) {
-      const existing = detail.config_files.find((f) => f.path === path && f.custom_id == null);
+      const existing = detail.config_files.find(
+        (f) => f.path === path && f.custom_id == null,
+      );
       if (existing) {
         toast.error("This path is already detected automatically");
         return;
       }
-      const customDup = detail.config_files.find((f) => f.path === path && f.custom_id != null);
+      const customDup = detail.config_files.find(
+        (f) => f.path === path && f.custom_id != null,
+      );
       if (customDup) {
         toast.error("This path has already been added");
         return;

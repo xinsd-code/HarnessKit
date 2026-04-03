@@ -1,5 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Extension, ExtensionContent, AgentInfo, AgentDetail, DashboardStats, AuditResult, UpdateStatus, MarketplaceItem, SkillAuditInfo, Project, DiscoveredProject, InstallResult, FileEntry, ScanResult } from "./types";
+import type {
+  AgentDetail,
+  AgentInfo,
+  AuditResult,
+  DashboardStats,
+  DiscoveredProject,
+  Extension,
+  ExtensionContent,
+  FileEntry,
+  InstallResult,
+  MarketplaceItem,
+  Project,
+  ScanResult,
+  SkillAuditInfo,
+  UpdateStatus,
+} from "./types";
 
 export const api = {
   listExtensions(kind?: string, agent?: string): Promise<Extension[]> {
@@ -54,11 +69,18 @@ export const api = {
     return invoke("update_extension", { id });
   },
 
-  installFromLocal(path: string, targetAgents: string[]): Promise<InstallResult> {
+  installFromLocal(
+    path: string,
+    targetAgents: string[],
+  ): Promise<InstallResult> {
     return invoke("install_from_local", { path, targetAgents });
   },
 
-  installFromGit(url: string, targetAgent?: string, skillId?: string): Promise<InstallResult> {
+  installFromGit(
+    url: string,
+    targetAgent?: string,
+    skillId?: string,
+  ): Promise<InstallResult> {
     return invoke("install_from_git", { url, targetAgent, skillId });
   },
 
@@ -66,8 +88,16 @@ export const api = {
     return invoke("scan_git_repo", { url, targetAgents });
   },
 
-  installScannedSkills(cloneId: string, skillIds: string[], targetAgents: string[]): Promise<InstallResult[]> {
-    return invoke("install_scanned_skills", { cloneId, skillIds, targetAgents });
+  installScannedSkills(
+    cloneId: string,
+    skillIds: string[],
+    targetAgents: string[],
+  ): Promise<InstallResult[]> {
+    return invoke("install_scanned_skills", {
+      cloneId,
+      skillIds,
+      targetAgents,
+    });
   },
 
   updateTags(id: string, tags: string[]): Promise<void> {
@@ -82,23 +112,45 @@ export const api = {
     return invoke("update_category", { id, category });
   },
 
-  searchMarketplace(query: string, kind: string, limit?: number): Promise<MarketplaceItem[]> {
+  searchMarketplace(
+    query: string,
+    kind: string,
+    limit?: number,
+  ): Promise<MarketplaceItem[]> {
     return invoke("search_marketplace", { query, kind, limit });
   },
 
-  trendingMarketplace(kind: string, limit?: number): Promise<MarketplaceItem[]> {
+  trendingMarketplace(
+    kind: string,
+    limit?: number,
+  ): Promise<MarketplaceItem[]> {
     return invoke("trending_marketplace", { kind, limit });
   },
 
-  fetchSkillPreview(source: string, skillId: string, gitUrl?: string | null): Promise<string> {
-    return invoke("fetch_skill_preview", { source, skillId, gitUrl: gitUrl ?? null });
+  fetchSkillPreview(
+    source: string,
+    skillId: string,
+    gitUrl?: string | null,
+  ): Promise<string> {
+    return invoke("fetch_skill_preview", {
+      source,
+      skillId,
+      gitUrl: gitUrl ?? null,
+    });
   },
 
-  fetchSkillAudit(source: string, skillId: string): Promise<SkillAuditInfo | null> {
+  fetchSkillAudit(
+    source: string,
+    skillId: string,
+  ): Promise<SkillAuditInfo | null> {
     return invoke("fetch_skill_audit", { source, skillId });
   },
 
-  installFromMarketplace(source: string, skillId: string, targetAgent?: string): Promise<InstallResult> {
+  installFromMarketplace(
+    source: string,
+    skillId: string,
+    targetAgent?: string,
+  ): Promise<InstallResult> {
     return invoke("install_from_marketplace", { source, skillId, targetAgent });
   },
 
@@ -146,11 +198,21 @@ export const api = {
     return invoke("read_config_file_preview", { path, maxLines });
   },
 
-  addCustomConfigPath(agent: string, path: string, label: string, category: string): Promise<number> {
+  addCustomConfigPath(
+    agent: string,
+    path: string,
+    label: string,
+    category: string,
+  ): Promise<number> {
     return invoke("add_custom_config_path", { agent, path, label, category });
   },
 
-  updateCustomConfigPath(id: number, path: string, label: string, category: string): Promise<void> {
+  updateCustomConfigPath(
+    id: number,
+    path: string,
+    label: string,
+    category: string,
+  ): Promise<void> {
     return invoke("update_custom_config_path", { id, path, label, category });
   },
 

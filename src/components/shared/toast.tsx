@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
+import { useEffect, useRef } from "react";
 
 interface ToastProps {
   message: string;
@@ -8,12 +8,19 @@ interface ToastProps {
   duration?: number;
 }
 
-export function Toast({ message, onUndo, onDismiss, duration = 5000 }: ToastProps) {
+export function Toast({
+  message,
+  onUndo,
+  onDismiss,
+  duration = 5000,
+}: ToastProps) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     timerRef.current = setTimeout(onDismiss, duration);
-    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
   }, [onDismiss, duration]);
 
   return (

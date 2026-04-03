@@ -1,31 +1,41 @@
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useRef } from "react";
 import { Outlet, useLocation } from "react-router-dom";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Sidebar } from "./sidebar";
 import { ToastContainer } from "@/components/shared/toast-container";
+import { Sidebar } from "./sidebar";
 
 const INTERACTIVE = "a, button, input, select, textarea, [role='button']";
 
 export function AppShell() {
   const mainRef = useRef<HTMLElement>(null);
-  const location = useLocation();
+  useLocation();
   useEffect(() => {
     mainRef.current?.scrollTo(0, 0);
-  }, [location.pathname]);
+  }, []);
 
   // Window dragging — anywhere outside <main> and interactive elements
   useEffect(() => {
     const onMouseDown = (e: MouseEvent) => {
       if (e.button !== 0) return;
       const target = e.target as HTMLElement;
-      if (target.closest(INTERACTIVE) || target.closest("main") || target.closest("nav")) return;
+      if (
+        target.closest(INTERACTIVE) ||
+        target.closest("main") ||
+        target.closest("nav")
+      )
+        return;
       e.preventDefault();
       getCurrentWindow().startDragging();
     };
 
     const onDblClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (target.closest(INTERACTIVE) || target.closest("main") || target.closest("nav")) return;
+      if (
+        target.closest(INTERACTIVE) ||
+        target.closest("main") ||
+        target.closest("nav")
+      )
+        return;
       getCurrentWindow().toggleMaximize();
     };
 

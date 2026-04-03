@@ -14,12 +14,18 @@ interface Particle {
 }
 
 const COLORS = [
-  "#7c3aed", "#a78bfa", "#c4b5fd",  // purple
-  "#e87f5f", "#f0a58a",              // coral
-  "#4285f4", "#7aacf8",              // blue
-  "#08B962", "#6ee7a0",              // green
-  "#FABC12", "#fcd34d",              // yellow
-  "#f472b6",                         // pink
+  "#7c3aed",
+  "#a78bfa",
+  "#c4b5fd", // purple
+  "#e87f5f",
+  "#f0a58a", // coral
+  "#4285f4",
+  "#7aacf8", // blue
+  "#08B962",
+  "#6ee7a0", // green
+  "#FABC12",
+  "#fcd34d", // yellow
+  "#f472b6", // pink
 ];
 
 export function Confetti({ duration = 3000 }: { duration?: number }) {

@@ -1,8 +1,8 @@
 import { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useAgentConfigStore } from "@/stores/agent-config-store";
-import { AgentList } from "@/components/agents/agent-list";
 import { AgentDetail } from "@/components/agents/agent-detail";
+import { AgentList } from "@/components/agents/agent-list";
+import { useAgentConfigStore } from "@/stores/agent-config-store";
 
 export default function AgentsPage() {
   const fetch = useAgentConfigStore((s) => s.fetch);
@@ -11,7 +11,9 @@ export default function AgentsPage() {
   const expandFile = useAgentConfigStore((s) => s.expandFile);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => {
+    fetch();
+  }, [fetch]);
 
   useEffect(() => {
     const agent = searchParams.get("agent");
@@ -31,7 +33,9 @@ export default function AgentsPage() {
         <AgentList />
       </div>
       {loading ? (
-        <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">Loading...</div>
+        <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">
+          Loading...
+        </div>
       ) : (
         <AgentDetail />
       )}

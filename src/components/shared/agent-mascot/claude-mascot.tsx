@@ -27,8 +27,22 @@ export function ClaudeMascot({ size }: MascotSvgProps) {
         <rect className="pixel leg-a" x="140" y="115" width="15" height="30" />
         <rect className="pixel leg-b" x="170" y="115" width="15" height="30" />
       </g>
-      <rect className="eye" x="65" y="25" width="15" height="35" style={{ transformOrigin: "72.5px 42.5px" }} />
-      <rect className="eye" x="160" y="25" width="15" height="35" style={{ transformOrigin: "167.5px 42.5px" }} />
+      <rect
+        className="eye"
+        x="65"
+        y="25"
+        width="15"
+        height="35"
+        style={{ transformOrigin: "72.5px 42.5px" }}
+      />
+      <rect
+        className="eye"
+        x="160"
+        y="25"
+        width="15"
+        height="35"
+        style={{ transformOrigin: "167.5px 42.5px" }}
+      />
     </svg>
   );
 }

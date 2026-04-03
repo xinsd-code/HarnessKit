@@ -1,32 +1,77 @@
+import {
+  AlertTriangle,
+  ArrowDownCircle,
+  Calendar,
+  Database,
+  Download,
+  File,
+  FolderOpen,
+  GitBranch,
+  Globe,
+  Key,
+  Link,
+  Loader2,
+  Shield,
+  Terminal,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useExtensionStore } from "@/stores/extension-store";
+import { CATEGORIES } from "@/components/extensions/extension-filters";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { api } from "@/lib/invoke";
-import { X, File, Globe, Terminal, Database, Key, Calendar, GitBranch, ArrowDownCircle, FolderOpen, Download, Loader2, Trash2, Link, AlertTriangle, Shield } from "lucide-react";
-import type { ExtensionContent as ExtContent } from "@/lib/types";
-import { sortAgents, agentDisplayName } from "@/lib/types";
-import type { Permission } from "@/lib/types";
-import { CATEGORIES } from "@/components/extensions/extension-filters";
+import type { ExtensionContent as ExtContent, Permission } from "@/lib/types";
+import { agentDisplayName, sortAgents } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
+import { useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function PermissionDetail({ perm }: { perm: Permission }) {
-  const icons: Record<string, typeof File> = { filesystem: File, network: Globe, shell: Terminal, database: Database, env: Key };
-  const labels: Record<string, string> = { filesystem: "File System", network: "Network", shell: "Shell", database: "Database", env: "Environment" };
+  const icons: Record<string, typeof File> = {
+    filesystem: File,
+    network: Globe,
+    shell: Terminal,
+    database: Database,
+    env: Key,
+  };
+  const labels: Record<string, string> = {
+    filesystem: "File System",
+    network: "Network",
+    shell: "Shell",
+    database: "Database",
+    env: "Environment",
+  };
   const Icon = icons[perm.type] ?? File;
-  const details = "paths" in perm ? perm.paths : "domains" in perm ? perm.domains : "commands" in perm ? perm.commands : "engines" in perm ? perm.engines : "keys" in perm ? perm.keys : [];
+  const details =
+    "paths" in perm
+      ? perm.paths
+      : "domains" in perm
+        ? perm.domains
+        : "commands" in perm
+          ? perm.commands
+          : "engines" in perm
+            ? perm.engines
+            : "keys" in perm
+              ? perm.keys
+              : [];
 
   return (
     <div className="flex items-start gap-2 text-sm">
       <Icon size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
       <div>
-        <span className="font-medium text-foreground">{labels[perm.type] ?? perm.type}</span>
+        <span className="font-medium text-foreground">
+          {labels[perm.type] ?? perm.type}
+        </span>
         {details.length > 0 && (
           <p className="text-xs text-muted-foreground">{details.join(", ")}</p>
         )}
@@ -37,22 +82,24 @@ function PermissionDetail({ perm }: { perm: Permission }) {
 
 export function ExtensionDetail() {
   const navigate = useNavigate();
-  const grouped = useExtensionStore(s => s.grouped);
-  const selectedId = useExtensionStore(s => s.selectedId);
-  const setSelectedId = useExtensionStore(s => s.setSelectedId);
-  const toggle = useExtensionStore(s => s.toggle);
-  const updateStatuses = useExtensionStore(s => s.updateStatuses);
-  const updateExtension = useExtensionStore(s => s.updateExtension);
-  const updateCategory = useExtensionStore(s => s.updateCategory);
-  const deployToAgent = useExtensionStore(s => s.deployToAgent);
-  const deleteFromAgents = useExtensionStore(s => s.deleteFromAgents);
-  const extensions = useExtensionStore(s => s.extensions);
+  const grouped = useExtensionStore((s) => s.grouped);
+  const selectedId = useExtensionStore((s) => s.selectedId);
+  const setSelectedId = useExtensionStore((s) => s.setSelectedId);
+  const toggle = useExtensionStore((s) => s.toggle);
+  const updateStatuses = useExtensionStore((s) => s.updateStatuses);
+  const updateExtension = useExtensionStore((s) => s.updateExtension);
+  const updateCategory = useExtensionStore((s) => s.updateCategory);
+  const deployToAgent = useExtensionStore((s) => s.deployToAgent);
+  const deleteFromAgents = useExtensionStore((s) => s.deleteFromAgents);
+  const extensions = useExtensionStore((s) => s.extensions);
   const group = grouped().find((g) => g.groupKey === selectedId);
   /** Per-instance content data keyed by instance id */
-  const [instanceData, setInstanceData] = useState<Map<string, ExtContent>>(new Map());
+  const [instanceData, setInstanceData] = useState<Map<string, ExtContent>>(
+    new Map(),
+  );
   const [loadingContent, setLoadingContent] = useState(false);
-  const agents = useAgentStore(s => s.agents);
-  const agentOrder = useAgentStore(s => s.agentOrder);
+  const agents = useAgentStore((s) => s.agents);
+  const agentOrder = useAgentStore((s) => s.agentOrder);
   const [deploying, setDeploying] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
   const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
@@ -71,7 +118,8 @@ export function ExtensionDetail() {
       setInstanceData(new Map());
       Promise.all(
         group.instances.map((inst) =>
-          api.getExtensionContent(inst.id)
+          api
+            .getExtensionContent(inst.id)
             .then((res) => [inst.id, res] as const)
             .catch(() => [inst.id, null] as const),
         ),
@@ -85,7 +133,10 @@ export function ExtensionDetail() {
       });
       // Load skill locations for skills
       if (group.kind === "skill") {
-        api.getSkillLocations(group.name).then(setSkillLocations).catch(() => setSkillLocations([]));
+        api
+          .getSkillLocations(group.name)
+          .then(setSkillLocations)
+          .catch(() => setSkillLocations([]));
       } else {
         setSkillLocations([]);
       }
@@ -96,7 +147,7 @@ export function ExtensionDetail() {
     }
     setShowDelete(false);
     setDeleteAgents(new Set());
-  }, [selectedId]);
+  }, [group?.kind, group?.instances[0]?.id, group]);
 
   // Reset deleteAgents when showDelete is toggled on
   useEffect(() => {
@@ -118,7 +169,9 @@ export function ExtensionDetail() {
           <h3 className="text-lg font-semibold">{group.name}</h3>
           <div className="mt-1 flex items-center gap-2">
             <KindBadge kind={group.kind} />
-            {group.trust_score != null && <TrustBadge score={group.trust_score} size="sm" />}
+            {group.trust_score != null && (
+              <TrustBadge score={group.trust_score} size="sm" />
+            )}
             {group.trust_score != null && (
               <button
                 onClick={() => navigate(`/audit?ext=${group.instances[0].id}`)}
@@ -130,12 +183,18 @@ export function ExtensionDetail() {
               </button>
             )}
             {(() => {
-              const hasUpdate = group.instances.some((inst) => updateStatuses.get(inst.id)?.status === "update_available");
+              const hasUpdate = group.instances.some(
+                (inst) =>
+                  updateStatuses.get(inst.id)?.status === "update_available",
+              );
               if (!hasUpdate) return null;
               const handleUpdate = async () => {
                 setUpdating(true);
                 try {
-                  const inst = group.instances.find((i) => updateStatuses.get(i.id)?.status === "update_available");
+                  const inst = group.instances.find(
+                    (i) =>
+                      updateStatuses.get(i.id)?.status === "update_available",
+                  );
                   if (inst) {
                     await updateExtension(inst.id);
                     toast.success(`${group.name} updated`);
@@ -152,321 +211,442 @@ export function ExtensionDetail() {
                   disabled={updating}
                   className="flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
                 >
-                  {updating ? <Loader2 size={12} className="animate-spin" /> : <ArrowDownCircle size={12} />}
+                  {updating ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <ArrowDownCircle size={12} />
+                  )}
                   {updating ? "Updating..." : "Update Available"}
                 </button>
               );
             })()}
           </div>
         </div>
-        <button onClick={() => setSelectedId(null)} aria-label="Close extension details" className="shrink-0 rounded-lg p-2.5 text-muted-foreground hover:text-foreground">
+        <button
+          onClick={() => setSelectedId(null)}
+          aria-label="Close extension details"
+          className="shrink-0 rounded-lg p-2.5 text-muted-foreground hover:text-foreground"
+        >
           <X size={18} />
         </button>
       </div>
 
       {/* Scrollable body */}
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-4">
-      {group.description && (
-        <p className="text-sm text-muted-foreground">{group.description}</p>
-      )}
+        {group.description && (
+          <p className="text-sm text-muted-foreground">{group.description}</p>
+        )}
 
-      {/* 1. Status + Category row */}
-      <div className="mt-4 flex items-center gap-2">
-        <button
-          onClick={() => { toggle(group.groupKey, !group.enabled); toast.success(`Extension ${group.enabled ? "disabled" : "enabled"}`); }}
-          aria-pressed={group.enabled}
-          className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${
-            group.enabled
-              ? "bg-primary/10 text-primary"
-              : "bg-destructive/10 text-destructive"
-          }`}
-        >
-          {group.enabled ? "Enabled" : "Disabled"}
-        </button>
-        <select
-          value={group.category ?? ""}
-          onChange={(e) => updateCategory(group.groupKey, e.target.value || null)}
-          aria-label="Extension category"
-          className="min-w-0 flex-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground focus:border-ring focus:outline-none"
-        >
-          <option value="">No category</option>
-          {CATEGORIES.map((cat) => (
-            <option key={cat} value={cat}>{cat}</option>
-          ))}
-        </select>
-      </div>
+        {/* 1. Status + Category row */}
+        <div className="mt-4 flex items-center gap-2">
+          <button
+            onClick={() => {
+              toggle(group.groupKey, !group.enabled);
+              toast.success(
+                `Extension ${group.enabled ? "disabled" : "enabled"}`,
+              );
+            }}
+            aria-pressed={group.enabled}
+            className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${
+              group.enabled
+                ? "bg-primary/10 text-primary"
+                : "bg-destructive/10 text-destructive"
+            }`}
+          >
+            {group.enabled ? "Enabled" : "Disabled"}
+          </button>
+          <select
+            value={group.category ?? ""}
+            onChange={(e) =>
+              updateCategory(group.groupKey, e.target.value || null)
+            }
+            aria-label="Extension category"
+            className="min-w-0 flex-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground focus:border-ring focus:outline-none"
+          >
+            <option value="">No category</option>
+            {CATEGORIES.map((cat) => (
+              <option key={cat} value={cat}>
+                {cat}
+              </option>
+            ))}
+          </select>
+        </div>
 
-      {/* 2. Info */}
-      <div className="mt-4 space-y-2 text-sm">
-        <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Info</h4>
-        {(() => {
-          const meta = group.instances.find((i) => i.install_meta)?.install_meta;
-          const sourceUrl = meta?.url_resolved ?? meta?.url ?? group.source.url;
-          const repoPath = sourceUrl ? (() => {
-            const m = sourceUrl.match(/github\.com\/([^/]+\/[^/]+)/);
-            return m ? m[1].replace(/\.git$/, "") : null;
-          })() : null;
-          return <>
-            {repoPath && (
+        {/* 2. Info */}
+        <div className="mt-4 space-y-2 text-sm">
+          <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Info
+          </h4>
+          {(() => {
+            const meta = group.instances.find(
+              (i) => i.install_meta,
+            )?.install_meta;
+            const sourceUrl =
+              meta?.url_resolved ?? meta?.url ?? group.source.url;
+            const repoPath = sourceUrl
+              ? (() => {
+                  const m = sourceUrl.match(/github\.com\/([^/]+\/[^/]+)/);
+                  return m ? m[1].replace(/\.git$/, "") : null;
+                })()
+              : null;
+            return (
+              <>
+                {repoPath && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Globe size={14} />
+                    <a
+                      href={`https://github.com/${repoPath}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="truncate hover:text-foreground transition-colors"
+                      title={`https://github.com/${repoPath}`}
+                    >
+                      {repoPath}
+                    </a>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Calendar size={14} />
+            <span>
+              Installed{" "}
+              {group.kind === "skill" || group.kind === "plugin"
+                ? formatDate(group.installed_at)
+                : "\u2014"}
+            </span>
+          </div>
+          {group.source.origin === "git" &&
+            group.source.url &&
+            !group.instances.find((i) => i.install_meta) && (
               <div className="flex items-center gap-2 text-muted-foreground">
-                <Globe size={14} />
-                <a
-                  href={`https://github.com/${repoPath}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="truncate hover:text-foreground transition-colors"
-                  title={`https://github.com/${repoPath}`}
-                >
-                  {repoPath}
-                </a>
+                <GitBranch size={14} />
+                <span className="truncate">{group.source.url}</span>
               </div>
             )}
-          </>;
-        })()}
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <Calendar size={14} />
-          <span>Installed {group.kind === "skill" || group.kind === "plugin" ? formatDate(group.installed_at) : "\u2014"}</span>
         </div>
-        {group.source.origin === "git" && group.source.url && !group.instances.find((i) => i.install_meta) && (
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <GitBranch size={14} />
-            <span className="truncate">{group.source.url}</span>
-          </div>
-        )}
-      </div>
 
-      {/* 3. Agents + Deploy */}
-      <div className="mt-4">
-        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agents</h4>
-        <div className="flex flex-wrap gap-1">
-          {group.agents.map((agent) => (
-            <span key={agent} className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-              {agentDisplayName(agent)}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {(group.kind === "skill" || group.kind === "mcp" || group.kind === "hook") && (() => {
-        const detectedAgents = sortAgents(agents.filter((a) => a.detected), agentOrder);
-        const otherAgents = detectedAgents.filter((a) => !group.agents.includes(a.name));
-        if (otherAgents.length === 0) return null;
-        return (
-          <div className="mt-3">
-            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground" title="Copy this extension's configuration to another agent on your machine">Deploy to Agent</h4>
-            <div className="flex flex-wrap gap-1.5">
-              {otherAgents.map((agent) => (
-                <button
-                  key={agent.name}
-                  disabled={deploying === agent.name}
-                  onClick={async () => {
-                    setDeploying(agent.name);
-                    try {
-                      await deployToAgent(group.instances[0].id, agent.name);
-                      toast.success(`Deployed to ${agentDisplayName(agent.name)}`);
-                    } catch {
-                      toast.error(`Failed to deploy to ${agentDisplayName(agent.name)}`);
-                    } finally {
-                      setDeploying(null);
-                    }
-                  }}
-                  className="flex items-center gap-1.5 rounded-lg border border-border bg-primary/10 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/20 hover:border-ring disabled:opacity-50"
-                >
-                  {deploying === agent.name ? (
-                    <Loader2 size={12} className="animate-spin" />
-                  ) : (
-                    <Download size={12} />
-                  )}
-                  {agentDisplayName(agent.name)}
-                </button>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* 5. Permissions */}
-      {group.permissions.length > 0 && (
+        {/* 3. Agents + Deploy */}
         <div className="mt-4">
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Permissions</h4>
-          <div className="space-y-2">
-            {group.permissions.map((p, i) => (
-              <PermissionDetail key={i} perm={p} />
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Agents
+          </h4>
+          <div className="flex flex-wrap gap-1">
+            {group.agents.map((agent) => (
+              <span
+                key={agent}
+                className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+              >
+                {agentDisplayName(agent)}
+              </span>
             ))}
           </div>
         </div>
-      )}
 
-      {/* 6. CLI Details */}
-      {group.kind === "cli" && group.instances[0]?.cli_meta && (() => {
-        const cli_meta = group.instances[0].cli_meta!;
-        return (
-          <div className="mt-4 space-y-3 text-sm">
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">CLI Details</h4>
-            <div className="grid grid-cols-2 gap-2 text-muted-foreground">
-              <span>Binary:</span>
-              <span className="font-mono">{cli_meta.binary_name}</span>
-              {cli_meta.version && <>
-                <span>Version:</span>
-                <span>{cli_meta.version}</span>
-              </>}
-              {cli_meta.install_method && <>
-                <span>Installed via:</span>
-                <span>{cli_meta.install_method}</span>
-              </>}
-              {cli_meta.binary_path && <>
-                <span>Path:</span>
-                <span className="font-mono text-xs truncate">{cli_meta.binary_path}</span>
-              </>}
-              {cli_meta.credentials_path && <>
-                <span>Credentials:</span>
-                <span className="font-mono text-xs truncate">{cli_meta.credentials_path}</span>
-              </>}
-            </div>
-            {cli_meta.api_domains.length > 0 && (
-              <div>
-                <span className="text-muted-foreground">API Domains:</span>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {cli_meta.api_domains.map(d => (
-                    <span key={d} className="text-xs px-2 py-0.5 bg-muted rounded-full">{d}</span>
+        {(group.kind === "skill" ||
+          group.kind === "mcp" ||
+          group.kind === "hook") &&
+          (() => {
+            const detectedAgents = sortAgents(
+              agents.filter((a) => a.detected),
+              agentOrder,
+            );
+            const otherAgents = detectedAgents.filter(
+              (a) => !group.agents.includes(a.name),
+            );
+            if (otherAgents.length === 0) return null;
+            return (
+              <div className="mt-3">
+                <h4
+                  className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                  title="Copy this extension's configuration to another agent on your machine"
+                >
+                  Deploy to Agent
+                </h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {otherAgents.map((agent) => (
+                    <button
+                      key={agent.name}
+                      disabled={deploying === agent.name}
+                      onClick={async () => {
+                        setDeploying(agent.name);
+                        try {
+                          await deployToAgent(
+                            group.instances[0].id,
+                            agent.name,
+                          );
+                          toast.success(
+                            `Deployed to ${agentDisplayName(agent.name)}`,
+                          );
+                        } catch {
+                          toast.error(
+                            `Failed to deploy to ${agentDisplayName(agent.name)}`,
+                          );
+                        } finally {
+                          setDeploying(null);
+                        }
+                      }}
+                      className="flex items-center gap-1.5 rounded-lg border border-border bg-primary/10 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/20 hover:border-ring disabled:opacity-50"
+                    >
+                      {deploying === agent.name ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <Download size={12} />
+                      )}
+                      {agentDisplayName(agent.name)}
+                    </button>
                   ))}
                 </div>
               </div>
-            )}
-          </div>
-        );
-      })()}
+            );
+          })()}
 
-      {/* 7. CLI Associated Skills */}
-      {group.kind === "cli" && (() => {
-        const children = extensions.filter(e => e.cli_parent_id === group.instances[0]?.id);
-        return children.length > 0 ? (
+        {/* 5. Permissions */}
+        {group.permissions.length > 0 && (
           <div className="mt-4">
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-              Associated Skills ({children.length})
+            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Permissions
             </h4>
-            <div className="space-y-1">
-              {children.map(child => (
-                <div key={child.id} className="flex items-center justify-between text-sm py-1">
-                  <span>{child.name}</span>
-                  <span className={child.enabled ? "text-trust-safe" : "text-muted-foreground"}>
-                    {child.enabled ? "Enabled" : "Disabled"}
-                  </span>
-                </div>
+            <div className="space-y-2">
+              {group.permissions.map((p, i) => (
+                <PermissionDetail key={i} perm={p} />
               ))}
             </div>
           </div>
-        ) : null;
-      })()}
+        )}
 
-      {/* 8. Paths (per-agent breakdown) */}
-      {group.instances.length > 0 && (
-        <div className="mt-4">
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Paths</h4>
-          <div className="space-y-3">
-            {group.instances.map((instance) => {
-              const agentName = instance.agents[0] ?? "unknown";
-              const data = instanceData.get(instance.id);
-              // All physical paths for this skill under this agent (from filesystem scan)
-              const agentLocations = skillLocations.filter(([a]) => a === agentName);
-              return (
-                <div key={instance.id} className="rounded-lg border border-border bg-card p-3">
-                  <span className="text-sm font-medium">{agentDisplayName(agentName)}</span>
-                  <div className="mt-1.5 space-y-1">
-                    {agentLocations.length > 0 ? agentLocations.map(([, path]) => (
-                      <div key={path} className="flex items-start gap-2 text-muted-foreground">
-                        <FolderOpen size={12} className="mt-0.5 shrink-0" />
-                        <span className="break-all text-xs">{path}</span>
-                      </div>
-                    )) : data?.path ? (
-                      <div className="flex items-start gap-2 text-muted-foreground">
-                        <FolderOpen size={12} className="mt-0.5 shrink-0" />
-                        <span className="break-all text-xs">{data.path}</span>
-                      </div>
-                    ) : null}
-                    {data?.symlink_target && (
-                      <div className="flex items-start gap-2 text-muted-foreground/70">
-                        <Link size={12} className="mt-0.5 shrink-0" />
-                        <span className="break-all text-xs italic">{data.symlink_target}</span>
-                      </div>
-                    )}
-                  </div>
+        {/* 6. CLI Details */}
+        {group.kind === "cli" &&
+          group.instances[0]?.cli_meta &&
+          (() => {
+            const cli_meta = group.instances[0].cli_meta!;
+            return (
+              <div className="mt-4 space-y-3 text-sm">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  CLI Details
+                </h4>
+                <div className="grid grid-cols-2 gap-2 text-muted-foreground">
+                  <span>Binary:</span>
+                  <span className="font-mono">{cli_meta.binary_name}</span>
+                  {cli_meta.version && (
+                    <>
+                      <span>Version:</span>
+                      <span>{cli_meta.version}</span>
+                    </>
+                  )}
+                  {cli_meta.install_method && (
+                    <>
+                      <span>Installed via:</span>
+                      <span>{cli_meta.install_method}</span>
+                    </>
+                  )}
+                  {cli_meta.binary_path && (
+                    <>
+                      <span>Path:</span>
+                      <span className="font-mono text-xs truncate">
+                        {cli_meta.binary_path}
+                      </span>
+                    </>
+                  )}
+                  {cli_meta.credentials_path && (
+                    <>
+                      <span>Credentials:</span>
+                      <span className="font-mono text-xs truncate">
+                        {cli_meta.credentials_path}
+                      </span>
+                    </>
+                  )}
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+                {cli_meta.api_domains.length > 0 && (
+                  <div>
+                    <span className="text-muted-foreground">API Domains:</span>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {cli_meta.api_domains.map((d) => (
+                        <span
+                          key={d}
+                          className="text-xs px-2 py-0.5 bg-muted rounded-full"
+                        >
+                          {d}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
-      {/* 9. Content / Documentation */}
-      <div className="mt-4">
-        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          {group.kind === "skill" ? "Documentation" : group.kind === "mcp" ? "Configuration" : group.kind === "hook" ? "Command" : "Details"}
-        </h4>
-        {/* Agent tabs for switching instance content */}
-        {group.instances.length > 1 && (
-          <div className="mb-2 flex flex-wrap gap-1">
-            {group.instances.map((instance) => (
-              <button
-                key={instance.id}
-                onClick={() => setActiveInstanceId(instance.id)}
-                className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
-                  activeInstanceId === instance.id
-                    ? "bg-primary/20 text-primary"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
-                }`}
-              >
-                {agentDisplayName(instance.agents[0] ?? "unknown")}
-              </button>
-            ))}
+        {/* 7. CLI Associated Skills */}
+        {group.kind === "cli" &&
+          (() => {
+            const children = extensions.filter(
+              (e) => e.cli_parent_id === group.instances[0]?.id,
+            );
+            return children.length > 0 ? (
+              <div className="mt-4">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                  Associated Skills ({children.length})
+                </h4>
+                <div className="space-y-1">
+                  {children.map((child) => (
+                    <div
+                      key={child.id}
+                      className="flex items-center justify-between text-sm py-1"
+                    >
+                      <span>{child.name}</span>
+                      <span
+                        className={
+                          child.enabled
+                            ? "text-trust-safe"
+                            : "text-muted-foreground"
+                        }
+                      >
+                        {child.enabled ? "Enabled" : "Disabled"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null;
+          })()}
+
+        {/* 8. Paths (per-agent breakdown) */}
+        {group.instances.length > 0 && (
+          <div className="mt-4">
+            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Paths
+            </h4>
+            <div className="space-y-3">
+              {group.instances.map((instance) => {
+                const agentName = instance.agents[0] ?? "unknown";
+                const data = instanceData.get(instance.id);
+                // All physical paths for this skill under this agent (from filesystem scan)
+                const agentLocations = skillLocations.filter(
+                  ([a]) => a === agentName,
+                );
+                return (
+                  <div
+                    key={instance.id}
+                    className="rounded-lg border border-border bg-card p-3"
+                  >
+                    <span className="text-sm font-medium">
+                      {agentDisplayName(agentName)}
+                    </span>
+                    <div className="mt-1.5 space-y-1">
+                      {agentLocations.length > 0 ? (
+                        agentLocations.map(([, path]) => (
+                          <div
+                            key={path}
+                            className="flex items-start gap-2 text-muted-foreground"
+                          >
+                            <FolderOpen size={12} className="mt-0.5 shrink-0" />
+                            <span className="break-all text-xs">{path}</span>
+                          </div>
+                        ))
+                      ) : data?.path ? (
+                        <div className="flex items-start gap-2 text-muted-foreground">
+                          <FolderOpen size={12} className="mt-0.5 shrink-0" />
+                          <span className="break-all text-xs">{data.path}</span>
+                        </div>
+                      ) : null}
+                      {data?.symlink_target && (
+                        <div className="flex items-start gap-2 text-muted-foreground/70">
+                          <Link size={12} className="mt-0.5 shrink-0" />
+                          <span className="break-all text-xs italic">
+                            {data.symlink_target}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
-        {/* File tree + SKILL.md content */}
-        {activeInstanceId && <SkillFileSection
-          instanceId={activeInstanceId}
-          content={instanceData.get(activeInstanceId)?.content ?? null}
-          dirPath={instanceData.get(activeInstanceId)?.path ?? null}
-          loading={loadingContent}
-          kind={group.kind}
-        />}
-      </div>
+        {/* 9. Content / Documentation */}
+        <div className="mt-4">
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            {group.kind === "skill"
+              ? "Documentation"
+              : group.kind === "mcp"
+                ? "Configuration"
+                : group.kind === "hook"
+                  ? "Command"
+                  : "Details"}
+          </h4>
+          {/* Agent tabs for switching instance content */}
+          {group.instances.length > 1 && (
+            <div className="mb-2 flex flex-wrap gap-1">
+              {group.instances.map((instance) => (
+                <button
+                  key={instance.id}
+                  onClick={() => setActiveInstanceId(instance.id)}
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                    activeInstanceId === instance.id
+                      ? "bg-primary/20 text-primary"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80"
+                  }`}
+                >
+                  {agentDisplayName(instance.agents[0] ?? "unknown")}
+                </button>
+              ))}
+            </div>
+          )}
 
-      {/* 10. Delete trigger */}
-      <div className="mt-4">
-        <button
-          onClick={() => setShowDelete(true)}
-          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10"
-        >
-          <Trash2 size={12} />
-          Delete...
-        </button>
-      </div>
+          {/* File tree + SKILL.md content */}
+          {activeInstanceId && (
+            <SkillFileSection
+              instanceId={activeInstanceId}
+              content={instanceData.get(activeInstanceId)?.content ?? null}
+              dirPath={instanceData.get(activeInstanceId)?.path ?? null}
+              loading={loadingContent}
+              kind={group.kind}
+            />
+          )}
+        </div>
 
-      {/* Delete confirmation dialog */}
-      {showDelete && <DeleteDialog
-        group={group}
-        instanceData={instanceData}
-        deleting={deleting}
-        deleteAgents={deleteAgents}
-        setDeleteAgents={setDeleteAgents}
-        onDelete={async (agents) => {
-          setDeleting(true);
-          try {
-            await deleteFromAgents(group.groupKey, agents);
-            toast.success(agents.length === group.agents.length
-              ? "Extension deleted"
-              : `Deleted from ${agents.map(agentDisplayName).join(", ")}`);
-            if (agents.length === group.agents.length) setSelectedId(null);
-          } catch {
-            toast.error("Failed to delete");
-          } finally {
-            setDeleting(false);
-            setShowDelete(false);
-          }
-        }}
-        onClose={() => setShowDelete(false)}
-      />}
+        {/* 10. Delete trigger */}
+        <div className="mt-4">
+          <button
+            onClick={() => setShowDelete(true)}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10"
+          >
+            <Trash2 size={12} />
+            Delete...
+          </button>
+        </div>
+
+        {/* Delete confirmation dialog */}
+        {showDelete && (
+          <DeleteDialog
+            group={group}
+            instanceData={instanceData}
+            deleting={deleting}
+            deleteAgents={deleteAgents}
+            setDeleteAgents={setDeleteAgents}
+            onDelete={async (agents) => {
+              setDeleting(true);
+              try {
+                await deleteFromAgents(group.groupKey, agents);
+                toast.success(
+                  agents.length === group.agents.length
+                    ? "Extension deleted"
+                    : `Deleted from ${agents.map(agentDisplayName).join(", ")}`,
+                );
+                if (agents.length === group.agents.length) setSelectedId(null);
+              } catch {
+                toast.error("Failed to delete");
+              } finally {
+                setDeleting(false);
+                setShowDelete(false);
+              }
+            }}
+            onClose={() => setShowDelete(false)}
+          />
+        )}
       </div>
     </div>
   );
@@ -476,8 +656,13 @@ export function ExtensionDetail() {
 // Skill file section: file tree + SKILL.md content
 // ---------------------------------------------------------------------------
 
-import type { FileEntry, ExtensionKind } from "@/lib/types";
-import { ChevronRight, FolderClosed, FolderOpen as FolderOpenIcon, ExternalLink } from "lucide-react";
+import {
+  ChevronRight,
+  ExternalLink,
+  FolderClosed,
+  FolderOpen as FolderOpenIcon,
+} from "lucide-react";
+import type { ExtensionKind, FileEntry } from "@/lib/types";
 
 const MAX_FILES_PER_DIR = 3;
 
@@ -494,8 +679,14 @@ function SkillFileSection({
   const [fileTree, setFileTree] = useState<FileEntry[] | null>(null);
 
   useEffect(() => {
-    if (!dirPath) { setFileTree(null); return; }
-    api.listSkillFiles(dirPath).then(setFileTree).catch(() => setFileTree(null));
+    if (!dirPath) {
+      setFileTree(null);
+      return;
+    }
+    api
+      .listSkillFiles(dirPath)
+      .then(setFileTree)
+      .catch(() => setFileTree(null));
   }, [dirPath]);
 
   if (loading) {
@@ -503,7 +694,9 @@ function SkillFileSection({
   }
 
   if (!fileTree || fileTree.length === 0) {
-    return <p className="text-xs text-muted-foreground italic">No files found</p>;
+    return (
+      <p className="text-xs text-muted-foreground italic">No files found</p>
+    );
   }
 
   return (
@@ -519,7 +712,9 @@ function FileTreeNode({ entry, depth }: { entry: FileEntry; depth: number }) {
   const [expanded, setExpanded] = useState(false);
   const children = entry.children ?? [];
   const truncated = children.length > MAX_FILES_PER_DIR;
-  const visibleChildren = truncated ? children.slice(0, MAX_FILES_PER_DIR) : children;
+  const visibleChildren = truncated
+    ? children.slice(0, MAX_FILES_PER_DIR)
+    : children;
 
   if (entry.is_dir) {
     return (
@@ -533,10 +728,11 @@ function FileTreeNode({ entry, depth }: { entry: FileEntry; depth: number }) {
             size={12}
             className={`shrink-0 text-muted-foreground transition-transform duration-150 ${expanded ? "rotate-90" : ""}`}
           />
-          {expanded
-            ? <FolderOpenIcon size={13} className="shrink-0 text-primary/70" />
-            : <FolderClosed size={13} className="shrink-0 text-primary/70" />
-          }
+          {expanded ? (
+            <FolderOpenIcon size={13} className="shrink-0 text-primary/70" />
+          ) : (
+            <FolderClosed size={13} className="shrink-0 text-primary/70" />
+          )}
           <span className="truncate">{entry.name}</span>
         </button>
         {expanded && (
@@ -551,7 +747,9 @@ function FileTreeNode({ entry, depth }: { entry: FileEntry; depth: number }) {
                 style={{ paddingLeft: `${(depth + 1) * 16 + 4}px` }}
               >
                 <ExternalLink size={11} className="shrink-0" />
-                <span>{children.length - MAX_FILES_PER_DIR} more — Open in Finder</span>
+                <span>
+                  {children.length - MAX_FILES_PER_DIR} more — Open in Finder
+                </span>
               </button>
             ) : (
               <button
@@ -612,7 +810,7 @@ function DeleteDialog({
   const sharedAgents: string[] = [];
   for (const inst of group.instances) {
     const data = instanceData.get(inst.id);
-    if (data?.path && data.path.includes("/.agents/skills")) {
+    if (data?.path?.includes("/.agents/skills")) {
       sharedAgents.push(...inst.agents);
     } else {
       ownInstances.push(inst);
@@ -668,12 +866,16 @@ function DeleteDialog({
   }, []);
 
   // Reset selection when dialog opens
-  useEffect(() => { setDeleteAgents(new Set()); }, []);
+  useEffect(() => {
+    setDeleteAgents(new Set());
+  }, [setDeleteAgents]);
 
   return (
     <div
       className="absolute inset-0 z-50 flex items-center justify-center rounded-xl overflow-hidden"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       {/* Backdrop — contained within the detail panel */}
       <div className="absolute inset-0 bg-background/80 backdrop-blur-[2px]" />
@@ -692,8 +894,12 @@ function DeleteDialog({
             <Trash2 size={16} />
           </span>
           <div>
-            <h3 className="text-sm font-semibold text-foreground">Delete "{group.name}"</h3>
-            <p className="text-xs text-muted-foreground">This action cannot be undone.</p>
+            <h3 className="text-sm font-semibold text-foreground">
+              Delete "{group.name}"
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              This action cannot be undone.
+            </p>
           </div>
         </div>
 
@@ -702,7 +908,9 @@ function DeleteDialog({
           {hasOwn && (
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground">
-                {ownInstances.length === 1 ? "This will permanently delete the skill file:" : "Select agents to permanently delete from:"}
+                {ownInstances.length === 1
+                  ? "This will permanently delete the skill file:"
+                  : "Select agents to permanently delete from:"}
               </p>
               <div className="space-y-1.5 rounded-lg border border-border bg-muted/30 p-2.5">
                 {ownInstances.map((inst) => {
@@ -711,7 +919,10 @@ function DeleteDialog({
                   const sym = data?.symlink_target;
                   const isSingle = ownInstances.length === 1;
                   return (
-                    <label key={inst.id} className="flex items-start gap-2 text-xs cursor-pointer">
+                    <label
+                      key={inst.id}
+                      className="flex items-start gap-2 text-xs cursor-pointer"
+                    >
                       {!isSingle && (
                         <input
                           type="checkbox"
@@ -726,8 +937,14 @@ function DeleteDialog({
                         />
                       )}
                       <div className="min-w-0">
-                        <span className="font-medium text-foreground">{agentDisplayName(agent)}</span>
-                        {data?.path && <p className="text-muted-foreground truncate">{data.path}</p>}
+                        <span className="font-medium text-foreground">
+                          {agentDisplayName(agent)}
+                        </span>
+                        {data?.path && (
+                          <p className="text-muted-foreground truncate">
+                            {data.path}
+                          </p>
+                        )}
                         {sym && (
                           <p className="flex items-center gap-1 text-chart-5">
                             <Link size={10} className="shrink-0" />
@@ -745,7 +962,11 @@ function DeleteDialog({
                   onClick={() => onDelete(ownInstances[0].agents)}
                   className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-destructive px-3 py-2 text-xs font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
                 >
-                  {deleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                  {deleting ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <Trash2 size={12} />
+                  )}
                   Delete from {agentDisplayName(ownInstances[0].agents[0])}
                 </button>
               ) : (
@@ -754,7 +975,11 @@ function DeleteDialog({
                   onClick={() => onDelete(Array.from(deleteAgents))}
                   className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-destructive px-3 py-2 text-xs font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
                 >
-                  {deleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                  {deleting ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <Trash2 size={12} />
+                  )}
                   Delete selected ({deleteAgents.size})
                 </button>
               )}
@@ -770,8 +995,10 @@ function DeleteDialog({
               <div className="flex items-start gap-1.5 rounded-lg border border-chart-5/30 bg-chart-5/5 p-2.5 text-xs text-chart-5">
                 <AlertTriangle size={12} className="mt-0.5 shrink-0" />
                 <span>
-                  This skill is in the shared directory <span className="font-mono">~/.agents/skills/</span>.
-                  Deleting it will remove access for {sharedAgents.map(agentDisplayName).join(", ")}.
+                  This skill is in the shared directory{" "}
+                  <span className="font-mono">~/.agents/skills/</span>. Deleting
+                  it will remove access for{" "}
+                  {sharedAgents.map(agentDisplayName).join(", ")}.
                 </span>
               </div>
               <button
@@ -779,7 +1006,11 @@ function DeleteDialog({
                 onClick={() => onDelete(sharedAgents)}
                 className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-destructive px-3 py-2 text-xs font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
               >
-                {deleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                {deleting ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <Trash2 size={12} />
+                )}
                 Delete from shared directory
               </button>
             </div>

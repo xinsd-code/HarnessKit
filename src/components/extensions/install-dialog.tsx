@@ -1,13 +1,14 @@
-import { useState, useEffect, useRef } from "react";
-import { api } from "@/lib/invoke";
-import { sortAgents, agentDisplayName } from "@/lib/types";
-import type { DiscoveredSkill } from "@/lib/types";
-import { humanizeError } from "@/lib/errors";
-import { useExtensionStore } from "@/stores/extension-store";
-import { useAgentStore } from "@/stores/agent-store";
-import { toast } from "@/stores/toast-store";
 import { ChevronLeft, FolderSearch } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatedEllipsis } from "@/components/shared/animated-ellipsis";
+import { openDirectoryPicker } from "@/lib/dialog";
+import { humanizeError } from "@/lib/errors";
+import { api } from "@/lib/invoke";
+import type { DiscoveredSkill } from "@/lib/types";
+import { agentDisplayName, sortAgents } from "@/lib/types";
+import { useAgentStore } from "@/stores/agent-store";
+import { useExtensionStore } from "@/stores/extension-store";
+import { toast } from "@/stores/toast-store";
 
 export type InstallMode = "git" | "local";
 
@@ -25,7 +26,9 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("input");
-  const [discoveredSkills, setDiscoveredSkills] = useState<DiscoveredSkill[]>([]);
+  const [discoveredSkills, setDiscoveredSkills] = useState<DiscoveredSkill[]>(
+    [],
+  );
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set());
   const [cloneId, setCloneId] = useState<string | null>(null);
   const fetch = useExtensionStore((s) => s.fetch);
@@ -34,9 +37,14 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const scanBtnRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => { fetchAgents(); }, [fetchAgents]);
+  useEffect(() => {
+    fetchAgents();
+  }, [fetchAgents]);
 
-  const detectedAgents = sortAgents(agents.filter((a) => a.detected), agentOrder);
+  const detectedAgents = sortAgents(
+    agents.filter((a) => a.detected),
+    agentOrder,
+  );
 
   // If only one agent detected, auto-select it
   useEffect(() => {
@@ -50,7 +58,9 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
     if (open) {
       triggerRef.current = document.activeElement as HTMLElement;
       requestAnimationFrame(() => {
-        dialogRef.current?.querySelector<HTMLElement>("input:not([disabled])")?.focus();
+        dialogRef.current
+          ?.querySelector<HTMLElement>("input:not([disabled])")
+          ?.focus();
       });
     } else if (triggerRef.current) {
       triggerRef.current.focus();
@@ -85,7 +95,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
     const handleTab = (e: KeyboardEvent) => {
       if (e.key !== "Tab") return;
       const focusable = dialog.querySelectorAll<HTMLElement>(
-        "input:not([disabled]), select:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex=\"-1\"])"
+        'input:not([disabled]), select:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])',
       );
       if (focusable.length === 0) return;
       const first = focusable[0];
@@ -105,12 +115,15 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   const toggleAgent = (name: string) => {
     setSelectedAgents((prev) => {
       const next = new Set(prev);
-      if (next.has(name)) next.delete(name); else next.add(name);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
       return next;
     });
   };
 
-  const allAgentsSelected = detectedAgents.length > 0 && detectedAgents.every((a) => selectedAgents.has(a.name));
+  const allAgentsSelected =
+    detectedAgents.length > 0 &&
+    detectedAgents.every((a) => selectedAgents.has(a.name));
   const toggleAllAgents = () => {
     if (allAgentsSelected) {
       setSelectedAgents(new Set());
@@ -122,12 +135,15 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   const toggleSkill = (skillId: string) => {
     setSelectedSkills((prev) => {
       const next = new Set(prev);
-      if (next.has(skillId)) next.delete(skillId); else next.add(skillId);
+      if (next.has(skillId)) next.delete(skillId);
+      else next.add(skillId);
       return next;
     });
   };
 
-  const allSkillsSelected = discoveredSkills.length > 0 && discoveredSkills.every((s) => selectedSkills.has(s.skill_id));
+  const allSkillsSelected =
+    discoveredSkills.length > 0 &&
+    discoveredSkills.every((s) => selectedSkills.has(s.skill_id));
   const toggleAllSkills = () => {
     if (allSkillsSelected) {
       setSelectedSkills(new Set());
@@ -137,11 +153,8 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   };
 
   const handleBrowse = async () => {
-    try {
-      const { open: openDialog } = await import("@tauri-apps/plugin-dialog");
-      const selected = await openDialog({ directory: true, title: "Select a skill directory containing SKILL.md" });
-      if (typeof selected === "string") setSource(selected);
-    } catch {}
+    const selected = await openDirectoryPicker({ title: "Select a skill directory containing SKILL.md" });
+    if (selected) setSource(selected);
   };
 
   const handleInstallAction = async () => {
@@ -150,12 +163,16 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
     setError(null);
     try {
       if (mode === "local") {
-        const result = await api.installFromLocal(source.trim(), [...selectedAgents]);
+        const result = await api.installFromLocal(source.trim(), [
+          ...selectedAgents,
+        ]);
         await fetch();
         onClose();
         toast.success(`${result.name} installed`);
       } else {
-        const result = await api.scanGitRepo(source.trim(), [...selectedAgents]);
+        const result = await api.scanGitRepo(source.trim(), [
+          ...selectedAgents,
+        ]);
         if (result.type === "Installed") {
           await fetch();
           onClose();
@@ -181,13 +198,19 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
     setLoading(true);
     setError(null);
     try {
-      const results = await api.installScannedSkills(cloneId, [...selectedSkills], [...selectedAgents]);
+      const results = await api.installScannedSkills(
+        cloneId,
+        [...selectedSkills],
+        [...selectedAgents],
+      );
       await fetch();
       onClose();
       const names = results.map((r) => r.name);
-      toast.success(names.length === 1
-        ? `${names[0]} installed`
-        : `${names.length} skills installed`);
+      toast.success(
+        names.length === 1
+          ? `${names[0]} installed`
+          : `${names.length} skills installed`,
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -203,33 +226,57 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   const placeholder = isGit
     ? "https://github.com/user/skill-repo"
     : "Paste a local directory path...";
-  const buttonLabel = isGit
-    ? (loading ? <>Scanning<AnimatedEllipsis /></> : "Install")
-    : (loading ? <>Installing<AnimatedEllipsis /></> : "Install");
+  const buttonLabel = isGit ? (
+    loading ? (
+      <>
+        Scanning
+        <AnimatedEllipsis />
+      </>
+    ) : (
+      "Install"
+    )
+  ) : loading ? (
+    <>
+      Installing
+      <AnimatedEllipsis />
+    </>
+  ) : (
+    "Install"
+  );
 
   return (
     <div
       className="grid transition-[grid-template-rows] duration-[250ms]"
-      style={{ gridTemplateRows: open ? '1fr' : '0fr' }}
+      style={{ gridTemplateRows: open ? "1fr" : "0fr" }}
     >
       <div className="overflow-hidden">
-        <div ref={dialogRef} role="dialog" aria-modal="true" className="rounded-xl border border-border bg-card p-4 shadow-sm">
+        <div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          className="rounded-xl border border-border bg-card p-4 shadow-sm"
+        >
           {phase === "input" ? (
             <>
               <h3 className="text-sm font-semibold">{title}</h3>
-              <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {description}
+              </p>
               <div className="mt-3 flex items-center gap-1.5">
                 <input
                   type="text"
                   value={source}
                   onChange={(e) => setSource(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && !loading && scanBtnRef.current?.click()}
+                  onKeyDown={(e) =>
+                    e.key === "Enter" && !loading && scanBtnRef.current?.click()
+                  }
                   placeholder={placeholder}
-                  aria-label={isGit ? "Git repository URL" : "Local directory path"}
+                  aria-label={
+                    isGit ? "Git repository URL" : "Local directory path"
+                  }
                   aria-required="true"
                   aria-describedby={error ? "install-error" : undefined}
                   className="flex-1 rounded-lg border border-border bg-muted px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/50"
-                  autoFocus={open}
                   disabled={loading}
                 />
                 {!isGit && (
@@ -245,7 +292,9 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
               </div>
               {detectedAgents.length > 1 && (
                 <div className="mt-3">
-                  <span className="text-xs text-muted-foreground">Install to</span>
+                  <span className="text-xs text-muted-foreground">
+                    Install to
+                  </span>
                   <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5">
                     <label className="flex items-center gap-1.5 text-xs font-medium text-foreground">
                       <input
@@ -259,7 +308,10 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
                     </label>
                     <span className="text-border">|</span>
                     {detectedAgents.map((a) => (
-                      <label key={a.name} className="flex items-center gap-1.5 text-xs text-foreground">
+                      <label
+                        key={a.name}
+                        className="flex items-center gap-1.5 text-xs text-foreground"
+                      >
                         <input
                           type="checkbox"
                           checked={selectedAgents.has(a.name)}
@@ -278,7 +330,10 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
             <>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => { setPhase("input"); setError(null); }}
+                  onClick={() => {
+                    setPhase("input");
+                    setError(null);
+                  }}
                   disabled={loading}
                   className="shrink-0 rounded-lg p-1 text-muted-foreground hover:text-foreground"
                   aria-label="Back"
@@ -286,8 +341,12 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
                   <ChevronLeft size={16} />
                 </button>
                 <div>
-                  <h3 className="text-sm font-semibold">Select Skills to Install</h3>
-                  <p className="text-xs text-muted-foreground">{discoveredSkills.length} skills found in repository</p>
+                  <h3 className="text-sm font-semibold">
+                    Select Skills to Install
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {discoveredSkills.length} skills found in repository
+                  </p>
                 </div>
               </div>
               <div className="mt-3">
@@ -315,7 +374,9 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
                         disabled={loading}
                         className="rounded border-border accent-primary"
                       />
-                      <span className="font-medium text-foreground">{skill.name}</span>
+                      <span className="font-medium text-foreground">
+                        {skill.name}
+                      </span>
                     </label>
                   ))}
                 </div>
@@ -324,7 +385,10 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
           )}
 
           {error && (
-            <div id="install-error" className="mt-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            <div
+              id="install-error"
+              className="mt-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+            >
               {humanizeError(error)}
             </div>
           )}
@@ -333,7 +397,9 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
               <button
                 ref={scanBtnRef}
                 onClick={handleInstallAction}
-                disabled={loading || !source.trim() || selectedAgents.size === 0}
+                disabled={
+                  loading || !source.trim() || selectedAgents.size === 0
+                }
                 className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
                 {buttonLabel}
@@ -344,7 +410,14 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
                 disabled={loading || selectedSkills.size === 0}
                 className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
-                {loading ? <>Installing<AnimatedEllipsis /></> : `Install${selectedSkills.size > 0 ? ` (${selectedSkills.size})` : ""}`}
+                {loading ? (
+                  <>
+                    Installing
+                    <AnimatedEllipsis />
+                  </>
+                ) : (
+                  `Install${selectedSkills.size > 0 ? ` (${selectedSkills.size})` : ""}`
+                )}
               </button>
             )}
             <button

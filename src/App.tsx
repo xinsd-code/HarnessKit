@@ -1,19 +1,19 @@
-import { useEffect, useRef, useState } from "react";
-import { HashRouter, Routes, Route } from "react-router-dom";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useEffect, useRef, useState } from "react";
+import { HashRouter, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/layout/app-shell";
-import { useUIStore, resolveMode } from "./stores/ui-store";
-import { useExtensionStore } from "./stores/extension-store";
-import { useAuditStore } from "./stores/audit-store";
-import { api } from "./lib/invoke";
-import OverviewPage from "./pages/overview";
-import AgentsPage from "./pages/agents";
-import ExtensionsPage from "./pages/extensions";
-import AuditPage from "./pages/audit";
-import SettingsPage from "./pages/settings";
-import MarketplacePage from "./pages/marketplace";
-import { Onboarding, useOnboarding } from "./components/onboarding/onboarding";
 import { Confetti } from "./components/onboarding/confetti";
+import { Onboarding, useOnboarding } from "./components/onboarding/onboarding";
+import { api } from "./lib/invoke";
+import AgentsPage from "./pages/agents";
+import AuditPage from "./pages/audit";
+import ExtensionsPage from "./pages/extensions";
+import MarketplacePage from "./pages/marketplace";
+import OverviewPage from "./pages/overview";
+import SettingsPage from "./pages/settings";
+import { useAuditStore } from "./stores/audit-store";
+import { useExtensionStore } from "./stores/extension-store";
+import { resolveMode, useUIStore } from "./stores/ui-store";
 
 /** Minimum interval (ms) between consecutive scan_and_sync calls */
 const SCAN_DEBOUNCE_MS = 5_000;
@@ -23,13 +23,16 @@ export default function App() {
   const mode = useUIStore((s) => s.mode);
   const fetchExtensions = useExtensionStore((s) => s.fetch);
   const loadCachedAudit = useAuditStore((s) => s.loadCached);
-  const { show: showOnboarding, complete: completeOnboarding } = useOnboarding();
+  const { show: showOnboarding, complete: completeOnboarding } =
+    useOnboarding();
   const [showConfetti, setShowConfetti] = useState(false);
   const lastScanRef = useRef(0);
   const appIcon = useUIStore((s) => s.appIcon);
 
   // Track resolved dark/light (reacts to OS changes when mode === "system")
-  const [resolved, setResolved] = useState<"dark" | "light">(() => resolveMode(mode));
+  const [resolved, setResolved] = useState<"dark" | "light">(() =>
+    resolveMode(mode),
+  );
 
   useEffect(() => {
     setResolved(resolveMode(mode));
@@ -48,7 +51,8 @@ export default function App() {
       const now = Date.now();
       if (now - lastScanRef.current < SCAN_DEBOUNCE_MS) return;
       lastScanRef.current = now;
-      api.scanAndSync()
+      api
+        .scanAndSync()
         .catch((e) => console.error("Failed to scan and sync:", e))
         .then(() => {
           fetchExtensions();
@@ -60,10 +64,14 @@ export default function App() {
     runScan();
 
     // Re-scan when the window regains focus (catches external installs)
-    const unlisten = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
-      if (focused) runScan();
-    });
-    return () => { unlisten.then((fn) => fn()); };
+    const unlisten = getCurrentWindow().onFocusChanged(
+      ({ payload: focused }) => {
+        if (focused) runScan();
+      },
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, [fetchExtensions, loadCachedAudit]);
 
   // Apply theme + dark class to <html>, and sync window appearance for vibrancy
@@ -76,16 +84,28 @@ export default function App() {
       root.classList.remove("dark");
     }
     // Force macOS vibrancy to match — "light" | "dark" | null (system)
-    getCurrentWindow().setTheme(mode === "system" ? null : resolved).catch((e) => console.error("Failed to set window theme:", e));
+    getCurrentWindow()
+      .setTheme(mode === "system" ? null : resolved)
+      .catch((e) => console.error("Failed to set window theme:", e));
   }, [themeName, mode, resolved]);
 
   // Restore app icon from saved preference
   useEffect(() => {
-    api.setAppIcon(appIcon).catch((e) => console.error("Failed to set app icon:", e));
+    api
+      .setAppIcon(appIcon)
+      .catch((e) => console.error("Failed to set app icon:", e));
   }, [appIcon]);
 
   if (showOnboarding) {
-    return <Onboarding onComplete={() => { completeOnboarding(); setShowConfetti(true); setTimeout(() => setShowConfetti(false), 3000); }} />;
+    return (
+      <Onboarding
+        onComplete={() => {
+          completeOnboarding();
+          setShowConfetti(true);
+          setTimeout(() => setShowConfetti(false), 3000);
+        }}
+      />
+    );
   }
 
   return (

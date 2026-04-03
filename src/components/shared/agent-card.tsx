@@ -1,6 +1,6 @@
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
+import { type AgentInfo, agentDisplayName } from "@/lib/types";
 import { AgentMascot } from "./agent-mascot/agent-mascot";
-import { agentDisplayName, type AgentInfo } from "@/lib/types";
 
 interface AgentCardProps {
   agent: AgentInfo;
@@ -12,7 +12,8 @@ export function AgentCard({ agent }: AgentCardProps) {
 
   const handleClick = useCallback(() => {
     setIsClicked(true);
-    const duration = agent.name === "claude" ? 4200 : agent.name === "antigravity" ? 800 : 600;
+    const duration =
+      agent.name === "claude" ? 4200 : agent.name === "antigravity" ? 800 : 600;
     setTimeout(() => setIsClicked(false), duration);
   }, [agent.name]);
 

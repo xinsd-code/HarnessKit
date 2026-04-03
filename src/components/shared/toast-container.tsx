@@ -1,6 +1,6 @@
-import { useToastStore } from "@/stores/toast-store";
 import { clsx } from "clsx";
-import { Check, X, Info } from "lucide-react";
+import { Check, Info, X } from "lucide-react";
+import { useToastStore } from "@/stores/toast-store";
 
 const icons = {
   success: Check,
@@ -23,9 +23,12 @@ export function ToastContainer() {
             key={t.id}
             className={clsx(
               "pointer-events-auto flex items-center gap-2 rounded-lg border px-3 py-2 text-sm shadow-lg animate-toast-in select-none",
-              t.type === "success" && "border-toast-success-border bg-toast-success-bg text-toast-success-text",
-              t.type === "error" && "border-toast-error-border bg-toast-error-bg text-toast-error-text",
-              t.type === "info" && "border-toast-info-border bg-toast-info-bg text-toast-info-text",
+              t.type === "success" &&
+                "border-toast-success-border bg-toast-success-bg text-toast-success-text",
+              t.type === "error" &&
+                "border-toast-error-border bg-toast-error-bg text-toast-error-text",
+              t.type === "info" &&
+                "border-toast-info-border bg-toast-info-bg text-toast-info-text",
             )}
           >
             <Icon size={14} strokeWidth={2.5} className="shrink-0" />

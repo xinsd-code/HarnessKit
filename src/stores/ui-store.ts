@@ -11,11 +11,13 @@ export type AppIcon = "icon-1" | "icon-2";
 function getValidItem<T extends string>(
   key: string,
   allowed: readonly T[],
-  fallback: T
+  fallback: T,
 ): T {
   if (typeof localStorage === "undefined") return fallback;
   const val = localStorage.getItem(key);
-  return val && (allowed as readonly string[]).includes(val) ? (val as T) : fallback;
+  return val && (allowed as readonly string[]).includes(val)
+    ? (val as T)
+    : fallback;
 }
 
 interface UIState {
@@ -34,13 +36,19 @@ const ALLOWED_THEME_NAMES: readonly ThemeName[] = ["tiesen", "claude"];
 const ALLOWED_APP_ICONS: readonly AppIcon[] = ["icon-1", "icon-2"];
 
 const storedMode = getValidItem("hk-theme", ALLOWED_MODES, "system");
-const storedThemeName = getValidItem("hk-theme-name", ALLOWED_THEME_NAMES, "tiesen");
+const storedThemeName = getValidItem(
+  "hk-theme-name",
+  ALLOWED_THEME_NAMES,
+  "tiesen",
+);
 const storedAppIcon = getValidItem("hk-app-icon", ALLOWED_APP_ICONS, "icon-1");
 
 /** Resolve "system" to actual light/dark based on OS preference */
 export function resolveMode(mode: Mode): "dark" | "light" {
   if (mode !== "system") return mode;
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -48,7 +56,9 @@ export const useUIStore = create<UIState>((set) => ({
   themeName: storedThemeName,
   mode: storedMode,
   appIcon: storedAppIcon,
-  toggleSidebar() { set((s) => ({ sidebarOpen: !s.sidebarOpen })); },
+  toggleSidebar() {
+    set((s) => ({ sidebarOpen: !s.sidebarOpen }));
+  },
   setThemeName(themeName) {
     localStorage.setItem("hk-theme-name", themeName);
     set({ themeName });

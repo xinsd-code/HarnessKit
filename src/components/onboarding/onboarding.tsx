@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { ArrowRight, Shield, ShoppingBag } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
-import { Shield, ShoppingBag, ArrowRight } from "lucide-react";
 
 const ONBOARDING_KEY = "hk-onboarding-completed";
 
@@ -57,7 +57,8 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Tab" || !containerRef.current) return;
 
-      const focusableSelectors = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+      const focusableSelectors =
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
       const focusableElements = Array.from(
         containerRef.current.querySelectorAll<HTMLElement>(focusableSelectors),
       ).filter((el) => !el.hasAttribute("disabled"));
@@ -68,7 +69,10 @@ export function Onboarding({ onComplete }: OnboardingProps) {
       const last = focusableElements[focusableElements.length - 1];
 
       if (e.shiftKey) {
-        if (document.activeElement === first || document.activeElement === containerRef.current) {
+        if (
+          document.activeElement === first ||
+          document.activeElement === containerRef.current
+        ) {
           e.preventDefault();
           last.focus();
         }
@@ -82,7 +86,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [visible, step]);
+  }, [visible]);
 
   const floatDelays = [0, 0.4, 0.9, 1.3, 0.6, 1.1];
 
@@ -114,7 +118,10 @@ export function Onboarding({ onComplete }: OnboardingProps) {
         className="relative mx-4 w-full max-w-lg rounded-2xl border border-border bg-card p-8 shadow-xl transition-all duration-300"
         style={{
           opacity: visible && !exiting ? 1 : 0,
-          transform: visible && !exiting ? "translateY(0) scale(1)" : "translateY(12px) scale(0.98)",
+          transform:
+            visible && !exiting
+              ? "translateY(0) scale(1)"
+              : "translateY(12px) scale(0.98)",
         }}
       >
         {/* Progress dots */}
@@ -134,14 +141,18 @@ export function Onboarding({ onComplete }: OnboardingProps) {
         </div>
 
         {/* Content — keyed by step to trigger transition */}
-        <div
-          key={step}
-          className="animate-fade-in text-center"
-        >
+        <div key={step} className="animate-fade-in text-center">
           {/* Step 0: mascot hero */}
           {step === 0 && (
             <div className="mb-6 flex justify-center gap-3">
-              {["claude", "codex", "gemini", "cursor", "antigravity", "copilot"].map((name, i) => (
+              {[
+                "claude",
+                "codex",
+                "gemini",
+                "cursor",
+                "antigravity",
+                "copilot",
+              ].map((name, i) => (
                 <div
                   key={name}
                   className="animate-fade-in"
@@ -169,9 +180,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
           <h2 className="text-xl font-semibold tracking-tight">
             {current.title}
           </h2>
-          <p className="mt-1 text-sm text-primary/80">
-            {current.subtitle}
-          </p>
+          <p className="mt-1 text-sm text-primary/80">{current.subtitle}</p>
           <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
             {current.body}
           </p>

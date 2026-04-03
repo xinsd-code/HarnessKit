@@ -1,5 +1,5 @@
+import { Lightbulb, X } from "lucide-react";
 import { useState } from "react";
-import { X, Lightbulb } from "lucide-react";
 
 interface HintProps {
   id: string;

@@ -1,28 +1,27 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useExtensionStore } from "@/stores/extension-store";
-import { api } from "@/lib/invoke";
-import { useAuditStore } from "@/stores/audit-store";
-import { useAgentStore } from "@/stores/agent-store";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
-  Package,
-  Server,
-  Puzzle,
-  Webhook,
-  Terminal,
-  Shield,
-  ShoppingBag,
   Bot,
-  RefreshCw,
-  Sparkles,
   FilePenLine,
   Lightbulb,
+  Package,
+  Puzzle,
+  RefreshCw,
+  Server,
+  Shield,
+  ShoppingBag,
+  Sparkles,
+  Terminal,
+  Webhook,
 } from "lucide-react";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import type { DashboardStats, Extension, AgentDetail } from "@/lib/types";
-import { agentDisplayName, formatRelativeTime, sortAgents } from "@/lib/types";
-import { buildGroups } from "@/stores/extension-store";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AgentCard } from "@/components/shared/agent-card";
+import { api } from "@/lib/invoke";
+import type { AgentDetail, DashboardStats, Extension } from "@/lib/types";
+import { agentDisplayName, formatRelativeTime, sortAgents } from "@/lib/types";
+import { useAgentStore } from "@/stores/agent-store";
+import { useAuditStore } from "@/stores/audit-store";
+import { buildGroups, useExtensionStore } from "@/stores/extension-store";
 
 // ---------------------------------------------------------------------------
 // Tip of the Day types & helpers
@@ -83,7 +82,12 @@ function StatChip({
 }) {
   return (
     <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-      <Icon size={14} strokeWidth={1.75} className="text-muted-foreground/60" aria-hidden="true" />
+      <Icon
+        size={14}
+        strokeWidth={1.75}
+        className="text-muted-foreground/60"
+        aria-hidden="true"
+      />
       <span className="tabular-nums font-medium text-foreground">{count}</span>
       <span>{label}</span>
     </span>
@@ -110,11 +114,25 @@ function QuickAction({
       className="group flex items-center gap-3 rounded-lg border border-border/60 bg-card/50 px-4 py-3 text-left transition-all duration-200 hover:border-border hover:bg-card hover:shadow-sm disabled:opacity-70 disabled:pointer-events-none"
     >
       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors duration-200 group-hover:bg-primary/10 group-hover:text-primary">
-        <Icon size={17} strokeWidth={1.75} className={loading ? (Icon === RefreshCw ? "animate-spin" : "animate-scanning") : ""} />
+        <Icon
+          size={17}
+          strokeWidth={1.75}
+          className={
+            loading
+              ? Icon === RefreshCw
+                ? "animate-spin"
+                : "animate-scanning"
+              : ""
+          }
+        />
       </span>
       <div className="min-w-0">
-        <span className="block text-sm font-medium text-foreground">{label}</span>
-        <span className="block text-xs text-muted-foreground">{loading ? "Running..." : sublabel}</span>
+        <span className="block text-sm font-medium text-foreground">
+          {label}
+        </span>
+        <span className="block text-xs text-muted-foreground">
+          {loading ? "Running..." : sublabel}
+        </span>
       </div>
     </button>
   );
@@ -159,14 +177,14 @@ export default function OverviewPage() {
   const navigate = useNavigate();
   const [extensions, setExtensions] = useState<Extension[]>([]);
   const [extLoading, setExtLoading] = useState(true);
-  const checkUpdates = useExtensionStore(s => s.checkUpdates);
-  const checkingUpdates = useExtensionStore(s => s.checkingUpdates);
-  const auditResults = useAuditStore(s => s.results);
-  const loadCached = useAuditStore(s => s.loadCached);
-  const runAudit = useAuditStore(s => s.runAudit);
-  const agents = useAgentStore(s => s.agents);
-  const fetchAgents = useAgentStore(s => s.fetch);
-  const agentOrder = useAgentStore(s => s.agentOrder);
+  const checkUpdates = useExtensionStore((s) => s.checkUpdates);
+  const checkingUpdates = useExtensionStore((s) => s.checkingUpdates);
+  const auditResults = useAuditStore((s) => s.results);
+  const loadCached = useAuditStore((s) => s.loadCached);
+  const runAudit = useAuditStore((s) => s.runAudit);
+  const agents = useAgentStore((s) => s.agents);
+  const fetchAgents = useAgentStore((s) => s.fetch);
+  const agentOrder = useAgentStore((s) => s.agentOrder);
 
   const [agentConfigs, setAgentConfigs] = useState<AgentDetail[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -175,13 +193,17 @@ export default function OverviewPage() {
 
   useEffect(() => {
     // Fetch ALL extensions (unfiltered) for overview stats
-    api.listExtensions()
+    api
+      .listExtensions()
       .then(setExtensions)
       .catch(() => {})
       .finally(() => setExtLoading(false));
     loadCached();
     fetchAgents();
-    api.listAgentConfigs().then(setAgentConfigs).catch(() => {});
+    api
+      .listAgentConfigs()
+      .then(setAgentConfigs)
+      .catch(() => {});
     fetchTips().then(setTips);
   }, [loadCached, fetchAgents]);
 
@@ -191,9 +213,12 @@ export default function OverviewPage() {
     [agents],
   );
   const visibleExtensions = useMemo(
-    () => extensions.filter((e) =>
-      e.agents.length === 0 || e.agents.some((a) => enabledAgentNames.has(a))
-    ),
+    () =>
+      extensions.filter(
+        (e) =>
+          e.agents.length === 0 ||
+          e.agents.some((a) => enabledAgentNames.has(a)),
+      ),
     [extensions, enabledAgentNames],
   );
 
@@ -209,7 +234,9 @@ export default function OverviewPage() {
 
     const skill_count = visibleGroups.filter((g) => g.kind === "skill").length;
     const mcp_count = visibleGroups.filter((g) => g.kind === "mcp").length;
-    const plugin_count = visibleGroups.filter((g) => g.kind === "plugin").length;
+    const plugin_count = visibleGroups.filter(
+      (g) => g.kind === "plugin",
+    ).length;
     const hook_count = visibleGroups.filter((g) => g.kind === "hook").length;
     const cli_count = visibleGroups.filter((g) => g.kind === "cli").length;
 
@@ -221,10 +248,18 @@ export default function OverviewPage() {
     for (const r of auditResults) {
       for (const f of r.findings) {
         switch (f.severity) {
-          case "Critical": critical_issues++; break;
-          case "High": high_issues++; break;
-          case "Medium": medium_issues++; break;
-          case "Low": low_issues++; break;
+          case "Critical":
+            critical_issues++;
+            break;
+          case "High":
+            high_issues++;
+            break;
+          case "Medium":
+            medium_issues++;
+            break;
+          case "Low":
+            low_issues++;
+            break;
         }
       }
     }
@@ -256,12 +291,16 @@ export default function OverviewPage() {
   }, [visibleGroups]);
 
   const enabledAgents = useMemo(
-    () => sortAgents(
-      agents
-        .filter((a) => a.enabled)
-        .map((a) => ({ ...a, extension_count: agentExtCounts.get(a.name) ?? 0 })),
-      agentOrder,
-    ),
+    () =>
+      sortAgents(
+        agents
+          .filter((a) => a.enabled)
+          .map((a) => ({
+            ...a,
+            extension_count: agentExtCounts.get(a.name) ?? 0,
+          })),
+        agentOrder,
+      ),
     [agents, agentExtCounts, agentOrder],
   );
 
@@ -322,8 +361,8 @@ export default function OverviewPage() {
     return items.slice(0, 3);
   }, [visibleExtensions]);
 
-  const hasActivity = agentActivityItems.length > 0 || extensionActivityItems.length > 0;
-
+  const hasActivity =
+    agentActivityItems.length > 0 || extensionActivityItems.length > 0;
 
   // -----------------------------------------------------------------------
   // Section C: Tip of the Day
@@ -363,7 +402,9 @@ export default function OverviewPage() {
               aria-label={`${enabledAgents.length} agents / ${stats.total_extensions} extensions`}
             >
               <span className="terminal-status__command">
-                <span className="terminal-status__prompt" aria-hidden="true">&gt;</span>
+                <span className="terminal-status__prompt" aria-hidden="true">
+                  &gt;
+                </span>
                 <span className="terminal-status__command-text">hk status</span>
               </span>
               <span className="terminal-status__output">
@@ -375,7 +416,9 @@ export default function OverviewPage() {
                     agent{enabledAgents.length !== 1 ? "s" : ""}
                   </span>
                 </span>
-                <span className="terminal-status__separator" aria-hidden="true">/</span>
+                <span className="terminal-status__separator" aria-hidden="true">
+                  /
+                </span>
                 <span className="terminal-status__metric">
                   <span className="terminal-status__count tabular-nums">
                     {formatTerminalCount(stats.total_extensions)}
@@ -395,13 +438,25 @@ export default function OverviewPage() {
         {stats.total_extensions > 0 ? (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             {stats.skill_count > 0 && (
-              <StatChip label="skills" count={stats.skill_count} icon={Package} />
+              <StatChip
+                label="skills"
+                count={stats.skill_count}
+                icon={Package}
+              />
             )}
             {stats.mcp_count > 0 && (
-              <StatChip label="MCP servers" count={stats.mcp_count} icon={Server} />
+              <StatChip
+                label="MCP servers"
+                count={stats.mcp_count}
+                icon={Server}
+              />
             )}
             {stats.plugin_count > 0 && (
-              <StatChip label="plugins" count={stats.plugin_count} icon={Puzzle} />
+              <StatChip
+                label="plugins"
+                count={stats.plugin_count}
+                icon={Puzzle}
+              />
             )}
             {stats.hook_count > 0 && (
               <StatChip label="hooks" count={stats.hook_count} icon={Webhook} />
@@ -419,10 +474,7 @@ export default function OverviewPage() {
         {enabledAgents.length > 0 && (
           <div className="flex flex-wrap gap-3 pt-3">
             {enabledAgents.map((agent) => (
-              <AgentCard
-                key={agent.name}
-                agent={agent}
-              />
+              <AgentCard key={agent.name} agent={agent} />
             ))}
           </div>
         )}
@@ -448,11 +500,15 @@ export default function OverviewPage() {
                   onClick={() => openUrl(tipOfTheDay.source!)}
                   className="ml-2 inline-block translate-y-[-1px] cursor-pointer rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary transition-colors hover:bg-primary/20 hover:underline"
                 >
-                  {tipOfTheDay.agent === "general" ? "General" : agentDisplayName(tipOfTheDay.agent)}
+                  {tipOfTheDay.agent === "general"
+                    ? "General"
+                    : agentDisplayName(tipOfTheDay.agent)}
                 </button>
               ) : (
                 <span className="ml-2 inline-block translate-y-[-1px] rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                  {tipOfTheDay.agent === "general" ? "General" : agentDisplayName(tipOfTheDay.agent)}
+                  {tipOfTheDay.agent === "general"
+                    ? "General"
+                    : agentDisplayName(tipOfTheDay.agent)}
                 </span>
               )}
             </p>
@@ -479,11 +535,19 @@ export default function OverviewPage() {
                     className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-muted/30"
                   >
                     <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                      <FilePenLine size={13} strokeWidth={1.75} aria-hidden="true" />
+                      <FilePenLine
+                        size={13}
+                        strokeWidth={1.75}
+                        aria-hidden="true"
+                      />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <span className="truncate text-sm font-medium text-foreground block">{item.label}</span>
-                      <span className="truncate text-xs text-muted-foreground block">{item.sublabel}</span>
+                      <span className="truncate text-sm font-medium text-foreground block">
+                        {item.label}
+                      </span>
+                      <span className="truncate text-xs text-muted-foreground block">
+                        {item.sublabel}
+                      </span>
                     </div>
                   </button>
                 ))
@@ -509,11 +573,19 @@ export default function OverviewPage() {
                     className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-muted/30"
                   >
                     <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                      <Sparkles size={13} strokeWidth={1.75} aria-hidden="true" />
+                      <Sparkles
+                        size={13}
+                        strokeWidth={1.75}
+                        aria-hidden="true"
+                      />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <span className="truncate text-sm font-medium text-foreground block">{item.label}</span>
-                      <span className="truncate text-xs text-muted-foreground block">{item.sublabel}</span>
+                      <span className="truncate text-sm font-medium text-foreground block">
+                        {item.label}
+                      </span>
+                      <span className="truncate text-xs text-muted-foreground block">
+                        {item.sublabel}
+                      </span>
                     </div>
                   </button>
                 ))
@@ -536,11 +608,33 @@ export default function OverviewPage() {
             One place for all your extensions
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {([
-              { icon: Bot, label: "View extensions", description: "Browse and manage extensions across your coding agents", to: "/extensions", delay: "0ms" },
-              { icon: ShoppingBag, label: "Browse marketplace", description: "Discover and install skills, MCP servers, and plugins", to: "/marketplace", delay: "60ms" },
-              { icon: Shield, label: "Run audit", description: "Check your extensions for security issues", to: "/audit", delay: "120ms" },
-            ] as const).map((card) => (
+            {(
+              [
+                {
+                  icon: Bot,
+                  label: "View extensions",
+                  description:
+                    "Browse and manage extensions across your coding agents",
+                  to: "/extensions",
+                  delay: "0ms",
+                },
+                {
+                  icon: ShoppingBag,
+                  label: "Browse marketplace",
+                  description:
+                    "Discover and install skills, MCP servers, and plugins",
+                  to: "/marketplace",
+                  delay: "60ms",
+                },
+                {
+                  icon: Shield,
+                  label: "Run audit",
+                  description: "Check your extensions for security issues",
+                  to: "/audit",
+                  delay: "120ms",
+                },
+              ] as const
+            ).map((card) => (
               <button
                 key={card.to}
                 onClick={() => navigate(card.to)}
@@ -551,8 +645,12 @@ export default function OverviewPage() {
                   <card.icon size={20} strokeWidth={1.75} />
                 </span>
                 <div>
-                  <span className="block text-sm font-medium text-foreground">{card.label}</span>
-                  <span className="mt-1 block text-xs text-muted-foreground">{card.description}</span>
+                  <span className="block text-sm font-medium text-foreground">
+                    {card.label}
+                  </span>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    {card.description}
+                  </span>
                 </div>
               </button>
             ))}
@@ -565,12 +663,17 @@ export default function OverviewPage() {
       {/* ----------------------------------------------------------------- */}
       {stats.total_extensions === 0 && (
         <section className="animate-scale-in rounded-xl border border-dashed border-border bg-card/30 px-6 py-10 text-center">
-          <Package size={32} className="mx-auto text-muted-foreground/40" aria-hidden="true" />
+          <Package
+            size={32}
+            className="mx-auto text-muted-foreground/40"
+            aria-hidden="true"
+          />
           <h3 className="mt-3 text-base font-medium text-foreground">
             Your workspace is ready
           </h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Browse the marketplace to discover skills, MCP servers, and plugins for your agents.
+            Browse the marketplace to discover skills, MCP servers, and plugins
+            for your agents.
           </p>
           <div className="mt-5 flex items-center justify-center gap-3">
             <button
@@ -631,7 +734,6 @@ export default function OverviewPage() {
           </div>
         </section>
       )}
-
     </div>
   );
 }

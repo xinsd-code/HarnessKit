@@ -1,7 +1,12 @@
 import { create } from "zustand";
-import type { Extension, ExtensionKind, GroupedExtension, UpdateStatus } from "@/lib/types";
-import { extensionGroupKey, sortAgentNames } from "@/lib/types";
 import { api } from "@/lib/invoke";
+import type {
+  Extension,
+  ExtensionKind,
+  GroupedExtension,
+  UpdateStatus,
+} from "@/lib/types";
+import { extensionGroupKey, sortAgentNames } from "@/lib/types";
 
 interface PendingDelete {
   ids: Set<string>;
@@ -82,7 +87,9 @@ export function buildGroups(extensions: Extension[]): GroupedExtension[] {
       agents: sortAgentNames([...new Set(instances.flatMap((e) => e.agents))]),
       tags: [...new Set(instances.flatMap((e) => e.tags))],
       category: instances.find((e) => e.category)?.category ?? null,
-      permissions: deduplicatePermissions(instances.flatMap((e) => e.permissions)),
+      permissions: deduplicatePermissions(
+        instances.flatMap((e) => e.permissions),
+      ),
       enabled: instances.some((e) => e.enabled),
       trust_score: instances.reduce<number | null>(
         (min, e) =>
@@ -94,7 +101,8 @@ export function buildGroups(extensions: Extension[]): GroupedExtension[] {
         null,
       ),
       installed_at: instances.reduce(
-        (earliest, e) => (e.installed_at < earliest ? e.installed_at : earliest),
+        (earliest, e) =>
+          e.installed_at < earliest ? e.installed_at : earliest,
         first.installed_at,
       ),
       updated_at: instances.reduce(
@@ -112,7 +120,18 @@ function deduplicatePermissions(
 ): Extension["permissions"] {
   const merged = new Map<string, Set<string>>();
   for (const p of perms) {
-    const values = "paths" in p ? p.paths : "domains" in p ? p.domains : "commands" in p ? p.commands : "engines" in p ? p.engines : "keys" in p ? p.keys : [];
+    const values =
+      "paths" in p
+        ? p.paths
+        : "domains" in p
+          ? p.domains
+          : "commands" in p
+            ? p.commands
+            : "engines" in p
+              ? p.engines
+              : "keys" in p
+                ? p.keys
+                : [];
     const existing = merged.get(p.type) ?? new Set<string>();
     for (const v of values) existing.add(v);
     merged.set(p.type, existing);
@@ -121,11 +140,21 @@ function deduplicatePermissions(
   for (const [type, values] of merged) {
     const arr = [...values].sort();
     switch (type) {
-      case "filesystem": result.push({ type, paths: arr }); break;
-      case "network": result.push({ type, domains: arr }); break;
-      case "shell": result.push({ type, commands: arr }); break;
-      case "database": result.push({ type, engines: arr }); break;
-      case "env": result.push({ type, keys: arr }); break;
+      case "filesystem":
+        result.push({ type, paths: arr });
+        break;
+      case "network":
+        result.push({ type, domains: arr });
+        break;
+      case "shell":
+        result.push({ type, commands: arr });
+        break;
+      case "database":
+        result.push({ type, engines: arr });
+        break;
+      case "env":
+        result.push({ type, keys: arr });
+        break;
     }
   }
   return result;
@@ -181,15 +210,20 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       get().fetchTags();
       // Restore persisted update statuses from DB on first load
       if (get().updateStatuses.size === 0) {
-        api.getCachedUpdateStatuses().then((results) => {
-          if (results.length > 0) {
-            const map = new Map<string, UpdateStatus>();
-            for (const [id, status] of results) {
-              map.set(id, status);
+        api
+          .getCachedUpdateStatuses()
+          .then((results) => {
+            if (results.length > 0) {
+              const map = new Map<string, UpdateStatus>();
+              for (const [id, status] of results) {
+                map.set(id, status);
+              }
+              set({ updateStatuses: map });
             }
-            set({ updateStatuses: map });
-          }
-        }).catch((e) => console.error("Failed to load cached update statuses:", e));
+          })
+          .catch((e) =>
+            console.error("Failed to load cached update statuses:", e),
+          );
       }
     } catch (e) {
       console.error("Failed to fetch extensions:", e);
@@ -218,7 +252,11 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     set({ selectedIds: s });
   },
   selectAll() {
-    const keys = new Set(get().filtered().map((g) => g.groupKey));
+    const keys = new Set(
+      get()
+        .filtered()
+        .map((g) => g.groupKey),
+    );
     set({ selectedIds: keys });
   },
   clearSelection() {
@@ -240,7 +278,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   },
 
   async updateTags(groupKey, tags) {
-    const group = get().grouped().find((g) => g.groupKey === groupKey);
+    const group = get()
+      .grouped()
+      .find((g) => g.groupKey === groupKey);
     if (!group) return;
     await Promise.all(group.instances.map((e) => api.updateTags(e.id, tags)));
     const ids = new Set(group.instances.map((e) => e.id));
@@ -251,7 +291,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   },
 
   async updateCategory(groupKey, category) {
-    const group = get().grouped().find((g) => g.groupKey === groupKey);
+    const group = get()
+      .grouped()
+      .find((g) => g.groupKey === groupKey);
     if (!group) return;
     await Promise.all(
       group.instances.map((e) => api.updateCategory(e.id, category)),
@@ -270,7 +312,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   },
 
   async toggle(groupKey, enabled) {
-    const group = get().grouped().find((g) => g.groupKey === groupKey);
+    const group = get()
+      .grouped()
+      .find((g) => g.groupKey === groupKey);
     if (!group) return;
     const ids = new Set(group.instances.map((e) => e.id));
     // Optimistic update
@@ -324,7 +368,11 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     const removed = get().extensions.filter((e) => ids.has(e.id));
     // Optimistically hide from UI; clear detail panel if its group is being deleted
     const currentSelected = get().selectedId;
-    const clearDetail = currentSelected != null && groups.some((g) => keys.has(g.groupKey) && g.groupKey === currentSelected);
+    const clearDetail =
+      currentSelected != null &&
+      groups.some(
+        (g) => keys.has(g.groupKey) && g.groupKey === currentSelected,
+      );
     set((s) => ({
       extensions: s.extensions.filter((e) => !ids.has(e.id)),
       selectedIds: new Set(),
@@ -334,7 +382,10 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     const prev = get().pendingDelete;
     if (prev) {
       clearTimeout(prev.timer);
-      Promise.all([...prev.ids].map((id) => api.deleteExtension(id))).catch((e) => console.error("Failed to delete previous pending extensions:", e));
+      Promise.all([...prev.ids].map((id) => api.deleteExtension(id))).catch(
+        (e) =>
+          console.error("Failed to delete previous pending extensions:", e),
+      );
     }
     const timer = setTimeout(() => {
       get().confirmDelete();
@@ -357,9 +408,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     if (!pending) return;
     clearTimeout(pending.timer);
     set({ pendingDelete: null });
-    await Promise.all(
-      [...pending.ids].map((id) => api.deleteExtension(id)),
-    );
+    await Promise.all([...pending.ids].map((id) => api.deleteExtension(id)));
     get().fetch();
   },
 
@@ -382,7 +431,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     // Remove update status for this extension and all siblings in the same group
     // (backend updates all siblings, so clear them all from the UI)
     const statuses = new Map(get().updateStatuses);
-    const group = get().grouped().find((g) => g.instances.some((i) => i.id === id));
+    const group = get()
+      .grouped()
+      .find((g) => g.instances.some((i) => i.id === id));
     if (group) {
       for (const inst of group.instances) {
         statuses.delete(inst.id);
@@ -399,7 +450,8 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     // Deduplicate: only update one instance per group (same skill across agents)
     const groups = get().grouped();
     const updateStatuses = get().updateStatuses;
-    const toUpdate: { groupName: string; id: string; siblingIds: string[] }[] = [];
+    const toUpdate: { groupName: string; id: string; siblingIds: string[] }[] =
+      [];
     for (const group of groups) {
       const updatableInst = group.instances.find(
         (inst) => updateStatuses.get(inst.id)?.status === "update_available",
@@ -439,7 +491,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   },
 
   async deleteFromAgents(groupKey, agentNames) {
-    const group = get().grouped().find((g) => g.groupKey === groupKey);
+    const group = get()
+      .grouped()
+      .find((g) => g.groupKey === groupKey);
     if (!group) return;
     const toDelete = group.instances.filter((e) =>
       e.agents.some((a) => agentNames.includes(a)),
@@ -449,12 +503,16 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     // Optimistic removal
     set((s) => ({
       extensions: s.extensions.filter((e) => !ids.has(e.id)),
-      selectedId: toDelete.length === group.instances.length ? null : s.selectedId,
+      selectedId:
+        toDelete.length === group.instances.length ? null : s.selectedId,
     }));
     const prev = get().pendingDelete;
     if (prev) {
       clearTimeout(prev.timer);
-      Promise.all([...prev.ids].map((id) => api.deleteExtension(id))).catch((e) => console.error("Failed to delete previous pending extensions:", e));
+      Promise.all([...prev.ids].map((id) => api.deleteExtension(id))).catch(
+        (e) =>
+          console.error("Failed to delete previous pending extensions:", e),
+      );
     }
     const timer = setTimeout(() => {
       get().confirmDelete();

@@ -27,7 +27,13 @@ const kindTitle: Record<ExtensionKind, string> = {
 
 export function KindBadge({ kind }: { kind: ExtensionKind }) {
   return (
-    <span title={kindTitle[kind]} className={clsx("rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset transition-colors duration-150", kindStyles[kind])}>
+    <span
+      title={kindTitle[kind]}
+      className={clsx(
+        "rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset transition-colors duration-150",
+        kindStyles[kind],
+      )}
+    >
       {kindLabel[kind]}
     </span>
   );

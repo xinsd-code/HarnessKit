@@ -1,5 +1,5 @@
-import { trustTier, trustColor } from "@/lib/types";
 import { clsx } from "clsx";
+import { trustColor, trustTier } from "@/lib/types";
 
 interface TrustBadgeProps {
   score: number;
@@ -22,7 +22,14 @@ export function TrustBadge({ score, size = "md" }: TrustBadgeProps) {
   const tier = trustTier(score);
   const color = trustColor(score);
   return (
-    <span title={`${tierLabel[tier]} — ${tierTitle[tier]}`} className={clsx("font-mono font-semibold tabular-nums", color, size === "sm" ? "text-xs" : "text-sm")}>
+    <span
+      title={`${tierLabel[tier]} — ${tierTitle[tier]}`}
+      className={clsx(
+        "font-mono font-semibold tabular-nums",
+        color,
+        size === "sm" ? "text-xs" : "text-sm",
+      )}
+    >
       {score}
     </span>
   );

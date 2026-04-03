@@ -1,6 +1,13 @@
-import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Bot, Package, Shield, Settings, ShoppingBag } from "lucide-react";
 import { clsx } from "clsx";
+import {
+  Bot,
+  LayoutDashboard,
+  Package,
+  Settings,
+  Shield,
+  ShoppingBag,
+} from "lucide-react";
+import { NavLink } from "react-router-dom";
 
 const APP_VERSION = __APP_VERSION__;
 
@@ -16,7 +23,15 @@ const utilityNavItems = [
   { to: "/settings", icon: Settings, label: "Settings" },
 ];
 
-function SidebarLink({ to, icon: Icon, label }: { to: string; icon: React.ElementType; label: string }) {
+function SidebarLink({
+  to,
+  icon: Icon,
+  label,
+}: {
+  to: string;
+  icon: React.ElementType;
+  label: string;
+}) {
   return (
     <NavLink
       key={to}
@@ -27,7 +42,7 @@ function SidebarLink({ to, icon: Icon, label }: { to: string; icon: React.Elemen
           "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] transition-all duration-200 ease-out",
           isActive
             ? "bg-sidebar-accent/90 text-sidebar-accent-foreground font-semibold"
-            : "text-sidebar-foreground/60 font-medium hover:bg-sidebar-accent/50 hover:text-sidebar-foreground hover:translate-x-0.5"
+            : "text-sidebar-foreground/60 font-medium hover:bg-sidebar-accent/50 hover:text-sidebar-foreground hover:translate-x-0.5",
         )
       }
     >
@@ -39,7 +54,7 @@ function SidebarLink({ to, icon: Icon, label }: { to: string; icon: React.Elemen
             aria-hidden="true"
             className={clsx(
               "transition-colors duration-200",
-              isActive && "text-sidebar-primary"
+              isActive && "text-sidebar-primary",
             )}
           />
           {label}
@@ -56,7 +71,9 @@ export function Sidebar() {
       <div className="h-12 shrink-0" />
 
       <div className="mb-6 px-3">
-        <h1 className="text-lg font-bold tracking-tight text-sidebar-foreground">HarnessKit</h1>
+        <h1 className="text-lg font-bold tracking-tight text-sidebar-foreground">
+          HarnessKit
+        </h1>
         <p className="text-[11px] text-muted-foreground/70">v{APP_VERSION}</p>
       </div>
 

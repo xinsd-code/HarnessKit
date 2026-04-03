@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import type { Project } from "@/lib/types";
 import { api } from "@/lib/invoke";
+import type { Project } from "@/lib/types";
 
 interface ProjectState {
   projects: Project[];

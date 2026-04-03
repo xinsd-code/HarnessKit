@@ -1,14 +1,13 @@
-import { useCallback, useMemo } from "react";
-import { clsx } from "clsx";
 import {
-  DndContext,
   closestCenter,
+  DndContext,
+  type DragEndEvent,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
-  type DragEndEvent,
 } from "@dnd-kit/core";
+import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import {
   arrayMove,
   SortableContext,
@@ -16,12 +15,13 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
+import { clsx } from "clsx";
 import { GripVertical } from "lucide-react";
+import { useCallback, useMemo } from "react";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
-import { agentDisplayName } from "@/lib/types";
 import type { AgentDetail } from "@/lib/types";
+import { agentDisplayName } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 import { useAgentStore } from "@/stores/agent-store";
 
@@ -59,7 +59,7 @@ function SortableAgentItem({
           ? "bg-accent text-accent-foreground"
           : agent.detected
             ? "text-foreground/80 hover:bg-accent/50"
-            : "text-muted-foreground/50"
+            : "text-muted-foreground/50",
       )}
     >
       <div
@@ -76,9 +76,13 @@ function SortableAgentItem({
       >
         <AgentMascot name={agent.name} size={18} />
         <div className="min-w-0">
-          <span className="block text-[13px] font-medium">{agentDisplayName(agent.name)}</span>
+          <span className="block text-[13px] font-medium">
+            {agentDisplayName(agent.name)}
+          </span>
           {!agent.detected && (
-            <span className="block text-[10px] text-muted-foreground leading-tight">Not detected</span>
+            <span className="block text-[10px] text-muted-foreground leading-tight">
+              Not detected
+            </span>
           )}
         </div>
       </button>
@@ -94,17 +98,20 @@ export function AgentList() {
   const reorderAgents = useAgentStore((s) => s.reorderAgents);
 
   const sorted = useMemo(
-    () => [...agentDetails].sort((a, b) => {
-      const ai = agentOrder.indexOf(a.name);
-      const bi = agentOrder.indexOf(b.name);
-      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-    }),
+    () =>
+      [...agentDetails].sort((a, b) => {
+        const ai = agentOrder.indexOf(a.name);
+        const bi = agentOrder.indexOf(b.name);
+        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+      }),
     [agentDetails, agentOrder],
   );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
   );
 
   const handleDragEnd = useCallback(

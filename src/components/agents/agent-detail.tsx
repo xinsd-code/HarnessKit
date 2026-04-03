@@ -1,13 +1,18 @@
+import { FileSearch, FolderPlus, FolderSearch, Plus, X } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, X, FolderPlus, FolderSearch, FileSearch } from "lucide-react";
+import { openDirectoryPicker, openFilePicker } from "@/lib/dialog";
 import { agentDisplayName, type ConfigCategory } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 import { ConfigSection } from "./config-section";
 import { ExtensionsSummaryCard } from "./extensions-summary-card";
 
-const CATEGORY_ORDER: ConfigCategory[] = ["rules", "memory", "settings", "ignore"];
-
+const CATEGORY_ORDER: ConfigCategory[] = [
+  "rules",
+  "memory",
+  "settings",
+  "ignore",
+];
 
 export function AgentDetail() {
   const navigate = useNavigate();
@@ -44,17 +49,25 @@ export function AgentDetail() {
     <div className="flex-1 overflow-y-auto overscroll-contain p-5">
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">{agentDisplayName(agent.name)}</h2>
+          <h2 className="text-2xl font-bold tracking-tight">
+            {agentDisplayName(agent.name)}
+          </h2>
           {!agent.detected && (
-            <p className="text-[12px] text-muted-foreground mt-0.5">Not detected</p>
+            <p className="text-[12px] text-muted-foreground mt-0.5">
+              Not detected
+            </p>
           )}
         </div>
         <div className="flex gap-1.5">
-          {scopes.size > 0 && [...scopes].map((scope) => (
-            <span key={scope} className="text-[11px] px-2 py-0.5 rounded-md border border-border bg-muted/50">
-              {scope}
-            </span>
-          ))}
+          {scopes.size > 0 &&
+            [...scopes].map((scope) => (
+              <span
+                key={scope}
+                className="text-[11px] px-2 py-0.5 rounded-md border border-border bg-muted/50"
+              >
+                {scope}
+              </span>
+            ))}
           <button
             onClick={() => navigate("/settings?scrollTo=project-paths")}
             className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border border-dashed border-border text-muted-foreground hover:bg-muted/50 transition-colors"
@@ -76,8 +89,16 @@ export function AgentDetail() {
       {showAddForm && (
         <div className="mb-5 rounded-lg border border-border p-3 space-y-2.5">
           <div className="flex items-center justify-between">
-            <span className="text-[12px] font-medium text-foreground">Add Custom Path</span>
-            <button onClick={() => { setShowAddForm(false); setCustomPath(""); }} className="text-muted-foreground hover:text-foreground">
+            <span className="text-[12px] font-medium text-foreground">
+              Add Custom Path
+            </span>
+            <button
+              onClick={() => {
+                setShowAddForm(false);
+                setCustomPath("");
+              }}
+              className="text-muted-foreground hover:text-foreground"
+            >
               <X size={14} />
             </button>
           </div>
@@ -98,11 +119,8 @@ export function AgentDetail() {
             />
             <button
               onClick={async () => {
-                try {
-                  const { open } = await import("@tauri-apps/plugin-dialog");
-                  const selected = await open({ title: "Select file" });
-                  if (typeof selected === "string") setCustomPath(selected);
-                } catch {}
+                const selected = await openFilePicker({ title: "Select file" });
+                if (selected) setCustomPath(selected);
               }}
               className="shrink-0 rounded-md border border-border bg-card px-2.5 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
               title="Browse file..."
@@ -111,11 +129,8 @@ export function AgentDetail() {
             </button>
             <button
               onClick={async () => {
-                try {
-                  const { open } = await import("@tauri-apps/plugin-dialog");
-                  const selected = await open({ directory: true, title: "Select folder" });
-                  if (typeof selected === "string") setCustomPath(selected);
-                } catch {}
+                const selected = await openDirectoryPicker({ title: "Select folder" });
+                if (selected) setCustomPath(selected);
               }}
               className="shrink-0 rounded-md border border-border bg-card px-2.5 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
               title="Browse folder..."
@@ -125,7 +140,12 @@ export function AgentDetail() {
             <button
               disabled={!customPath.trim()}
               onClick={async () => {
-                await addCustomPath(agent.name, customPath.trim(), "", "settings");
+                await addCustomPath(
+                  agent.name,
+                  customPath.trim(),
+                  "",
+                  "settings",
+                );
                 setShowAddForm(false);
                 setCustomPath("");
               }}
@@ -138,12 +158,23 @@ export function AgentDetail() {
       )}
 
       {CATEGORY_ORDER.map((cat) => (
-        <ConfigSection key={cat} category={cat} files={byCategory.get(cat) ?? []} />
+        <ConfigSection
+          key={cat}
+          category={cat}
+          files={byCategory.get(cat) ?? []}
+        />
       ))}
       {customFiles.length > 0 && (
-        <ConfigSection key="custom" category={"custom" as ConfigCategory} files={customFiles} />
+        <ConfigSection
+          key="custom"
+          category={"custom" as ConfigCategory}
+          files={customFiles}
+        />
       )}
-      <ExtensionsSummaryCard counts={agent.extension_counts} agentName={agent.name} />
+      <ExtensionsSummaryCard
+        counts={agent.extension_counts}
+        agentName={agent.name}
+      />
     </div>
   );
 }

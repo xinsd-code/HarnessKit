@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import { agentDisplayName, AGENT_ORDER, type AgentInfo } from "@/lib/types";
 import { api } from "@/lib/invoke";
+import { AGENT_ORDER, type AgentInfo, agentDisplayName } from "@/lib/types";
 import { toast } from "@/stores/toast-store";
 
 interface AgentState {
@@ -37,9 +37,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     try {
       await api.updateAgentPath(name, path);
       set({
-        agents: get().agents.map((a) =>
-          a.name === name ? { ...a, path } : a
-        ),
+        agents: get().agents.map((a) => (a.name === name ? { ...a, path } : a)),
       });
       toast.success(`${agentDisplayName(name)} path updated`);
     } catch {
@@ -51,10 +49,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       await api.setAgentEnabled(name, enabled);
       set({
         agents: get().agents.map((a) =>
-          a.name === name ? { ...a, enabled } : a
+          a.name === name ? { ...a, enabled } : a,
         ),
       });
-      toast.success(`${agentDisplayName(name)} ${enabled ? "enabled" : "disabled"}`);
+      toast.success(
+        `${agentDisplayName(name)} ${enabled ? "enabled" : "disabled"}`,
+      );
     } catch {
       toast.error(`Failed to update ${agentDisplayName(name)}`);
     }
@@ -63,7 +63,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     // Optimistic update
     const agents = get().agents;
     const byName = new Map(agents.map((a) => [a.name, a]));
-    const reordered = orderedNames.map((n) => byName.get(n)).filter(Boolean) as AgentInfo[];
+    const reordered = orderedNames
+      .map((n) => byName.get(n))
+      .filter(Boolean) as AgentInfo[];
     set({ agents: reordered, agentOrder: orderedNames });
     try {
       await api.updateAgentOrder(orderedNames);
