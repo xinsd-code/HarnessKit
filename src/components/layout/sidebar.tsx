@@ -2,6 +2,8 @@ import { NavLink } from "react-router-dom";
 import { LayoutDashboard, Bot, Package, Shield, Settings, ShoppingBag } from "lucide-react";
 import { clsx } from "clsx";
 
+const APP_VERSION = __APP_VERSION__;
+
 const mainNavItems = [
   { to: "/", icon: LayoutDashboard, label: "Overview" },
   { to: "/agents", icon: Bot, label: "Agents" },
@@ -55,7 +57,7 @@ export function Sidebar() {
 
       <div className="mb-6 px-3">
         <h1 className="text-lg font-bold tracking-tight text-sidebar-foreground">HarnessKit</h1>
-        <p className="text-[11px] text-muted-foreground/70">v0.1.0</p>
+        <p className="text-[11px] text-muted-foreground/70">v{APP_VERSION}</p>
       </div>
 
       {/* Branding divider */}
