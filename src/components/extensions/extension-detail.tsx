@@ -21,6 +21,7 @@ import { useNavigate } from "react-router-dom";
 import { CATEGORIES } from "@/components/extensions/extension-filters";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { TrustBadge } from "@/components/shared/trust-badge";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { api } from "@/lib/invoke";
 import type { ExtensionContent as ExtContent, Permission } from "@/lib/types";
 import { agentDisplayName, sortAgents } from "@/lib/types";
@@ -829,41 +830,7 @@ function DeleteDialog({
   }, [onClose]);
 
   // Focus trap: keep Tab cycling within the dialog
-  useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    const dlg = dlgRef.current;
-    if (dlg) dlg.focus();
-
-    const focusableSelector =
-      'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Tab" || !dlg) return;
-      const focusableEls = Array.from(
-        dlg.querySelectorAll<HTMLElement>(focusableSelector),
-      );
-      if (focusableEls.length === 0) return;
-      const first = focusableEls[0];
-      const last = focusableEls[focusableEls.length - 1];
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-      previouslyFocused?.focus();
-    };
-  }, []);
+  useFocusTrap(dlgRef, true);
 
   // Reset selection when dialog opens
   useEffect(() => {

@@ -1,6 +1,7 @@
 import { ArrowRight, Shield, ShoppingBag } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 
 const ONBOARDING_KEY = "hk-onboarding-completed";
 
@@ -50,43 +51,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
   }, []);
 
   // Focus trap: focus the container when visible, and cycle Tab within the modal
-  useEffect(() => {
-    if (!visible || !containerRef.current) return;
-    containerRef.current.focus();
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Tab" || !containerRef.current) return;
-
-      const focusableSelectors =
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-      const focusableElements = Array.from(
-        containerRef.current.querySelectorAll<HTMLElement>(focusableSelectors),
-      ).filter((el) => !el.hasAttribute("disabled"));
-
-      if (focusableElements.length === 0) return;
-
-      const first = focusableElements[0];
-      const last = focusableElements[focusableElements.length - 1];
-
-      if (e.shiftKey) {
-        if (
-          document.activeElement === first ||
-          document.activeElement === containerRef.current
-        ) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [visible]);
+  useFocusTrap(containerRef, visible);
 
   const floatDelays = [0, 0.4, 0.9, 1.3, 0.6, 1.1];
 

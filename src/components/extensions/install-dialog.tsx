@@ -1,6 +1,7 @@
 import { ChevronLeft, FolderSearch } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AnimatedEllipsis } from "@/components/shared/animated-ellipsis";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { openDirectoryPicker } from "@/lib/dialog";
 import { humanizeError } from "@/lib/errors";
 import { api } from "@/lib/invoke";
@@ -33,7 +34,6 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   const [cloneId, setCloneId] = useState<string | null>(null);
   const fetch = useExtensionStore((s) => s.fetch);
   const { agents, fetch: fetchAgents, agentOrder } = useAgentStore();
-  const triggerRef = useRef<HTMLElement | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const scanBtnRef = useRef<HTMLButtonElement>(null);
 
@@ -52,21 +52,6 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
       setSelectedAgents(new Set([detectedAgents[0].name]));
     }
   }, [detectedAgents]);
-
-  // Store trigger element on open, restore focus on close
-  useEffect(() => {
-    if (open) {
-      triggerRef.current = document.activeElement as HTMLElement;
-      requestAnimationFrame(() => {
-        dialogRef.current
-          ?.querySelector<HTMLElement>("input:not([disabled])")
-          ?.focus();
-      });
-    } else if (triggerRef.current) {
-      triggerRef.current.focus();
-      triggerRef.current = null;
-    }
-  }, [open]);
 
   // Reset form when closing
   useEffect(() => {
@@ -89,28 +74,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   }, [onClose, open]);
 
   // Focus trap
-  useEffect(() => {
-    if (!open || !dialogRef.current) return;
-    const dialog = dialogRef.current;
-    const handleTab = (e: KeyboardEvent) => {
-      if (e.key !== "Tab") return;
-      const focusable = dialog.querySelectorAll<HTMLElement>(
-        'input:not([disabled]), select:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      );
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", handleTab);
-    return () => document.removeEventListener("keydown", handleTab);
-  }, [open]);
+  useFocusTrap(dialogRef, open);
 
   const toggleAgent = (name: string) => {
     setSelectedAgents((prev) => {
