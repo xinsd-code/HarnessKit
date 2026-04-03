@@ -4,6 +4,20 @@ export type ThemeName = "tiesen" | "claude";
 export type Mode = "system" | "dark" | "light";
 export type AppIcon = "icon-1" | "icon-2";
 
+/**
+ * Safely retrieves and validates a localStorage value against allowed values.
+ * Falls back to the default if localStorage is unavailable or the value is invalid.
+ */
+function getValidItem<T extends string>(
+  key: string,
+  allowed: readonly T[],
+  fallback: T
+): T {
+  if (typeof localStorage === "undefined") return fallback;
+  const val = localStorage.getItem(key);
+  return val && (allowed as readonly string[]).includes(val) ? (val as T) : fallback;
+}
+
 interface UIState {
   sidebarOpen: boolean;
   themeName: ThemeName;
@@ -15,9 +29,13 @@ interface UIState {
   setAppIcon: (icon: AppIcon) => void;
 }
 
-const storedMode = (typeof localStorage !== "undefined" && localStorage.getItem("hk-theme")) as Mode | null;
-const storedThemeName = (typeof localStorage !== "undefined" && localStorage.getItem("hk-theme-name")) as ThemeName | null;
-const storedAppIcon = (typeof localStorage !== "undefined" && localStorage.getItem("hk-app-icon")) as AppIcon | null;
+const ALLOWED_MODES: readonly Mode[] = ["system", "dark", "light"];
+const ALLOWED_THEME_NAMES: readonly ThemeName[] = ["tiesen", "claude"];
+const ALLOWED_APP_ICONS: readonly AppIcon[] = ["icon-1", "icon-2"];
+
+const storedMode = getValidItem("hk-theme", ALLOWED_MODES, "system");
+const storedThemeName = getValidItem("hk-theme-name", ALLOWED_THEME_NAMES, "tiesen");
+const storedAppIcon = getValidItem("hk-app-icon", ALLOWED_APP_ICONS, "icon-1");
 
 /** Resolve "system" to actual light/dark based on OS preference */
 export function resolveMode(mode: Mode): "dark" | "light" {
@@ -27,9 +45,9 @@ export function resolveMode(mode: Mode): "dark" | "light" {
 
 export const useUIStore = create<UIState>((set) => ({
   sidebarOpen: true,
-  themeName: storedThemeName ?? "tiesen",
-  mode: storedMode ?? "system",
-  appIcon: storedAppIcon ?? "icon-1",
+  themeName: storedThemeName,
+  mode: storedMode,
+  appIcon: storedAppIcon,
   toggleSidebar() { set((s) => ({ sidebarOpen: !s.sidebarOpen })); },
   setThemeName(themeName) {
     localStorage.setItem("hk-theme-name", themeName);
