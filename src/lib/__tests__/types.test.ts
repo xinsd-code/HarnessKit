@@ -7,7 +7,6 @@ import {
   trustColor,
   severityColor,
   formatRelativeTime,
-  AGENT_ORDER,
 } from "../types";
 import type { Extension } from "../types";
 
