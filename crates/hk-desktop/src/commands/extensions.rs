@@ -1,4 +1,4 @@
-use hk_core::{adapter, deployer, manager, models::*, scanner};
+use hk_core::{adapter, deployer, manager, models::*, scanner, HkError};
 use tauri::State;
 use super::AppState;
 use super::helpers::{find_skill_by_id, is_path_within_allowed_dirs, FileEntry, list_dir_entries};
@@ -23,12 +23,13 @@ pub fn list_extensions(
 }
 
 #[tauri::command]
-pub async fn toggle_extension(state: State<'_, AppState>, id: String, enabled: bool) -> Result<(), String> {
+pub async fn toggle_extension(state: State<'_, AppState>, id: String, enabled: bool) -> Result<(), HkError> {
     let store = state.store.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let store = store.lock().map_err(|e| e.to_string())?;
-        manager::toggle_extension(&store, &id, enabled).map_err(|e| e.to_string())
-    }).await.map_err(|e| e.to_string())?
+        let store = store.lock().map_err(|e| HkError::Internal(e.to_string()))?;
+        manager::toggle_extension(&store, &id, enabled)
+            .map_err(|e| HkError::Internal(e.to_string()))
+    }).await.map_err(|e| HkError::Internal(e.to_string()))?
 }
 
 #[tauri::command]
