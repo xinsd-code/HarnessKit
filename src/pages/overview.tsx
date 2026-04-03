@@ -729,7 +729,7 @@ export default function OverviewPage() {
             <QuickAction
               icon={ShoppingBag}
               label="Marketplace"
-              sublabel="Discover skills and MCP"
+              sublabel="Discover skills, CLI and MCP"
               onClick={() => navigate("/marketplace")}
             />
             <QuickAction
