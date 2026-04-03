@@ -195,32 +195,19 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
 
   const rows = table.getRowModel().rows;
 
-  // Scroll selected row into view — same pattern as Audit page:
-  // give each <tr> a stable DOM id, then use getElementById + rAF.
-  const scrollPendingRef = useRef<string | null>(null);
-  const lastSelectedRef = useRef<string | null>(null);
+  // Scroll selected row into view when selectedId changes or rows update.
+  const lastScrolledRef = useRef<string | null>(null);
 
-  // When selectedId changes, mark it as pending scroll
   useEffect(() => {
-    if (selectedId && selectedId !== lastSelectedRef.current) {
-      scrollPendingRef.current = selectedId;
-    }
-    lastSelectedRef.current = selectedId;
-  }, [selectedId]);
-
-  // Once rows are ready, perform the scroll
-  useEffect(() => {
-    if (!scrollPendingRef.current) return;
-    const target = scrollPendingRef.current;
-    const row = rows.find((r) => r.original.groupKey === target);
-    if (!row) return; // row not in current data yet, will retry when rows change
-    scrollPendingRef.current = null;
+    if (!selectedId || selectedId === lastScrolledRef.current) return;
+    const row = rows.find((r) => r.original.groupKey === selectedId);
+    if (!row) return; // row not rendered yet, will retry when rows change
+    lastScrolledRef.current = selectedId;
     requestAnimationFrame(() => {
       const el = document.getElementById(`ext-row-${row.id}`);
       if (el) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows]);
+  }, [selectedId, rows]);
 
   return (
     <div

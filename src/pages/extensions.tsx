@@ -23,30 +23,21 @@ export default function ExtensionsPage() {
   const extensions = useExtensionStore((s) => s.extensions);
   const pendingNameRef = useRef(searchParams.get("name"));
 
-  // Apply ?agent= query param on mount only
+  // Apply query params synchronously on first render to avoid filter-change flash.
   const didApplyRef = useRef(false);
-  useEffect(() => {
-    if (!didApplyRef.current) {
-      const agent = searchParams.get("agent");
-      if (agent) setAgentFilter(agent);
-      // Clear filters once if navigating to a specific extension
-      if (pendingNameRef.current) {
-        setKindFilter(null);
-        setAgentFilter(null);
-        setCategoryFilter(null);
-        setSearchQuery("");
-      }
-      didApplyRef.current = true;
+  if (!didApplyRef.current) {
+    const agent = searchParams.get("agent");
+    if (agent) setAgentFilter(agent);
+    if (pendingNameRef.current) {
+      setKindFilter(null);
+      setAgentFilter(null);
+      setCategoryFilter(null);
+      setSearchQuery("");
     }
-  }, [
-    searchParams,
-    setAgentFilter,
-    setKindFilter,
-    setCategoryFilter,
-    setSearchQuery,
-  ]);
+    didApplyRef.current = true;
+  }
 
-  // Match the extension once data is available
+  // Match the extension once data is available and scroll to it
   useEffect(() => {
     const name = pendingNameRef.current;
     if (!name || extensions.length === 0) return;
