@@ -825,8 +825,8 @@
 
 .mascot-antigravity.is-clicked .ag-icon-wrapper {
   animation:
-    ag-launch-crouch 0.18s ease-out forwards,
-    ag-launch-fly 0.25s ease-in 0.18s forwards;
+    ag-launch-crouch 0.35s ease-out forwards,
+    ag-launch-fly 0.25s ease-in 0.35s forwards;
 }
 
 @keyframes ag-moonwalk {
@@ -874,13 +874,16 @@
   0% {
     transform: translateY(0) scaleY(1) scaleX(1);
   }
+  60% {
+    transform: translateY(14px) scaleY(0.42) scaleX(1.45);
+  }
   100% {
-    transform: translateY(12px) scaleY(0.6) scaleX(1.3);
+    transform: translateY(16px) scaleY(0.38) scaleX(1.5);
   }
 }
 @keyframes ag-launch-fly {
   0% {
-    transform: translateY(12px) scaleY(0.6) scaleX(1.3);
+    transform: translateY(16px) scaleY(0.38) scaleX(1.5);
   }
   15% {
     transform: translateY(0) scaleY(1.2) scaleX(0.85);
