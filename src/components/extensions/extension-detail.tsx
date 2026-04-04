@@ -21,7 +21,7 @@ import { KindBadge } from "@/components/shared/kind-badge";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { api } from "@/lib/invoke";
 import type { ExtensionContent as ExtContent } from "@/lib/types";
-import { agentDisplayName, sortAgents } from "@/lib/types";
+import { agentDisplayName, sortAgentNames, sortAgents } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
@@ -85,10 +85,36 @@ export function ExtensionDetail() {
         setInstanceData(map);
         setLoadingContent(false);
       });
-      // Load skill locations for skills
-      if (group.kind === "skill") {
+      // For CLIs, also load content for child MCP extensions (to get config paths)
+      if (group.kind === "cli") {
+        const childMcps = extensions.filter(
+          (e) => e.cli_parent_id === group.instances[0]?.id && e.kind === "mcp",
+        );
+        if (childMcps.length > 0) {
+          Promise.all(
+            childMcps.map((m) =>
+              api.getExtensionContent(m.id)
+                .then((res) => [m.id, res] as const)
+                .catch(() => [m.id, null] as const),
+            ),
+          ).then((results) => {
+            setInstanceData((prev) => {
+              const next = new Map(prev);
+              for (const [id, data] of results) {
+                if (data) next.set(id, data);
+              }
+              return next;
+            });
+          });
+        }
+      }
+      // Load skill locations for skills and CLIs (CLIs need child skill paths)
+      if (group.kind === "skill" || group.kind === "cli") {
+        const skillName = group.kind === "cli"
+          ? group.instances[0]?.cli_meta?.binary_name ?? group.name
+          : group.name;
         api
-          .getSkillLocations(group.name)
+          .getSkillLocations(skillName)
           .then(setSkillLocations)
           .catch(() => setSkillLocations([]));
       } else {
@@ -277,7 +303,7 @@ export function ExtensionDetail() {
             <Calendar size={14} />
             <span>
               Installed{" "}
-              {group.kind === "skill" || group.kind === "plugin"
+              {group.kind === "skill" || group.kind === "plugin" || group.kind === "cli"
                 ? formatDate(group.installed_at)
                 : "\u2014"}
             </span>
@@ -311,7 +337,8 @@ export function ExtensionDetail() {
 
         {(group.kind === "skill" ||
           group.kind === "mcp" ||
-          group.kind === "hook") &&
+          group.kind === "hook" ||
+          group.kind === "cli") &&
           (() => {
             const detectedAgents = sortAgents(
               agents.filter((a) => a.detected),
@@ -420,7 +447,7 @@ export function ExtensionDetail() {
                   {cli_meta.binary_path && (
                     <>
                       <span>Path:</span>
-                      <span className="font-mono text-xs truncate">
+                      <span className="font-mono text-xs break-all">
                         {cli_meta.binary_path}
                       </span>
                     </>
@@ -428,7 +455,7 @@ export function ExtensionDetail() {
                   {cli_meta.credentials_path && (
                     <>
                       <span>Credentials:</span>
-                      <span className="font-mono text-xs truncate">
+                      <span className="font-mono text-xs break-all">
                         {cli_meta.credentials_path}
                       </span>
                     </>
@@ -453,49 +480,92 @@ export function ExtensionDetail() {
             );
           })()}
 
-        {/* 7. CLI Associated Skills */}
+        {/* 7. CLI Associated Extensions (Skills + MCPs) */}
         {group.kind === "cli" &&
           (() => {
             const children = extensions.filter(
               (e) => e.cli_parent_id === group.instances[0]?.id,
             );
+            const mcps = children.filter((e) => e.kind === "mcp");
+            // Group skill locations by agent for display
+            const agentSkillPaths = new Map<string, string[]>();
+            for (const [agent, path] of skillLocations) {
+              const list = agentSkillPaths.get(agent) ?? [];
+              list.push(path);
+              agentSkillPaths.set(agent, list);
+            }
             return children.length > 0 ? (
-              <div className="mt-4">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                  Associated Skills ({children.length})
-                </h4>
-                <div className="space-y-1">
-                  {children.map((child) => (
-                    <div
-                      key={child.id}
-                      className="flex items-center justify-between text-sm py-1"
-                    >
-                      <span>{child.name}</span>
-                      <span
-                        className={
-                          child.enabled
-                            ? "text-trust-safe"
-                            : "text-muted-foreground"
-                        }
-                      >
-                        {child.enabled ? "Enabled" : "Disabled"}
-                      </span>
+              <div className="mt-4 space-y-3">
+                {agentSkillPaths.size > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                      Associated Skills
+                    </h4>
+                    <div className="space-y-3">
+                      {[...agentSkillPaths.entries()].map(([agent, paths]) => (
+                        <div
+                          key={agent}
+                          className="rounded-lg border border-border bg-card p-3"
+                        >
+                          <span className="text-sm font-medium">
+                            {agentDisplayName(agent)}
+                          </span>
+                          <div className="mt-1.5 space-y-1">
+                            {paths.map((p) => (
+                              <div key={p} className="flex items-start gap-2 text-muted-foreground">
+                                <FolderOpen size={12} className="mt-0.5 shrink-0" />
+                                <span className="break-all text-xs">{p}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
+                {mcps.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                      Associated MCP Servers
+                    </h4>
+                    <div className="space-y-3">
+                      {mcps.map((child) => {
+                        const mcpData = instanceData.get(child.id);
+                        return (
+                          <div
+                            key={child.id}
+                            className="rounded-lg border border-border bg-card p-3"
+                          >
+                            <span className="text-sm font-medium">
+                              {agentDisplayName(child.agents[0] ?? "unknown")}
+                            </span>
+                            <div className="mt-1.5 space-y-1">
+                              {mcpData?.path && (
+                                <div className="flex items-start gap-2 text-muted-foreground">
+                                  <FolderOpen size={12} className="mt-0.5 shrink-0" />
+                                  <span className="break-all text-xs">{mcpData.path}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : null;
           })()}
 
-        {/* 8. Paths (per-agent breakdown) */}
-        {group.instances.length > 0 && (
+        {/* 8. Paths (per-agent breakdown) — skip for CLI (binary path shown in CLI Details) */}
+        {group.kind !== "cli" && group.instances.length > 0 && (
           <div className="mt-4">
             <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Paths
             </h4>
             <div className="space-y-3">
               {(() => {
-                // Group instances by agent to avoid duplicate path cards
+                // Group instances by agent, sorted by agent order
                 const byAgent = new Map<string, typeof group.instances>();
                 for (const inst of group.instances) {
                   const agent = inst.agents[0] ?? "unknown";
@@ -503,7 +573,9 @@ export function ExtensionDetail() {
                   list.push(inst);
                   byAgent.set(agent, list);
                 }
-                return [...byAgent.entries()].map(([agentName, instances]) => {
+                const sortedAgentNames = sortAgentNames([...byAgent.keys()], agentOrder);
+                return sortedAgentNames.map((agentName) => {
+                  const instances = byAgent.get(agentName)!;
                   const firstData = instanceData.get(instances[0].id);
                   const agentLocations = skillLocations.filter(([a]) => a === agentName);
                   // Collect unique event names for hooks
@@ -559,8 +631,8 @@ export function ExtensionDetail() {
           </div>
         )}
 
-        {/* 9. Content / Documentation */}
-        {group.kind !== "hook" && (
+        {/* 9. Content / Documentation — skip for hooks and CLIs */}
+        {group.kind !== "hook" && group.kind !== "cli" && (
           <div className="mt-4">
             <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {group.kind === "skill"
@@ -620,6 +692,8 @@ export function ExtensionDetail() {
             deleting={deleting}
             deleteAgents={deleteAgents}
             setDeleteAgents={setDeleteAgents}
+            childExtensions={group.kind === "cli" ? extensions.filter((e) => e.cli_parent_id === group.instances[0]?.id) : undefined}
+            skillLocations={group.kind === "cli" || group.kind === "skill" ? skillLocations : undefined}
             onDelete={async (agents) => {
               setDeleting(true);
               try {
