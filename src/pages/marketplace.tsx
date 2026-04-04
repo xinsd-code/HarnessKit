@@ -570,6 +570,17 @@ export default function MarketplacePage() {
                 {/* CLI install guidance */}
                 {selectedItem.kind === "cli" && (
                   <>
+                    {selectedItem.repo_url && (
+                      <a
+                        href={selectedItem.repo_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                      >
+                        View on GitHub
+                        <ExternalLink size={10} />
+                      </a>
+                    )}
                     <div className="mt-4">
                       <h4 className="mb-2 border-b border-border pb-1 text-xs font-medium text-muted-foreground">
                         Installation Guide
@@ -599,17 +610,6 @@ export default function MarketplacePage() {
                         )}
                       </div>
                     </div>
-                    {selectedItem.repo_url && (
-                      <a
-                        href={selectedItem.repo_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                      >
-                        View on GitHub
-                        <ExternalLink size={10} />
-                      </a>
-                    )}
                   </>
                 )}
 
