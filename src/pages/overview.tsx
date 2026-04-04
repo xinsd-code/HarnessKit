@@ -309,22 +309,17 @@ export default function OverviewPage() {
   // -----------------------------------------------------------------------
   const agentActivityItems = useMemo<ActivityItem[]>(() => {
     const items: ActivityItem[] = [];
-    const now = Date.now();
-    const sevenDays = 7 * 24 * 60 * 60 * 1000;
 
     for (const agent of agentConfigs) {
       for (const cfg of agent.config_files) {
         if (!cfg.modified_at) continue;
-        const modifiedMs = now - new Date(cfg.modified_at).getTime();
-        if (modifiedMs < sevenDays) {
-          items.push({
-            type: "config",
-            label: cfg.file_name,
-            sublabel: `${agentDisplayName(agent.name)} \u00B7 Modified ${formatRelativeTime(cfg.modified_at)}`,
-            timestamp: new Date(cfg.modified_at).getTime(),
-            navigateTo: `/agents?agent=${agent.name}&file=${encodeURIComponent(cfg.path)}`,
-          });
-        }
+        items.push({
+          type: "config",
+          label: cfg.file_name,
+          sublabel: `${agentDisplayName(agent.name)} \u00B7 Modified ${formatRelativeTime(cfg.modified_at)}`,
+          timestamp: new Date(cfg.modified_at).getTime(),
+          navigateTo: `/agents?agent=${agent.name}&file=${encodeURIComponent(cfg.path)}`,
+        });
       }
     }
 
@@ -337,8 +332,6 @@ export default function OverviewPage() {
   // -----------------------------------------------------------------------
   const extensionActivityItems = useMemo<ActivityItem[]>(() => {
     const items: ActivityItem[] = [];
-    const now = Date.now();
-    const fourteenDays = 14 * 24 * 60 * 60 * 1000;
 
     // Only show types with accurate per-item install timestamps:
     // - skill: file creation time of SKILL.md
@@ -351,17 +344,14 @@ export default function OverviewPage() {
     for (const ext of visibleExtensions) {
       if (!accurateKinds.has(ext.kind)) continue;
       if (seenExtNames.has(ext.name)) continue;
-      const installedMs = now - new Date(ext.installed_at).getTime();
-      if (installedMs < fourteenDays) {
-        seenExtNames.add(ext.name);
-        items.push({
-          type: "extension",
-          label: ext.name,
-          sublabel: `${ext.kind.toUpperCase()} · Installed ${formatRelativeTime(ext.installed_at)}`,
-          timestamp: new Date(ext.installed_at).getTime(),
-          navigateTo: `/extensions?name=${encodeURIComponent(ext.name)}`,
-        });
-      }
+      seenExtNames.add(ext.name);
+      items.push({
+        type: "extension",
+        label: ext.name,
+        sublabel: `${ext.kind.toUpperCase()} · Installed ${formatRelativeTime(ext.installed_at)}`,
+        timestamp: new Date(ext.installed_at).getTime(),
+        navigateTo: `/extensions?name=${encodeURIComponent(ext.name)}`,
+      });
     }
 
     items.sort((a, b) => b.timestamp - a.timestamp);
