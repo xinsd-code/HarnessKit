@@ -172,6 +172,14 @@ mod tests {
     }
 
     #[test]
+    fn validate_git_url_rejects_flag_injection() {
+        // URLs starting with "--" could be interpreted as git flags
+        assert!(validate_git_url("--upload-pack=evil").is_err());
+        assert!(validate_git_url("-c http.proxy=evil").is_err());
+        assert!(validate_git_url("--config=core.sshCommand=evil").is_err());
+    }
+
+    #[test]
     fn validate_git_url_accepts_valid() {
         assert!(validate_git_url("https://github.com/user/repo.git").is_ok());
         assert!(validate_git_url("git://github.com/user/repo.git").is_ok());

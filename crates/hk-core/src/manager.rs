@@ -374,8 +374,10 @@ pub fn check_update(meta: &InstallMeta) -> UpdateStatus {
 }
 
 pub fn get_remote_head(url: &str) -> Result<String> {
+    // Validate URL to prevent flag injection from DB-sourced URLs
+    sanitize::validate_git_url(url)?;
     let output = Command::new("git")
-        .args(["ls-remote", "--heads", url])
+        .args(["ls-remote", "--heads", "--", url])
         .output()
         .context("Failed to run git ls-remote")?;
 
@@ -409,7 +411,7 @@ pub fn install_from_git_with_id(url: &str, target_dir: &Path, skill_id: Option<&
     let clone_dir = temp.path().join("repo");
 
     let output = Command::new("git")
-        .args(["clone", "--depth", "1", url, &clone_dir.to_string_lossy()])
+        .args(["clone", "--depth", "1", "--", url, &clone_dir.to_string_lossy()])
         .output()
         .context("Failed to run git clone")?;
 
