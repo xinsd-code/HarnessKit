@@ -372,10 +372,9 @@ mod tests {
     #[test]
     fn test_claude_read_mcp_servers() {
         let dir = TempDir::new().unwrap();
-        let claude_dir = dir.path().join(".claude");
-        std::fs::create_dir_all(&claude_dir).unwrap();
+        // MCP config lives at ~/.claude.json (not ~/.claude/settings.json)
         std::fs::write(
-            claude_dir.join("settings.json"),
+            dir.path().join(".claude.json"),
             r#"{"mcpServers":{"github":{"command":"npx","args":["-y","@modelcontextprotocol/server-github"],"env":{"GITHUB_TOKEN":"ghp_test"}}}}"#,
         ).unwrap();
         let adapter = ClaudeAdapter::with_home(dir.path().to_path_buf());
@@ -429,10 +428,11 @@ mod tests {
         assert!(global_rules[0].ends_with("CLAUDE.md"));
 
         let global_settings = adapter.global_settings_files();
-        assert!(global_settings.len() >= 3);
-        assert!(global_settings[0].ends_with("settings.json"));
-        assert!(global_settings[1].ends_with("settings.local.json"));
-        assert!(global_settings[2].ends_with("keybindings.json"));
+        assert!(global_settings.len() >= 4);
+        assert!(global_settings[0].ends_with(".claude.json"));
+        assert!(global_settings[1].ends_with("settings.json"));
+        assert!(global_settings[2].ends_with("settings.local.json"));
+        assert!(global_settings[3].ends_with("keybindings.json"));
 
         let project_rules = adapter.project_rules_patterns();
         assert!(project_rules.contains(&"CLAUDE.md".to_string()));
