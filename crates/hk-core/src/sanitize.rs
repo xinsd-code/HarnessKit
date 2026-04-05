@@ -56,17 +56,19 @@ pub fn validate_path_within(parent: &Path, child: &Path) -> Result<PathBuf> {
 }
 
 /// Validate that a binary name is safe for `which`/`--version` execution.
-/// Only allows alphanumeric, hyphens, underscores, and dots (no path separators).
+/// Positive allowlist: only ASCII alphanumeric, hyphens, underscores, and dots.
+/// Must not start with a dot or hyphen.
 pub fn validate_binary_name(name: &str) -> Result<()> {
     if name.is_empty() {
         bail!("Binary name cannot be empty");
     }
-    if name.contains('/') || name.contains('\\') || name.contains("..") {
-        bail!("Binary name contains path characters: {}", name);
-    }
     // Must not start with a dot or hyphen
     if name.starts_with('.') || name.starts_with('-') {
         bail!("Binary name cannot start with '.' or '-': {}", name);
+    }
+    // Positive allowlist: only safe characters
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.') {
+        bail!("Binary name contains disallowed characters (only alphanumeric, '-', '_', '.' allowed): {}", name);
     }
     Ok(())
 }
@@ -138,11 +140,28 @@ mod tests {
     }
 
     #[test]
+    fn validate_binary_name_rejects_shell_injection() {
+        assert!(validate_binary_name("node;rm").is_err());
+        assert!(validate_binary_name("node$(whoami)").is_err());
+        assert!(validate_binary_name("node`id`").is_err());
+        assert!(validate_binary_name("node|cat").is_err());
+        assert!(validate_binary_name("node&bg").is_err());
+        assert!(validate_binary_name("node rm").is_err()); // space
+        assert!(validate_binary_name("node\ttab").is_err()); // tab
+        assert!(validate_binary_name("node>file").is_err());
+        assert!(validate_binary_name("node<file").is_err());
+        assert!(validate_binary_name("no'de").is_err());
+        assert!(validate_binary_name("no\"de").is_err());
+    }
+
+    #[test]
     fn validate_binary_name_accepts_valid() {
         assert!(validate_binary_name("node").is_ok());
         assert!(validate_binary_name("npx").is_ok());
         assert!(validate_binary_name("my-tool").is_ok());
         assert!(validate_binary_name("tool_v2").is_ok());
+        assert!(validate_binary_name("tool.exe").is_ok());
+        assert!(validate_binary_name("Python3").is_ok());
     }
 
     #[test]
