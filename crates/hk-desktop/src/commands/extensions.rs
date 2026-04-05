@@ -171,7 +171,7 @@ pub fn open_in_system(state: State<AppState>, path: String) -> Result<(), String
     if file_path.is_file() {
         let allowed_extensions = [
             "md", "txt", "json", "toml", "yaml", "yml", "xml",
-            "js", "ts", "py", "rs", "go", "sh", "css", "html",
+            "js", "ts", "py", "rs", "go", "css", "html",
             "csv", "log", "conf", "cfg", "ini", "env",
         ];
         let ext = file_path.extension()

@@ -206,6 +206,10 @@ pub fn add_custom_config_path(
     } else {
         path
     };
+    // Reject paths with ".." to prevent traversal bypass (e.g., ~/../../etc/passwd)
+    if resolved.contains("..") {
+        return Err("Config paths cannot contain '..' components".into());
+    }
     let resolved_path = std::path::Path::new(&resolved);
     let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
     if !resolved_path.starts_with(&home) {
@@ -233,6 +237,9 @@ pub fn update_custom_config_path(
     } else {
         path
     };
+    if resolved.contains("..") {
+        return Err("Config paths cannot contain '..' components".into());
+    }
     let resolved_path = std::path::Path::new(&resolved);
     let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
     if !resolved_path.starts_with(&home) {
