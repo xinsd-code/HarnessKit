@@ -242,20 +242,24 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                 }
             };
 
+            // If server name looks like "owner/repo", derive GitHub source link
+            let (source, pack) = if server.name.contains('/') && !server.name.contains(' ') {
+                let url = format!("https://github.com/{}", server.name);
+                let pack = extract_pack_from_url(&url);
+                (Source { origin: SourceOrigin::Git, url: Some(url), version: None, commit_hash: None }, pack)
+            } else {
+                (Source { origin: SourceOrigin::Agent, url: None, version: None, commit_hash: None }, None)
+            };
+
             Extension {
                 id: stable_id(&server.name, "mcp", adapter.name()),
                 kind: ExtensionKind::Mcp,
                 name: server.name,
                 description,
-                source: Source {
-                    origin: SourceOrigin::Agent,
-                    url: None,
-                    version: None,
-                    commit_hash: None,
-                },
+                source,
                 agents: vec![adapter.name().to_string()],
                 tags: vec![],
-                pack: None,
+                pack,
                 permissions,
                 enabled: true,
                 trust_score: None,
@@ -1338,10 +1342,9 @@ mod tests {
     }
 
     fn setup_claude_mcp(dir: &TempDir) {
-        let claude_dir = dir.path().join(".claude");
-        std::fs::create_dir_all(&claude_dir).unwrap();
+        // MCP config lives at ~/.claude.json (not ~/.claude/settings.json)
         std::fs::write(
-            claude_dir.join("settings.json"),
+            dir.path().join(".claude.json"),
             r#"{"mcpServers":{"github":{"command":"npx","args":["-y","@modelcontextprotocol/server-github"],"env":{"GITHUB_TOKEN":"test"}}}}"#,
         ).unwrap();
     }
