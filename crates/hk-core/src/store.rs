@@ -707,20 +707,24 @@ impl Store {
             Self::sync_extension_agents(&tx, &ext.id, &ext.agents)?;
         }
 
-        // Remove stale extensions no longer on disk — but keep disabled ones
-        // (disabled config-driven extensions are intentionally absent from scan results)
+        // Remove stale extensions no longer on disk — but keep:
+        // - Disabled ones (intentionally absent from scan results)
+        // - Extensions with install_meta (user explicitly installed, e.g. CLI via install_cli)
+        //   These may temporarily disappear from scan if binary detection fails on startup.
         let scanned_ids: std::collections::HashSet<&str> =
             extensions.iter().map(|e| e.id.as_str()).collect();
-        let stale_ids: Vec<(String, bool)> = {
-            let mut stmt = tx.prepare("SELECT id, enabled FROM extensions")?;
+        let stale_ids: Vec<(String, bool, bool)> = {
+            let mut stmt = tx.prepare(
+                "SELECT id, enabled, (install_type IS NOT NULL) as has_meta FROM extensions"
+            )?;
             stmt.query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?))
+                Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?, row.get::<_, bool>(2)?))
             })?
             .filter_map(|r| r.map_err(|e| eprintln!("[hk] row error: {e}")).ok())
             .collect()
         };
-        for (id, enabled) in &stale_ids {
-            if !scanned_ids.contains(id.as_str()) && *enabled {
+        for (id, enabled, has_install_meta) in &stale_ids {
+            if !scanned_ids.contains(id.as_str()) && *enabled && !has_install_meta {
                 tx.execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
             }
         }
@@ -784,20 +788,24 @@ impl Store {
         }
 
         // Remove stale extensions for THIS agent only — keep disabled ones
+        // and extensions with install_meta (user-installed, may temporarily not scan)
         let scanned_ids: std::collections::HashSet<&str> =
             extensions.iter().map(|e| e.id.as_str()).collect();
-        let stale_ids: Vec<(String, bool)> = {
+        let stale_ids: Vec<(String, bool, bool)> = {
             let mut stmt = tx.prepare(
-                "SELECT DISTINCT e.id, e.enabled FROM extensions e
+                "SELECT DISTINCT e.id, e.enabled, (e.install_type IS NOT NULL) as has_meta
+                 FROM extensions e
                  INNER JOIN extension_agents ea ON e.id = ea.extension_id
                  WHERE ea.agent_name = ?1"
             )?;
-            stmt.query_map(params![agent], |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?)))?
+            stmt.query_map(params![agent], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?, row.get::<_, bool>(2)?))
+            })?
                 .filter_map(|r| r.ok())
                 .collect()
         };
-        for (id, enabled) in &stale_ids {
-            if !scanned_ids.contains(id.as_str()) && *enabled {
+        for (id, enabled, has_install_meta) in &stale_ids {
+            if !scanned_ids.contains(id.as_str()) && *enabled && !has_install_meta {
                 tx.execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
             }
         }
