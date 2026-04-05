@@ -553,7 +553,7 @@ export default function SettingsPage() {
                       "flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-sm border bg-card shadow-sm",
                       project.exists
                         ? "border-border"
-                        : "border-destructive/30",
+                        : "border-border",
                     )}
                   >
                     <FolderOpen
@@ -562,7 +562,7 @@ export default function SettingsPage() {
                         "shrink-0",
                         project.exists
                           ? "text-muted-foreground"
-                          : "text-destructive/50",
+                          : "text-muted-foreground/50",
                       )}
                     />
                     <div className="min-w-0 flex-1">
@@ -577,7 +577,7 @@ export default function SettingsPage() {
                         {project.name}
                       </span>
                       {!project.exists && (
-                        <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive inline-flex items-center gap-1">
+                        <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground inline-flex items-center gap-1">
                           <TriangleAlert size={10} /> Missing
                         </span>
                       )}
