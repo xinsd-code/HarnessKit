@@ -1,7 +1,9 @@
 use crate::HkError;
 use chrono::Datelike;
+use lru::LruCache;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -10,44 +12,45 @@ const SKILLS_SH_API: &str = "https://skills.sh/api";
 const AUDIT_API: &str = "https://add-skill.vercel.sh";
 
 // --- Caches for skill content & audit ---
-type TimedCache<T> = LazyLock<Mutex<HashMap<String, (Instant, Option<T>)>>>;
+type TimedCache<T> = LazyLock<Mutex<LruCache<String, (Instant, Option<T>)>>>;
 
-static SKILL_CONTENT_CACHE: TimedCache<String> = LazyLock::new(|| Mutex::new(HashMap::new()));
-static AUDIT_INFO_CACHE: TimedCache<SkillAuditInfo> = LazyLock::new(|| Mutex::new(HashMap::new()));
+static SKILL_CONTENT_CACHE: TimedCache<String> =
+    LazyLock::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(MAX_CACHE_ENTRIES).unwrap())));
+static AUDIT_INFO_CACHE: TimedCache<SkillAuditInfo> =
+    LazyLock::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(MAX_CACHE_ENTRIES).unwrap())));
 const DETAIL_CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 const MAX_CACHE_ENTRIES: usize = 200;
 
-/// Insert into a timed cache with size limit. Evicts the oldest entry if at capacity.
+/// Insert into a timed LRU cache. Eviction is handled automatically by the LRU.
 fn cache_insert<T>(
-    cache: &Mutex<HashMap<String, (Instant, Option<T>)>>,
+    cache: &Mutex<LruCache<String, (Instant, Option<T>)>>,
     key: String,
     value: Option<T>,
 ) {
-    let Ok(mut map) = cache.lock() else { return };
-    if map.len() >= MAX_CACHE_ENTRIES {
-        if let Some(oldest_key) = map
-            .iter()
-            .min_by_key(|(_, (ts, _))| *ts)
-            .map(|(k, _)| k.clone())
-        {
-            map.remove(&oldest_key);
-        }
-    }
-    map.insert(key, (Instant::now(), value));
+    let Ok(mut lru) = cache.lock() else { return };
+    lru.put(key, (Instant::now(), value));
 }
 
-fn client() -> Result<reqwest::blocking::Client, HkError> {
+static HTTP_CLIENT: LazyLock<reqwest::blocking::Client> = LazyLock::new(|| {
     reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
-        .map_err(|e| HkError::Network(format!("Failed to build HTTP client: {e}")))
-}
+        .expect("Failed to create HTTP client")
+});
 
-fn async_client() -> Result<reqwest::Client, HkError> {
+static ASYNC_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
-        .map_err(|e| HkError::Network(format!("Failed to build async HTTP client: {e}")))
+        .expect("Failed to create async HTTP client")
+});
+
+fn client() -> &'static reqwest::blocking::Client {
+    &HTTP_CLIENT
+}
+
+fn async_client() -> &'static reqwest::Client {
+    &ASYNC_CLIENT
 }
 
 // --- Unified marketplace item ---
@@ -195,7 +198,7 @@ pub fn search_skills(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>, 
     if query.len() < 2 {
         return Ok(vec![]);
     }
-    let resp: SkillsShSearchResponse = client()?
+    let resp: SkillsShSearchResponse = client()
         .get(format!("{SKILLS_SH_API}/search"))
         .query(&[("q", query), ("limit", &limit.to_string())])
         .send()
@@ -230,7 +233,7 @@ pub async fn search_skills_async(
     if query.len() < 2 {
         return Ok(vec![]);
     }
-    let resp: SkillsShSearchResponse = async_client()?
+    let resp: SkillsShSearchResponse = async_client()
         .get(format!("{SKILLS_SH_API}/search"))
         .query(&[("q", query), ("limit", &limit.to_string())])
         .send()
@@ -265,7 +268,7 @@ pub fn search_servers(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>,
     if query.len() < 2 {
         return Ok(vec![]);
     }
-    let resp: SmitheryServersResponse = client()?
+    let resp: SmitheryServersResponse = client()
         .get(format!("{SMITHERY_API}/servers"))
         .query(&[("q", query), ("pageSize", &limit.to_string())])
         .send()
@@ -300,7 +303,7 @@ pub async fn search_servers_async(
     if query.len() < 2 {
         return Ok(vec![]);
     }
-    let resp: SmitheryServersResponse = async_client()?
+    let resp: SmitheryServersResponse = async_client()
         .get(format!("{SMITHERY_API}/servers"))
         .query(&[("q", query), ("pageSize", &limit.to_string())])
         .send()
@@ -335,7 +338,7 @@ pub fn trending_skills(limit: usize) -> Result<Vec<MarketplaceItem>, HkError> {
     // Rotate through pages 1-5 based on day of year
     let page = (chrono::Utc::now().ordinal() % 5) + 1;
     let url = format!("{SMITHERY_API}/skills?pageSize={}&page={}", limit, page);
-    let resp: SmitherySkillsResponse = client()?
+    let resp: SmitherySkillsResponse = client()
         .get(&url)
         .send()
         .map_err(|e| HkError::Network(format!("Failed to reach Smithery: {e}")))?
@@ -381,7 +384,7 @@ pub fn trending_servers(limit: usize) -> Result<Vec<MarketplaceItem>, HkError> {
     // Rotate through pages 1-5 based on day of year
     let page = (chrono::Utc::now().ordinal() % 5) + 1;
     let url = format!("{SMITHERY_API}/servers?pageSize={}&page={}", limit, page);
-    let resp: SmitheryServersResponse = client()?
+    let resp: SmitheryServersResponse = client()
         .get(&url)
         .send()
         .map_err(|e| HkError::Network(format!("Failed to reach Smithery: {e}")))?
@@ -411,7 +414,7 @@ pub fn trending_servers(limit: usize) -> Result<Vec<MarketplaceItem>, HkError> {
 pub async fn trending_skills_async(limit: usize) -> Result<Vec<MarketplaceItem>, HkError> {
     let page = (chrono::Utc::now().ordinal() % 5) + 1;
     let url = format!("{SMITHERY_API}/skills?pageSize={}&page={}", limit, page);
-    let resp: SmitherySkillsResponse = async_client()?
+    let resp: SmitherySkillsResponse = async_client()
         .get(&url)
         .send()
         .await
@@ -452,7 +455,7 @@ pub async fn trending_skills_async(limit: usize) -> Result<Vec<MarketplaceItem>,
 pub async fn trending_servers_async(limit: usize) -> Result<Vec<MarketplaceItem>, HkError> {
     let page = (chrono::Utc::now().ordinal() % 5) + 1;
     let url = format!("{SMITHERY_API}/servers?pageSize={}&page={}", limit, page);
-    let resp: SmitheryServersResponse = async_client()?
+    let resp: SmitheryServersResponse = async_client()
         .get(&url)
         .send()
         .await
@@ -509,7 +512,7 @@ pub fn fetch_skill_content(
     git_url: Option<&str>,
 ) -> Result<String, HkError> {
     let cache_key = format!("{source}/{skill_id}");
-    if let Ok(cache) = SKILL_CONTENT_CACHE.lock()
+    if let Ok(mut cache) = SKILL_CONTENT_CACHE.lock()
         && let Some((ts, cached)) = cache.get(&cache_key)
         && ts.elapsed() < DETAIL_CACHE_TTL
     {
@@ -522,7 +525,7 @@ pub fn fetch_skill_content(
             }
         };
     }
-    let c = client()?;
+    let c = client();
     // Phase 1: if git_url provides exact path, try it directly
     if let Some(url) = git_url
         && let Some((repo, branch, subdir)) = parse_github_tree_url(url)
@@ -582,13 +585,13 @@ pub struct AuditPartner {
 /// Fetch audit info from skills.sh audit service. source = "owner/repo", skill_id = "skill-name"
 pub fn fetch_audit_info(source: &str, skill_id: &str) -> Result<Option<SkillAuditInfo>, HkError> {
     let cache_key = format!("{source}/{skill_id}");
-    if let Ok(cache) = AUDIT_INFO_CACHE.lock()
+    if let Ok(mut cache) = AUDIT_INFO_CACHE.lock()
         && let Some((ts, cached)) = cache.get(&cache_key)
         && ts.elapsed() < DETAIL_CACHE_TTL
     {
         return Ok(cached.clone());
     }
-    let resp = client()?
+    let resp = client()
         .get(format!("{AUDIT_API}/audit"))
         .query(&[("source", source), ("skills", skill_id)])
         .send()
@@ -610,7 +613,7 @@ pub async fn fetch_skill_content_async(
     git_url: Option<&str>,
 ) -> Result<String, HkError> {
     let cache_key = format!("{source}/{skill_id}");
-    if let Ok(cache) = SKILL_CONTENT_CACHE.lock()
+    if let Ok(mut cache) = SKILL_CONTENT_CACHE.lock()
         && let Some((ts, cached)) = cache.get(&cache_key)
         && ts.elapsed() < DETAIL_CACHE_TTL
     {
@@ -623,7 +626,7 @@ pub async fn fetch_skill_content_async(
             }
         };
     }
-    let c = async_client()?;
+    let c = async_client();
     // Phase 1: if git_url provides exact path, try it directly
     if let Some(url) = git_url
         && let Some((repo, branch, subdir)) = parse_github_tree_url(url)
@@ -668,13 +671,13 @@ pub async fn fetch_audit_info_async(
     skill_id: &str,
 ) -> Result<Option<SkillAuditInfo>, HkError> {
     let cache_key = format!("{source}/{skill_id}");
-    if let Ok(cache) = AUDIT_INFO_CACHE.lock()
+    if let Ok(mut cache) = AUDIT_INFO_CACHE.lock()
         && let Some((ts, cached)) = cache.get(&cache_key)
         && ts.elapsed() < DETAIL_CACHE_TTL
     {
         return Ok(cached.clone());
     }
-    let resp = async_client()?
+    let resp = async_client()
         .get(format!("{AUDIT_API}/audit"))
         .query(&[("source", source), ("skills", skill_id)])
         .send()
@@ -696,11 +699,12 @@ pub fn git_url_for_source(source: &str) -> String {
 
 // --- CLI README fetching ---
 
-static CLI_README_CACHE: TimedCache<String> = LazyLock::new(|| Mutex::new(HashMap::new()));
+static CLI_README_CACHE: TimedCache<String> =
+    LazyLock::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(MAX_CACHE_ENTRIES).unwrap())));
 
 /// Fetch README.md from a GitHub repo. `source` = "owner/repo".
 pub async fn fetch_cli_readme_async(source: &str) -> Result<String, HkError> {
-    if let Ok(cache) = CLI_README_CACHE.lock()
+    if let Ok(mut cache) = CLI_README_CACHE.lock()
         && let Some((ts, cached)) = cache.get(source)
         && ts.elapsed() < DETAIL_CACHE_TTL
     {
@@ -713,7 +717,7 @@ pub async fn fetch_cli_readme_async(source: &str) -> Result<String, HkError> {
             }
         };
     }
-    let c = async_client()?;
+    let c = async_client();
     for branch in &["main", "master"] {
         for filename in &["README.md", "readme.md", "Readme.md"] {
             let url = format!("https://raw.githubusercontent.com/{source}/{branch}/{filename}");
@@ -795,7 +799,7 @@ const CLI_REGISTRY_URL: &str = "https://raw.githubusercontent.com/RealZST/harnes
 const CLI_REGISTRY_TTL: Duration = Duration::from_secs(300); // 5 minutes
 
 fn fetch_remote_cli_registry() -> Result<Vec<CliRegistryEntry>, HkError> {
-    let resp = client()?
+    let resp = client()
         .get(CLI_REGISTRY_URL)
         .send()
         .map_err(|e| HkError::Network(format!("Failed to fetch remote CLI registry: {e}")))?
@@ -982,10 +986,11 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
 
 /// Fetch GitHub stargazers_count for a repo. Cached in-process.
 fn fetch_github_stars(owner_repo: &str) -> Option<u64> {
-    static CACHE: TimedCache<u64> = LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+    static CACHE: TimedCache<u64> =
+        LazyLock::new(|| std::sync::Mutex::new(LruCache::new(NonZeroUsize::new(MAX_CACHE_ENTRIES).unwrap())));
 
     let ttl = Duration::from_secs(3600); // 1-hour cache
-    if let Ok(cache) = CACHE.lock()
+    if let Ok(mut cache) = CACHE.lock()
         && let Some((ts, stars)) = cache.get(owner_repo)
         && ts.elapsed() < ttl
     {
@@ -994,14 +999,11 @@ fn fetch_github_stars(owner_repo: &str) -> Option<u64> {
 
     let url = format!("https://api.github.com/repos/{}", owner_repo);
     let stars = client()
+        .get(&url)
+        .header("Accept", "application/vnd.github.v3+json")
+        .header("User-Agent", "HarnessKit")
+        .send()
         .ok()
-        .and_then(|c| {
-            c.get(&url)
-                .header("Accept", "application/vnd.github.v3+json")
-                .header("User-Agent", "HarnessKit")
-                .send()
-                .ok()
-        })
         .filter(|r| r.status().is_success())
         .and_then(|r| r.json::<serde_json::Value>().ok())
         .and_then(|v| v.get("stargazers_count")?.as_u64());
