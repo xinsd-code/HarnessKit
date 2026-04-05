@@ -9,7 +9,9 @@ use tauri::Manager;
 
 #[cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 fn main() {
-    let data_dir = dirs::home_dir().unwrap_or_default().join(".harnesskit");
+    let data_dir = dirs::home_dir()
+        .expect("Cannot determine home directory — set HOME environment variable")
+        .join(".harnesskit");
     std::fs::create_dir_all(&data_dir).expect("Failed to create data dir");
     let store = Store::open(&data_dir.join("metadata.db")).expect("Failed to open database");
 
