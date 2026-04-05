@@ -37,66 +37,77 @@ pub async fn fetch_skill_audit(source: String, skill_id: String) -> Result<Optio
 }
 
 #[tauri::command]
-pub fn install_from_marketplace(state: State<AppState>, source: String, skill_id: String, target_agent: Option<String>) -> Result<manager::InstallResult, String> {
-    let adapters = adapter::all_adapters();
-    let (target_dir, agent_name) = if let Some(ref agent) = target_agent {
-        let a = adapters.iter()
-            .find(|a| a.name() == agent.as_str())
-            .ok_or_else(|| format!("Agent '{}' not found", agent))?;
-        let dir = a.skill_dirs().into_iter().next()
-            .ok_or_else(|| format!("No skill directory for agent '{}'", agent))?;
-        (dir, agent.clone())
-    } else {
-        let a = adapters.iter().find(|a| a.detect())
-            .ok_or_else(|| "No detected agent found".to_string())?;
-        let name = a.name().to_string();
-        let dir = a.skill_dirs().into_iter().next()
-            .ok_or_else(|| "No agent skill directory found".to_string())?;
-        (dir, name)
-    };
-    std::fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
-    let git_url = marketplace::git_url_for_source(&source);
-    let sid = if skill_id.is_empty() { None } else { Some(skill_id.as_str()) };
-    let result = manager::install_from_git_with_id(&git_url, &target_dir, sid).map_err(|e| e.to_string())?;
-    // Re-scan affected agent only and persist
-    let extensions: Vec<Extension> = if let Some(a) = adapters.iter().find(|a| a.name() == agent_name) {
-        scanner::scan_adapter(a.as_ref())
-    } else {
-        Vec::new()
-    };
-    {
-        let store = state.store.lock();
-        store.sync_extensions_for_agent(&agent_name, &extensions).map_err(|e| e.to_string())?;
-        // Persist install source metadata
-        let ext_id = scanner::stable_id_for(&result.name, "skill", &agent_name);
-        let meta = InstallMeta {
-            install_type: "marketplace".into(),
-            url: Some(source.clone()),
-            url_resolved: Some(git_url),
-            branch: None,
-            subpath: if skill_id.is_empty() { None } else { Some(skill_id.clone()) },
-            revision: result.revision.clone(),
-            remote_revision: None,
-            checked_at: None,
-            check_error: None,
-        };
-        let _ = store.set_install_meta(&ext_id, &meta);
-        // Set pack from install source URL so Source filter works immediately
-        let pack = meta.url.as_deref()
-            .and_then(hk_core::scanner::extract_pack_from_url)
-            .or_else(|| meta.url_resolved.as_deref().and_then(hk_core::scanner::extract_pack_from_url));
-        if let Some(ref p) = pack {
-            let _ = store.update_pack(&ext_id, Some(p));
-        }
-    } // Lock released before slow file I/O
+pub async fn install_from_marketplace(
+    state: State<'_, AppState>,
+    source: String,
+    skill_id: String,
+    target_agent: Option<String>,
+) -> Result<manager::InstallResult, String> {
+    let store_clone = state.store.clone();
 
-    // Audit the newly installed extension (no lock held)
-    let audit_results = audit_extension_by_name(&result.name, &extensions, &adapters);
-    if !audit_results.is_empty() {
-        let store = state.store.lock();
-        for r in &audit_results {
-            let _ = store.insert_audit_result(r);
+    tauri::async_runtime::spawn_blocking(move || -> Result<manager::InstallResult, String> {
+        let adapters = adapter::all_adapters();
+        let (target_dir, agent_name) = if let Some(ref agent) = target_agent {
+            let a = adapters.iter()
+                .find(|a| a.name() == agent.as_str())
+                .ok_or_else(|| format!("Agent '{}' not found", agent))?;
+            let dir = a.skill_dirs().into_iter().next()
+                .ok_or_else(|| format!("No skill directory for agent '{}'", agent))?;
+            (dir, agent.clone())
+        } else {
+            let a = adapters.iter().find(|a| a.detect())
+                .ok_or_else(|| "No detected agent found".to_string())?;
+            let name = a.name().to_string();
+            let dir = a.skill_dirs().into_iter().next()
+                .ok_or_else(|| "No agent skill directory found".to_string())?;
+            (dir, name)
+        };
+        std::fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
+        let git_url = marketplace::git_url_for_source(&source);
+        let sid = if skill_id.is_empty() { None } else { Some(skill_id.as_str()) };
+
+        // This is the blocking network call (git clone) — now safely in spawn_blocking
+        let result = manager::install_from_git_with_id(&git_url, &target_dir, sid)
+            .map_err(|e| e.to_string())?;
+
+        // Re-scan affected agent only and persist
+        let extensions: Vec<Extension> = if let Some(a) = adapters.iter().find(|a| a.name() == agent_name) {
+            scanner::scan_adapter(a.as_ref())
+        } else {
+            Vec::new()
+        };
+        {
+            let store = store_clone.lock();
+            store.sync_extensions_for_agent(&agent_name, &extensions).map_err(|e| e.to_string())?;
+            let ext_id = scanner::stable_id_for(&result.name, "skill", &agent_name);
+            let meta = InstallMeta {
+                install_type: "marketplace".into(),
+                url: Some(source.clone()),
+                url_resolved: Some(git_url),
+                branch: None,
+                subpath: if skill_id.is_empty() { None } else { Some(skill_id.clone()) },
+                revision: result.revision.clone(),
+                remote_revision: None,
+                checked_at: None,
+                check_error: None,
+            };
+            let _ = store.set_install_meta(&ext_id, &meta);
+            let pack = meta.url.as_deref()
+                .and_then(hk_core::scanner::extract_pack_from_url)
+                .or_else(|| meta.url_resolved.as_deref().and_then(hk_core::scanner::extract_pack_from_url));
+            if let Some(ref p) = pack {
+                let _ = store.update_pack(&ext_id, Some(p));
+            }
         }
-    }
-    Ok(result)
+
+        // Audit the newly installed extension (no lock held)
+        let audit_results = audit_extension_by_name(&result.name, &extensions, &adapters);
+        if !audit_results.is_empty() {
+            let store = store_clone.lock();
+            for r in &audit_results {
+                let _ = store.insert_audit_result(r);
+            }
+        }
+        Ok(result)
+    }).await.map_err(|e| e.to_string())?
 }
