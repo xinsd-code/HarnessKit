@@ -182,7 +182,7 @@ function OverviewSkeleton() {
 export default function OverviewPage() {
   const navigate = useNavigate();
   const extensions = useExtensionStore((s) => s.extensions);
-  const extLoading = useExtensionStore((s) => s.loading);
+  const extHasFetched = useExtensionStore((s) => s.hasFetched);
   const checkUpdates = useExtensionStore((s) => s.checkUpdates);
   const checkingUpdates = useExtensionStore((s) => s.checkingUpdates);
   const auditResults = useAuditStore((s) => s.results);
@@ -196,20 +196,24 @@ export default function OverviewPage() {
   const [auditLoading, setAuditLoading] = useState(false);
   // updatesLoading now comes from store as checkingUpdates
   const [tips, setTips] = useState<Tip[]>([]);
+  const [localReady, setLocalReady] = useState(false);
 
   useEffect(() => {
     loadCached();
-    fetchAgents();
-    api
-      .listAgentConfigs()
-      .then(setAgentConfigs)
-      .catch((e) => {
+    // Wait for agents and config files before showing content
+    Promise.all([
+      fetchAgents(),
+      api.listAgentConfigs().then(setAgentConfigs).catch((e) => {
         console.error("Failed to load data:", e);
-      });
+      }),
+    ]).then(() => setLocalReady(true));
     fetchTips().then(setTips).catch((e) => {
       console.error("Failed to load data:", e);
     });
   }, [loadCached, fetchAgents]);
+
+  // Show skeleton until both extensions (fetched in App.tsx) and local data are ready.
+  const initialLoaded = localReady && extHasFetched;
 
   // Filter extensions to only those belonging to enabled agents
   const enabledAgentNames = useMemo(
@@ -234,7 +238,7 @@ export default function OverviewPage() {
 
   // Dashboard stats — derived client-side from grouped extension data
   const stats = useMemo<DashboardStats | null>(() => {
-    if (extLoading && extensions.length === 0) return null;
+    if (!initialLoaded) return null;
 
     const skill_count = visibleGroups.filter((g) => g.kind === "skill").length;
     const mcp_count = visibleGroups.filter((g) => g.kind === "mcp").length;
@@ -281,7 +285,7 @@ export default function OverviewPage() {
       low_issues,
       updates_available: 0,
     };
-  }, [visibleGroups, auditResults, extLoading, extensions.length]);
+  }, [visibleGroups, auditResults, initialLoaded]);
 
   // Compute per-agent extension counts from grouped data
   const agentExtCounts = useMemo(() => {
@@ -664,20 +668,20 @@ export default function OverviewPage() {
       {/* Empty state — when no extensions at all                           */}
       {/* ----------------------------------------------------------------- */}
       {stats.total_extensions === 0 && (
-        <section className="animate-scale-in rounded-xl border border-dashed border-border bg-card/30 px-6 py-10 text-center">
+        <section className="animate-scale-in rounded-xl border border-dashed border-border bg-card/30 px-6 py-6 text-center">
           <Package
-            size={32}
+            size={24}
             className="mx-auto text-muted-foreground/40"
             aria-hidden="true"
           />
-          <h3 className="mt-3 text-base font-medium text-foreground">
+          <h3 className="mt-2 text-sm font-medium text-foreground">
             Your workspace is ready
           </h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Browse the marketplace to discover skills, MCP servers, and plugins
-            for your agents.
+          <p className="mt-1 text-xs text-muted-foreground">
+            Browse the marketplace to discover skills, MCP servers, and
+            agent-first CLIs.
           </p>
-          <div className="mt-5 flex items-center justify-center gap-3">
+          <div className="mt-3 flex items-center justify-center gap-3">
             <button
               onClick={() => navigate("/marketplace")}
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90"

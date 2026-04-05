@@ -9,8 +9,6 @@ import {
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
-const APP_VERSION = __APP_VERSION__;
-
 const mainNavItems = [
   { to: "/", icon: LayoutDashboard, label: "Overview" },
   { to: "/agents", icon: Bot, label: "Agents" },
@@ -74,7 +72,6 @@ export function Sidebar() {
         <h1 className="text-lg font-bold tracking-tight text-sidebar-foreground">
           HarnessKit
         </h1>
-        <p className="text-[11px] text-muted-foreground/70">v{APP_VERSION}</p>
       </div>
 
       {/* Branding divider */}

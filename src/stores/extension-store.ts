@@ -17,6 +17,7 @@ interface PendingDelete {
 interface ExtensionState {
   extensions: Extension[];
   loading: boolean;
+  hasFetched: boolean;
   kindFilter: ExtensionKind | null;
   agentFilter: string | null;
   searchQuery: string;
@@ -190,6 +191,7 @@ function expandGroupKeys(
 export const useExtensionStore = create<ExtensionState>((set, get) => ({
   extensions: [],
   loading: false,
+  hasFetched: false,
   kindFilter: null,
   agentFilter: null,
   searchQuery: "",
@@ -213,7 +215,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       // Always fetch all extensions — kind/agent filtering is applied client-side
       // so that detail panels can access child extensions across all types.
       const extensions = await api.listExtensions(undefined, undefined);
-      set({ extensions, loading: false });
+      set({ extensions, loading: false, hasFetched: true });
       get().fetchTags();
       get().fetchPacks();
       // Restore persisted update statuses from DB on first load
@@ -235,7 +237,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       }
     } catch (e) {
       console.error("Failed to fetch extensions:", e);
-      set({ loading: false });
+      set({ loading: false, hasFetched: true });
     }
   },
 

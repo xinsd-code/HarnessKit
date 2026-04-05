@@ -601,6 +601,11 @@ export default function SettingsPage() {
               </div>
             )}
           </section>
+
+          {/* Version */}
+          <p className="mt-8 text-center text-xs text-muted-foreground/50">
+            HarnessKit v{__APP_VERSION__}
+          </p>
         </div>
       </div>
     </div>
