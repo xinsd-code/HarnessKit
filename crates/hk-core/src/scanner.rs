@@ -74,6 +74,9 @@ static KNOWN_CLIS: &[KnownCli] = &[
 ];
 
 /// FNV-1a 64-bit hash — deterministic across Rust versions (unlike DefaultHasher).
+/// NOTE: FNV-1a is not collision-resistant. With a very large number of extensions,
+/// ID collisions are theoretically possible. Consider SHA-256 truncated if this
+/// becomes an issue. The database UPSERT on primary key mitigates silent data loss.
 pub fn fnv1a(data: &[u8]) -> u64 {
     let mut hash: u64 = 0xcbf29ce484222325;
     for &b in data {
