@@ -3,7 +3,7 @@ use crate::models::*;
 use chrono::{DateTime, Utc};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 struct KnownCli {
@@ -390,12 +390,16 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
         .collect()
 }
 
-/// Run `which` to find a binary's absolute path
+/// Run `which` to find a binary's absolute path.
+/// Falls back to searching common user-level directories that may not be
+/// in PATH when running as a macOS GUI app (packaged .app bundles don't
+/// load shell profiles, so ~/.local/bin, ~/.cargo/bin etc. are missing).
 fn which_binary(name: &str) -> Option<String> {
     if crate::sanitize::validate_binary_name(name).is_err() {
         return None;
     }
-    std::process::Command::new("which")
+    // Try which first (works in dev / terminal)
+    if let Some(path) = std::process::Command::new("which")
         .arg(name)
         .output()
         .ok()
@@ -404,6 +408,26 @@ fn which_binary(name: &str) -> Option<String> {
             let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
             if s.is_empty() { None } else { Some(s) }
         })
+    {
+        return Some(path);
+    }
+    // Fallback: search common user-level bin directories
+    let home = dirs::home_dir()?;
+    let extra_dirs = [
+        home.join(".local/bin"),
+        home.join(".cargo/bin"),
+        home.join("go/bin"),
+        home.join(".bun/bin"),
+        PathBuf::from("/opt/homebrew/bin"),
+        PathBuf::from("/usr/local/bin"),
+    ];
+    for dir in &extra_dirs {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Some(candidate.to_string_lossy().to_string());
+        }
+    }
+    None
 }
 
 /// Run `<binary> --version` and extract a version number via regex
@@ -553,7 +577,7 @@ fn scan_cli_binaries(
             .iter()
             .find(|k| k.binary_name == bin_name.as_str());
 
-        let version = bin_path.as_ref().and_then(|_| get_binary_version(bin_name));
+        let version = bin_path.as_ref().and_then(|p| get_binary_version(p));
         let install_method = bin_path.as_ref().and_then(|p| detect_install_method(p));
 
         let display_name = known
