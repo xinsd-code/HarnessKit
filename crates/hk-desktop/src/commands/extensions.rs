@@ -168,6 +168,21 @@ pub fn open_in_system(state: State<AppState>, path: String) -> Result<(), String
     if !is_path_within_allowed_dirs(file_path, &state)? {
         return Err("Path is not within a known agent or project directory".into());
     }
+    if file_path.is_file() {
+        let allowed_extensions = [
+            "md", "txt", "json", "toml", "yaml", "yml", "xml",
+            "js", "ts", "py", "rs", "go", "sh", "css", "html",
+            "csv", "log", "conf", "cfg", "ini", "env",
+        ];
+        let ext = file_path.extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        if !allowed_extensions.contains(&ext) {
+            return Err(format!(
+                "Cannot open files with extension '.{}' — use Reveal in Finder instead", ext
+            ));
+        }
+    }
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("open")
