@@ -4,10 +4,10 @@ use colored::Colorize;
 use comfy_table::{Table, presets::UTF8_FULL_CONDENSED, ContentArrangement};
 use hk_core::{
     adapter,
-    auditor::{AuditInput, Auditor},
     manager,
     models::*,
     scanner,
+    service,
     store::Store,
 };
 use std::path::PathBuf;
@@ -52,6 +52,9 @@ enum Commands {
         /// Filter by minimum severity
         #[arg(long)]
         severity: Option<String>,
+        /// Skip the initial scan and sync (use existing DB state)
+        #[arg(long)]
+        no_scan: bool,
     },
     /// Enable an extension (or all in a pack)
     Enable {
@@ -95,7 +98,7 @@ fn main() -> Result<()> {
             }
         }
         Commands::Info { name } => cmd_info(&extensions, &name),
-        Commands::Audit { name, kind, severity } => cmd_audit(&extensions, name.as_deref(), kind.as_deref(), severity.as_deref()),
+        Commands::Audit { name, kind, severity, no_scan } => cmd_audit(&store, &adapters, name.as_deref(), kind.as_deref(), severity.as_deref(), no_scan),
         Commands::Enable { name, pack } => cmd_toggle(&store, &extensions, name.as_deref(), pack.as_deref(), true),
         Commands::Disable { name, pack } => cmd_toggle(&store, &extensions, name.as_deref(), pack.as_deref(), false),
     }
@@ -186,34 +189,36 @@ fn cmd_info(extensions: &[Extension], name: &str) -> Result<()> {
     Ok(())
 }
 
-fn cmd_audit(extensions: &[Extension], name: Option<&str>, _kind: Option<&str>, _severity: Option<&str>) -> Result<()> {
-    let auditor = Auditor::new();
-    let targets: Vec<&Extension> = if let Some(n) = name {
-        extensions.iter().filter(|e| e.name == n).collect()
-    } else {
-        extensions.iter().collect()
-    };
+fn cmd_audit(
+    store: &Store,
+    adapters: &[Box<dyn adapter::AgentAdapter>],
+    name: Option<&str>,
+    _kind: Option<&str>,
+    _severity: Option<&str>,
+    no_scan: bool,
+) -> Result<()> {
+    // When --no-scan is set, skip the scan_and_sync that main() already did
+    if !no_scan {
+        let scanned = scanner::scan_all(adapters);
+        store.sync_extensions(&scanned)?;
+    }
 
-    for ext in targets {
-        let input = AuditInput {
-            extension_id: ext.id.clone(),
-            kind: ext.kind,
-            name: ext.name.clone(),
-            content: String::new(),
-            source: ext.source.clone(),
-            file_path: ext.name.clone(),
-            mcp_command: None,
-            mcp_args: vec![],
-            mcp_env: Default::default(),
-            installed_at: ext.installed_at,
-            updated_at: ext.updated_at,
-            permissions: ext.permissions.clone(),
-            cli_parent_id: ext.cli_parent_id.clone(),
-            cli_meta: ext.cli_meta.clone(),
-            child_permissions: vec![],
-            pack: ext.pack.clone(),
+    let results = service::run_full_audit(store, adapters)?;
+    let extensions = store.list_extensions(None, None)?;
+
+    // Build a map from extension_id -> extension for display
+    let ext_map: std::collections::HashMap<&str, &Extension> =
+        extensions.iter().map(|e| (e.id.as_str(), e)).collect();
+
+    for result in &results {
+        let ext = match ext_map.get(result.extension_id.as_str()) {
+            Some(e) => e,
+            None => continue,
         };
-        let result = auditor.audit(&input);
+        // Filter by name if specified
+        if let Some(n) = name {
+            if ext.name != n { continue; }
+        }
         println!();
         println!("  {} Trust Score: {}", ext.name.bold(), format_score(result.trust_score));
         if result.findings.is_empty() {
