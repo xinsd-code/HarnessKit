@@ -30,16 +30,11 @@ pub fn deploy_skill(source_path: &Path, target_skill_dir: &Path) -> Result<Strin
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), HkError> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)?.flatten() {
-        // Skip symlinks to prevent symlink-following attacks
-        if entry.file_type().map(|t| t.is_symlink()).unwrap_or(false) {
-            eprintln!("[hk] warning: skipping symlink: {}", entry.path().display());
-            continue;
-        }
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
-        // Re-check via symlink_metadata right before copy to close the TOCTOU
-        // window between the readdir check above and the actual I/O below.
-        // If the file was deleted between readdir and now, skip instead of aborting.
+        // TOCTOU-safe symlink check: use symlink_metadata (lstat) instead of
+        // following symlinks. Re-check right before the copy to close the race
+        // window between readdir and the actual file operation.
         let meta = match std::fs::symlink_metadata(&src_path) {
             Ok(m) => m,
             Err(e) => {

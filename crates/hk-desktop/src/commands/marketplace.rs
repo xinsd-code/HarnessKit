@@ -1,6 +1,5 @@
 use super::AppState;
-use super::helpers::audit_extension_by_name;
-use hk_core::{HkError, adapter, manager, marketplace, models::*, scanner};
+use hk_core::{HkError, adapter, manager, marketplace, models::*, service};
 use tauri::State;
 
 #[tauri::command]
@@ -94,60 +93,42 @@ pub async fn install_from_marketplace(
         // This is the blocking network call (git clone) — now safely in spawn_blocking
         let result = manager::install_from_git_with_id(&git_url, &target_dir, sid)?;
 
-        // Re-scan affected agent only and persist
-        let extensions: Vec<Extension> =
-            if let Some(a) = adapters.iter().find(|a| a.name() == agent_name) {
-                scanner::scan_adapter(a.as_ref())
+        // Post-install: scan, sync, set meta, audit
+        let meta = InstallMeta {
+            install_type: "marketplace".into(),
+            url: Some(source.clone()),
+            url_resolved: Some(git_url),
+            branch: None,
+            subpath: if skill_id.is_empty() {
+                None
             } else {
-                Vec::new()
-            };
+                Some(skill_id.clone())
+            },
+            revision: result.revision.clone(),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+        let pack = meta
+            .url
+            .as_deref()
+            .and_then(hk_core::scanner::extract_pack_from_url)
+            .or_else(|| {
+                meta.url_resolved
+                    .as_deref()
+                    .and_then(hk_core::scanner::extract_pack_from_url)
+            });
+        let agents = vec![agent_name];
         {
             let store = store_clone.lock();
-            store.sync_extensions_for_agent(&agent_name, &extensions)?;
-            let ext_id = scanner::stable_id_for(&result.name, "skill", &agent_name);
-            let meta = InstallMeta {
-                install_type: "marketplace".into(),
-                url: Some(source.clone()),
-                url_resolved: Some(git_url),
-                branch: None,
-                subpath: if skill_id.is_empty() {
-                    None
-                } else {
-                    Some(skill_id.clone())
-                },
-                revision: result.revision.clone(),
-                remote_revision: None,
-                checked_at: None,
-                check_error: None,
-            };
-            if let Err(e) = store.set_install_meta(&ext_id, &meta) {
-                eprintln!("[hk] warning: {e}");
-            }
-            let pack = meta
-                .url
-                .as_deref()
-                .and_then(hk_core::scanner::extract_pack_from_url)
-                .or_else(|| {
-                    meta.url_resolved
-                        .as_deref()
-                        .and_then(hk_core::scanner::extract_pack_from_url)
-                });
-            if let Some(ref p) = pack
-                && let Err(e) = store.update_pack(&ext_id, Some(p))
-            {
-                eprintln!("[hk] warning: {e}");
-            }
-        }
-
-        // Audit the newly installed extension (no lock held)
-        let audit_results = audit_extension_by_name(&result.name, &extensions, &adapters);
-        if !audit_results.is_empty() {
-            let store = store_clone.lock();
-            for r in &audit_results {
-                if let Err(e) = store.insert_audit_result(r) {
-                    eprintln!("[hk] warning: {e}");
-                }
-            }
+            service::post_install_sync(
+                &store,
+                &adapters,
+                &agents,
+                &result.name,
+                Some(meta),
+                pack.as_deref(),
+            )?;
         }
         Ok(result)
     })

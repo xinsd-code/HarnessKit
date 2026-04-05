@@ -56,6 +56,17 @@ impl Manager {
 /// Skill (file rename), MCP (config read/write), Hook (config read/write),
 /// Plugin (Claude config-driven or non-Claude manifest rename), CLI (cascade to children).
 pub fn toggle_extension(store: &Store, id: &str, enabled: bool) -> Result<(), HkError> {
+    let adapters = adapter::all_adapters();
+    toggle_extension_with_adapters(store, &adapters, id, enabled)
+}
+
+/// Same as `toggle_extension` but accepts pre-built adapters to avoid redundant construction.
+pub fn toggle_extension_with_adapters(
+    store: &Store,
+    adapters: &[Box<dyn adapter::AgentAdapter>],
+    id: &str,
+    enabled: bool,
+) -> Result<(), HkError> {
     let ext = store
         .get_extension(id)?
         .ok_or_else(|| HkError::NotFound(format!("Extension not found: {}", id)))?;
@@ -67,22 +78,22 @@ pub fn toggle_extension(store: &Store, id: &str, enabled: bool) -> Result<(), Hk
 
     match ext.kind {
         ExtensionKind::Skill => {
-            toggle_skill(&ext, enabled)?;
+            toggle_skill(&ext, enabled, adapters)?;
             let sibling_ids = store.find_siblings_by_source_path(id)?;
             for sib_id in &sibling_ids {
                 store.set_enabled(sib_id, enabled)?;
             }
         }
         ExtensionKind::Mcp => {
-            toggle_mcp(&ext, enabled, store)?;
+            toggle_mcp(&ext, enabled, store, adapters)?;
             store.set_enabled(id, enabled)?;
         }
         ExtensionKind::Hook => {
-            toggle_hook(&ext, enabled, store)?;
+            toggle_hook(&ext, enabled, store, adapters)?;
             store.set_enabled(id, enabled)?;
         }
         ExtensionKind::Plugin => {
-            toggle_plugin(&ext, enabled, store)?;
+            toggle_plugin(&ext, enabled, store, adapters)?;
             store.set_enabled(id, enabled)?;
         }
         ExtensionKind::Cli => {
@@ -90,14 +101,14 @@ pub fn toggle_extension(store: &Store, id: &str, enabled: bool) -> Result<(), Hk
             for child in &children {
                 match child.kind {
                     ExtensionKind::Skill => {
-                        toggle_skill(child, enabled)?;
+                        toggle_skill(child, enabled, adapters)?;
                         let sibling_ids = store.find_siblings_by_source_path(&child.id)?;
                         for sib_id in &sibling_ids {
                             store.set_enabled(sib_id, enabled)?;
                         }
                     }
                     ExtensionKind::Mcp => {
-                        toggle_mcp(child, enabled, store)?;
+                        toggle_mcp(child, enabled, store, adapters)?;
                         store.set_enabled(&child.id, enabled)?;
                     }
                     _ => {
@@ -111,10 +122,9 @@ pub fn toggle_extension(store: &Store, id: &str, enabled: bool) -> Result<(), Hk
     Ok(())
 }
 
-fn toggle_skill(ext: &Extension, enabled: bool) -> Result<(), HkError> {
+fn toggle_skill(ext: &Extension, enabled: bool, adapters: &[Box<dyn adapter::AgentAdapter>]) -> Result<(), HkError> {
     use crate::scanner::skill_locations;
-    let adapters = adapter::all_adapters();
-    let locations = skill_locations(&ext.name, &adapters);
+    let locations = skill_locations(&ext.name, adapters);
 
     // Fallback: if no paths found via adapters, use the stored source_path
     let paths: Vec<PathBuf> = if locations.is_empty() {
@@ -143,9 +153,8 @@ fn toggle_skill(ext: &Extension, enabled: bool) -> Result<(), HkError> {
     Ok(())
 }
 
-fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store) -> Result<(), HkError> {
-    let adapters = adapter::all_adapters();
-    for a in &adapters {
+fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<dyn adapter::AgentAdapter>]) -> Result<(), HkError> {
+    for a in adapters {
         if !ext.agents.contains(&a.name().to_string()) {
             continue;
         }
@@ -159,7 +168,8 @@ fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store) -> Result<(), HkErr
             // Warn about redacted env values — server will be restored but
             // the user needs to manually set the real values in the config.
             if let Some(env_obj) = entry.get("env").and_then(|v| v.as_object()) {
-                let redacted_keys: Vec<&str> = env_obj.iter()
+                let redacted_keys: Vec<&str> = env_obj
+                    .iter()
                     .filter(|(_, v)| v.as_str() == Some("<redacted>"))
                     .map(|(k, _)| k.as_str())
                     .collect();
@@ -179,7 +189,8 @@ fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store) -> Result<(), HkErr
                 .ok_or_else(|| {
                     HkError::NotFound(format!("MCP server '{}' not found in config", ext.name))
                 })?;
-            // Redact env values before storing — keep keys but replace values
+            // Redact env values before persisting to the DB so secrets are not
+            // stored in plain text in the SQLite database.
             let redacted = redact_mcp_env(&entry);
             store.set_disabled_config(&ext.id, Some(&redacted.to_string()))?;
             deployer::remove_mcp_server(&config_path, &ext.name, format)?;
@@ -190,6 +201,8 @@ fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store) -> Result<(), HkErr
 
 /// Redact environment variable values in an MCP server config entry.
 /// Replaces all values in the "env" object with "<redacted>" while preserving keys.
+/// This prevents secrets (API keys, tokens, etc.) from being stored in the
+/// harnesskit SQLite database when an MCP server is disabled.
 fn redact_mcp_env(entry: &serde_json::Value) -> serde_json::Value {
     let mut redacted = entry.clone();
     if let Some(env_obj) = redacted.get_mut("env").and_then(|v| v.as_object_mut()) {
@@ -200,8 +213,7 @@ fn redact_mcp_env(entry: &serde_json::Value) -> serde_json::Value {
     redacted
 }
 
-fn toggle_hook(ext: &Extension, enabled: bool, store: &Store) -> Result<(), HkError> {
-    let adapters = adapter::all_adapters();
+fn toggle_hook(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<dyn adapter::AgentAdapter>]) -> Result<(), HkError> {
     let parts: Vec<&str> = ext.name.splitn(3, ':').collect();
     if parts.len() < 3 {
         return Err(HkError::Validation(format!(
@@ -215,7 +227,7 @@ fn toggle_hook(ext: &Extension, enabled: bool, store: &Store) -> Result<(), HkEr
     } else {
         Some(matcher_str)
     };
-    for a in &adapters {
+    for a in adapters {
         if !ext.agents.contains(&a.name().to_string()) {
             continue;
         }
@@ -240,9 +252,8 @@ fn toggle_hook(ext: &Extension, enabled: bool, store: &Store) -> Result<(), HkEr
     Ok(())
 }
 
-fn toggle_plugin(ext: &Extension, enabled: bool, store: &Store) -> Result<(), HkError> {
-    let adapters = adapter::all_adapters();
-    for a in &adapters {
+fn toggle_plugin(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<dyn adapter::AgentAdapter>]) -> Result<(), HkError> {
+    for a in adapters {
         if !ext.agents.contains(&a.name().to_string()) {
             continue;
         }
@@ -957,16 +968,11 @@ fn repo_name_from_url(url: &str) -> String {
 fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), HkError> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)?.flatten() {
-        // Skip symlinks to prevent symlink-following attacks
-        if entry.file_type().map(|t| t.is_symlink()).unwrap_or(false) {
-            eprintln!("[hk] warning: skipping symlink: {}", entry.path().display());
-            continue;
-        }
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
-        // Re-check via symlink_metadata right before copy to close the TOCTOU
-        // window between the readdir check above and the actual I/O below.
-        // If the file was deleted between readdir and now, skip instead of aborting.
+        // TOCTOU-safe symlink check: use symlink_metadata (lstat) instead of
+        // following symlinks. Re-check right before the copy to close the race
+        // window between readdir and the actual file operation.
         let meta = match std::fs::symlink_metadata(&src_path) {
             Ok(m) => m,
             Err(e) => {
@@ -1692,7 +1698,8 @@ mod tests {
         std::os::unix::fs::symlink(
             outside.path().join("secret"),
             src.path().join("stolen"),
-        ).unwrap();
+        )
+        .unwrap();
 
         let dst = TempDir::new().unwrap();
         let dst_dir = dst.path().join("result");

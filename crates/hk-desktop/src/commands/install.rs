@@ -1,6 +1,6 @@
-use super::helpers::{audit_extension_by_name, find_skill_by_id};
+use super::helpers::find_skill_by_id;
 use super::{AppState, PendingClone};
-use hk_core::{HkError, adapter, deployer, manager, marketplace, models::*, scanner};
+use hk_core::{HkError, adapter, deployer, manager, marketplace, models::*, scanner, service};
 use tauri::State;
 
 // --- Multi-skill git install flow ---
@@ -75,57 +75,31 @@ pub fn install_from_local(
         revision: None,
     };
 
-    // Re-scan affected agents only and persist
-    let mut extensions = Vec::new();
+    // Post-install: scan, sync, set meta, audit
+    let git_source = scanner::detect_source_for(source_path);
+    let meta = InstallMeta {
+        install_type: "local".into(),
+        url: git_source.url.clone().or_else(|| Some(path.clone())),
+        url_resolved: None,
+        branch: None,
+        subpath: None,
+        revision: git_source.commit_hash.clone(),
+        remote_revision: None,
+        checked_at: None,
+        check_error: None,
+    };
+    let pack = git_source.url.as_deref()
+        .and_then(hk_core::scanner::extract_pack_from_url);
     {
         let store = state.store.lock();
-        for a in &adapters {
-            if agents.contains(&a.name().to_string()) {
-                let exts = scanner::scan_adapter(a.as_ref());
-                store.sync_extensions_for_agent(a.name(), &exts)?;
-                extensions.extend(exts);
-            }
-        }
-        // Save install metadata for each agent
-        // If the local folder is inside a git repo, record the git URL
-        let git_source = scanner::detect_source_for(source_path);
-        let meta = InstallMeta {
-            install_type: "local".into(),
-            url: git_source.url.clone().or_else(|| Some(path.clone())),
-            url_resolved: None,
-            branch: None,
-            subpath: None,
-            revision: git_source.commit_hash.clone(),
-            remote_revision: None,
-            checked_at: None,
-            check_error: None,
-        };
-        let pack = git_source
-            .url
-            .as_deref()
-            .and_then(hk_core::scanner::extract_pack_from_url);
-        for agent_name in &agents {
-            let ext_id = scanner::stable_id_for(&skill_name, "skill", agent_name);
-            if let Err(e) = store.set_install_meta(&ext_id, &meta) {
-                eprintln!("[hk] warning: {e}");
-            }
-            if let Some(ref p) = pack
-                && let Err(e) = store.update_pack(&ext_id, Some(p))
-            {
-                eprintln!("[hk] warning: {e}");
-            }
-        }
-    }
-
-    // Audit
-    let audit_results = audit_extension_by_name(&result.name, &extensions, &adapters);
-    if !audit_results.is_empty() {
-        let store = state.store.lock();
-        for r in &audit_results {
-            if let Err(e) = store.insert_audit_result(r) {
-                eprintln!("[hk] warning: {e}");
-            }
-        }
+        service::post_install_sync(
+            &store,
+            &adapters,
+            &agents,
+            &skill_name,
+            Some(meta),
+            pack.as_deref(),
+        )?;
     }
 
     Ok(result)
@@ -168,53 +142,33 @@ pub fn install_from_git(
     let sid = skill_id.as_deref().filter(|s| !s.is_empty());
     let result = manager::install_from_git_with_id(&url, &target_dir, sid)?;
 
-    // Re-scan affected agent only and persist
-    let extensions: Vec<Extension> =
-        if let Some(a) = adapters.iter().find(|a| a.name() == agent_name) {
-            scanner::scan_adapter(a.as_ref())
-        } else {
-            Vec::new()
-        };
+    // Post-install: scan, sync, set meta, audit
+    let meta = InstallMeta {
+        install_type: "git".into(),
+        url: Some(url.clone()),
+        url_resolved: None,
+        branch: None,
+        subpath: sid.map(|s| s.to_string()),
+        revision: result.revision.clone(),
+        remote_revision: None,
+        checked_at: None,
+        check_error: None,
+    };
+    let pack = meta
+        .url
+        .as_deref()
+        .and_then(hk_core::scanner::extract_pack_from_url);
+    let agents = vec![agent_name];
     {
         let store = state.store.lock();
-        store.sync_extensions_for_agent(&agent_name, &extensions)?;
-        // Persist install source metadata
-        let ext_id = scanner::stable_id_for(&result.name, "skill", &agent_name);
-        let meta = InstallMeta {
-            install_type: "git".into(),
-            url: Some(url.clone()),
-            url_resolved: None,
-            branch: None,
-            subpath: sid.map(|s| s.to_string()),
-            revision: result.revision.clone(),
-            remote_revision: None,
-            checked_at: None,
-            check_error: None,
-        };
-        if let Err(e) = store.set_install_meta(&ext_id, &meta) {
-            eprintln!("[hk] warning: {e}");
-        }
-        // Set pack from install URL so Source filter works immediately
-        let pack = meta
-            .url
-            .as_deref()
-            .and_then(hk_core::scanner::extract_pack_from_url);
-        if let Some(ref p) = pack
-            && let Err(e) = store.update_pack(&ext_id, Some(p))
-        {
-            eprintln!("[hk] warning: {e}");
-        }
-    } // Lock released before slow file I/O
-
-    // Audit the newly installed extension (no lock held)
-    let audit_results = audit_extension_by_name(&result.name, &extensions, &adapters);
-    if !audit_results.is_empty() {
-        let store = state.store.lock();
-        for r in &audit_results {
-            if let Err(e) = store.insert_audit_result(r) {
-                eprintln!("[hk] warning: {e}");
-            }
-        }
+        service::post_install_sync(
+            &store,
+            &adapters,
+            &agents,
+            &result.name,
+            Some(meta),
+            pack.as_deref(),
+        )?;
     }
 
     Ok(result)
@@ -294,44 +248,30 @@ pub async fn scan_git_repo(
                     last_result = Some(result);
                 }
 
-                // Re-scan affected agents only and persist
-                {
+                // Post-install: scan, sync, set meta, audit
+                if let Some(ref result) = last_result {
+                    let meta = InstallMeta {
+                        install_type: "git".into(),
+                        url: Some(url.clone()),
+                        url_resolved: None,
+                        branch: None,
+                        subpath: skill_id.map(|s| s.to_string()),
+                        revision: result.revision.clone(),
+                        remote_revision: None,
+                        checked_at: None,
+                        check_error: None,
+                    };
+                    let pack = meta.url.as_deref()
+                        .and_then(hk_core::scanner::extract_pack_from_url);
                     let store = store_clone.lock();
-                    for a in &adapters {
-                        if installed_agents.contains(&a.name().to_string()) {
-                            let exts = scanner::scan_adapter(a.as_ref());
-                            store.sync_extensions_for_agent(a.name(), &exts)?;
-                        }
-                    }
-                    // Persist install source metadata for each agent
-                    if let Some(ref result) = last_result {
-                        let meta = InstallMeta {
-                            install_type: "git".into(),
-                            url: Some(url.clone()),
-                            url_resolved: None,
-                            branch: None,
-                            subpath: skill_id.map(|s| s.to_string()),
-                            revision: result.revision.clone(),
-                            remote_revision: None,
-                            checked_at: None,
-                            check_error: None,
-                        };
-                        let pack = meta
-                            .url
-                            .as_deref()
-                            .and_then(hk_core::scanner::extract_pack_from_url);
-                        for agent_name in &installed_agents {
-                            let ext_id = scanner::stable_id_for(&result.name, "skill", agent_name);
-                            if let Err(e) = store.set_install_meta(&ext_id, &meta) {
-                                eprintln!("[hk] warning: {e}");
-                            }
-                            if let Some(ref p) = pack
-                                && let Err(e) = store.update_pack(&ext_id, Some(p))
-                            {
-                                eprintln!("[hk] warning: {e}");
-                            }
-                        }
-                    }
+                    service::post_install_sync(
+                        &store,
+                        &adapters,
+                        &installed_agents,
+                        &result.name,
+                        Some(meta),
+                        pack.as_deref(),
+                    )?;
                 }
 
                 Ok(ScanResult::Installed {
@@ -406,19 +346,32 @@ pub async fn install_scanned_skills(
             }
         }
 
-        // Re-scan affected agents only and persist
+        // Post-install: scan, sync, set meta, audit — once per unique skill name
         {
             let store = store_clone.lock();
-            for a in &adapters {
-                if target_agents.contains(&a.name().to_string()) {
-                    let exts = scanner::scan_adapter(a.as_ref());
-                    store.sync_extensions_for_agent(a.name(), &exts)?;
-                }
-            }
-            // Persist install source metadata for each installed skill+agent
             let install_pack = hk_core::scanner::extract_pack_from_url(&pending.url);
-            for (agent_name, sid, result) in &results {
-                let ext_id = scanner::stable_id_for(&result.name, "skill", agent_name);
+            let mut synced_skills = std::collections::HashSet::new();
+            for (_agent_name, sid, result) in &results {
+                if !synced_skills.insert(result.name.clone()) {
+                    // Already synced this skill name — just set meta for remaining agents
+                    let meta = InstallMeta {
+                        install_type: "git".into(),
+                        url: Some(pending.url.clone()),
+                        url_resolved: None,
+                        branch: None,
+                        subpath: if sid.is_empty() { None } else { Some(sid.clone()) },
+                        revision: result.revision.clone(),
+                        remote_revision: None,
+                        checked_at: None,
+                        check_error: None,
+                    };
+                    let ext_id = scanner::stable_id_for(&result.name, "skill", _agent_name);
+                    let _ = store.set_install_meta(&ext_id, &meta);
+                    if let Some(ref p) = install_pack {
+                        let _ = store.update_pack(&ext_id, Some(p));
+                    }
+                    continue;
+                }
                 let meta = InstallMeta {
                     install_type: "git".into(),
                     url: Some(pending.url.clone()),
@@ -434,14 +387,14 @@ pub async fn install_scanned_skills(
                     checked_at: None,
                     check_error: None,
                 };
-                if let Err(e) = store.set_install_meta(&ext_id, &meta) {
-                    eprintln!("[hk] warning: {e}");
-                }
-                if let Some(ref p) = install_pack
-                    && let Err(e) = store.update_pack(&ext_id, Some(p))
-                {
-                    eprintln!("[hk] warning: {e}");
-                }
+                service::post_install_sync(
+                    &store,
+                    &adapters,
+                    &target_agents,
+                    &result.name,
+                    Some(meta),
+                    install_pack.as_deref(),
+                )?;
             }
         }
 
@@ -474,8 +427,8 @@ pub fn deploy_to_agent(
         .find(|a| a.name() == target_agent)
         .ok_or_else(|| HkError::NotFound(format!("Agent '{}' not found", target_agent)))?;
 
-    match ext.kind.as_str() {
-        "skill" => {
+    match ext.kind {
+        ExtensionKind::Skill => {
             // Find source skill path
             let source_path = find_skill_by_id(&adapters, &extension_id, &ext.agents)
                 .map(|loc| loc.entry_path)
@@ -495,7 +448,7 @@ pub fn deploy_to_agent(
             store.sync_extensions_for_agent(target_adapter.name(), &exts)?;
             Ok(deployed_name)
         }
-        "mcp" => {
+        ExtensionKind::Mcp => {
             // Find the source MCP server entry
             let mut source_entry = None;
             for adapter in &adapters {
@@ -524,7 +477,7 @@ pub fn deploy_to_agent(
             store.sync_extensions_for_agent(target_adapter.name(), &exts)?;
             Ok(entry.name)
         }
-        "hook" => {
+        ExtensionKind::Hook => {
             // Find the source hook entry
             let mut source_entry = None;
             for adapter in &adapters {
@@ -577,7 +530,7 @@ pub fn deploy_to_agent(
             store.sync_extensions_for_agent(target_adapter.name(), &exts)?;
             Ok(format!("{}:{}", entry.event, entry.command))
         }
-        "cli" => {
+        ExtensionKind::Cli => {
             // Deploy the CLI's associated skill to the target agent
             let binary_name = ext
                 .cli_meta
@@ -609,7 +562,7 @@ pub fn deploy_to_agent(
         }
         other => Err(HkError::Internal(format!(
             "Cross-agent deploy not supported for '{}' extensions",
-            other
+            other.as_str()
         ))),
     }
 }
