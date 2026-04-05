@@ -131,7 +131,7 @@ pub(super) fn is_path_within_allowed_dirs(
     state: &super::AppState,
 ) -> Result<bool, HkError> {
     let canonical = path.canonicalize()?;
-    let adapters = adapter::all_adapters();
+    let adapters = &*state.adapters;
     let store = state.store.lock();
     let projects = store.list_projects().unwrap_or_default();
     let custom_paths = store.list_all_custom_config_paths().unwrap_or_default();

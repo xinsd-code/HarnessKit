@@ -21,6 +21,7 @@ pub use marketplace::*;
 pub use projects::*;
 pub use settings::*;
 
+use hk_core::adapter;
 use hk_core::store::Store;
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -35,5 +36,6 @@ pub struct PendingClone {
 
 pub struct AppState {
     pub store: Arc<Mutex<Store>>,
+    pub adapters: Arc<Vec<Box<dyn adapter::AgentAdapter>>>,
     pub pending_clones: Arc<Mutex<HashMap<String, PendingClone>>>,
 }

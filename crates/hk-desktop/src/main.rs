@@ -2,7 +2,7 @@ mod commands;
 mod icon;
 
 use commands::AppState;
-use hk_core::store::Store;
+use hk_core::{adapter, store::Store};
 use parking_lot::Mutex;
 use std::sync::Arc;
 use tauri::Manager;
@@ -26,6 +26,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .manage(AppState {
             store: Arc::new(Mutex::new(store)),
+            adapters: Arc::new(adapter::all_adapters()),
             pending_clones: Arc::new(Mutex::new(std::collections::HashMap::new())),
         })
         .invoke_handler(tauri::generate_handler![

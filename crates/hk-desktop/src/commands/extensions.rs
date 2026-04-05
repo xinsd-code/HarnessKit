@@ -1,6 +1,6 @@
 use super::AppState;
 use super::helpers::{FileEntry, find_skill_by_id, is_path_within_allowed_dirs, list_dir_entries};
-use hk_core::{HkError, adapter, deployer, manager, models::*, scanner};
+use hk_core::{HkError, deployer, manager, models::*, scanner};
 use tauri::State;
 
 #[derive(serde::Serialize)]
@@ -47,13 +47,13 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), HkErro
             .ok_or_else(|| HkError::NotFound("Extension not found".into()))?
     };
 
-    let adapters = adapter::all_adapters();
+    let adapters = &*state.adapters;
 
     // Actually remove from disk/config based on extension kind
     match ext.kind {
         ExtensionKind::Skill => {
             // Delete skill file or directory
-            if let Some(loc) = find_skill_by_id(&adapters, &id, &ext.agents) {
+            if let Some(loc) = find_skill_by_id(adapters, &id, &ext.agents) {
                 if loc.entry_path.is_dir() {
                     std::fs::remove_dir_all(&loc.entry_path)?;
                 } else {
@@ -63,7 +63,7 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), HkErro
         }
         ExtensionKind::Mcp => {
             // Remove MCP server entry from agent config
-            for adapter in &adapters {
+            for adapter in adapters {
                 if !ext.agents.contains(&adapter.name().to_string()) {
                     continue;
                 }
@@ -81,7 +81,7 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), HkErro
         }
         ExtensionKind::Hook => {
             // Remove hook entry from agent config
-            for adapter in &adapters {
+            for adapter in adapters {
                 if !ext.agents.contains(&adapter.name().to_string()) {
                     continue;
                 }
@@ -110,7 +110,7 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), HkErro
         }
         ExtensionKind::Plugin => {
             // Delete plugin files/config from disk
-            for adapter in &adapters {
+            for adapter in adapters {
                 if !ext.agents.contains(&adapter.name().to_string()) {
                     continue;
                 }
@@ -269,9 +269,9 @@ pub fn reveal_in_file_manager(state: State<AppState>, path: String) -> Result<()
 /// For a given skill name, find all physical paths where it exists across all agents.
 /// Returns Vec<(agent_name, path)> for display in the detail panel.
 #[tauri::command]
-pub fn get_skill_locations(name: String) -> Vec<(String, String, Option<String>)> {
-    let adapters = adapter::all_adapters();
-    scanner::skill_locations(&name, &adapters)
+pub fn get_skill_locations(state: State<AppState>, name: String) -> Vec<(String, String, Option<String>)> {
+    let adapters = &*state.adapters;
+    scanner::skill_locations(&name, adapters)
         .into_iter()
         .map(|(agent, path)| {
             // Check if the path itself or its parent skill_dir is a symlink
@@ -315,10 +315,10 @@ pub fn get_extension_content(
             .ok_or_else(|| HkError::NotFound("Extension not found".into()))?
     };
 
+    let adapters = &*state.adapters;
     match ext.kind {
         ExtensionKind::Skill => {
-            let adapters = adapter::all_adapters();
-            if let Some(loc) = find_skill_by_id(&adapters, &id, &ext.agents) {
+            if let Some(loc) = find_skill_by_id(adapters, &id, &ext.agents) {
                 let dir = if loc.entry_path.is_dir() {
                     loc.entry_path.to_string_lossy().to_string()
                 } else {
@@ -367,9 +367,8 @@ pub fn get_extension_content(
         }
         ExtensionKind::Mcp => {
             // Pull actual config from the adapter for rich detail
-            let adapters = adapter::all_adapters();
             let mut fallback_config_path = None;
-            for adapter in &adapters {
+            for adapter in adapters {
                 if !ext.agents.contains(&adapter.name().to_string()) {
                     continue;
                 }
@@ -405,9 +404,8 @@ pub fn get_extension_content(
             })
         }
         ExtensionKind::Hook => {
-            let adapters = adapter::all_adapters();
             let mut fallback_config_path = None;
-            for adapter in &adapters {
+            for adapter in adapters {
                 if !ext.agents.contains(&adapter.name().to_string()) {
                     continue;
                 }
@@ -444,8 +442,7 @@ pub fn get_extension_content(
             })
         }
         ExtensionKind::Plugin => {
-            let adapters = adapter::all_adapters();
-            for adapter in &adapters {
+            for adapter in adapters {
                 if !ext.agents.contains(&adapter.name().to_string()) {
                     continue;
                 }
@@ -485,8 +482,8 @@ pub fn get_extension_content(
 #[tauri::command]
 pub fn scan_and_sync(state: State<AppState>) -> Result<usize, HkError> {
     // Scan filesystem WITHOUT holding the lock — this is the slow part
-    let adapters = adapter::all_adapters();
-    let extensions = scanner::scan_all(&adapters);
+    let adapters = &*state.adapters;
+    let extensions = scanner::scan_all(adapters);
     let count = extensions.len();
 
     // Lock briefly for a single transactional write (fast — one fsync total)
@@ -672,6 +669,7 @@ pub async fn update_extension(
     id: String,
 ) -> Result<manager::InstallResult, HkError> {
     let store_clone = state.store.clone();
+    let adapters = state.adapters.clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<manager::InstallResult, HkError> {
         let (ext, install_meta) = {
@@ -766,14 +764,13 @@ pub async fn update_extension(
         }
 
         // Re-scan affected agents only and persist
-        let adapters = adapter::all_adapters();
         let affected_agents: std::collections::HashSet<String> = all_siblings
             .iter()
             .flat_map(|s| s.agents.iter().cloned())
             .collect();
         {
             let store = store_clone.lock();
-            for a in &adapters {
+            for a in adapters.iter() {
                 if affected_agents.contains(a.name()) {
                     let exts = scanner::scan_adapter(a.as_ref());
                     store.sync_extensions_for_agent(a.name(), &exts)?;

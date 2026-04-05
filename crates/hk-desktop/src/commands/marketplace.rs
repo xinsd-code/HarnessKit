@@ -1,5 +1,5 @@
 use super::AppState;
-use hk_core::{HkError, adapter, manager, marketplace, models::*, service};
+use hk_core::{HkError, manager, marketplace, models::*, service};
 use tauri::State;
 
 #[tauri::command]
@@ -57,9 +57,9 @@ pub async fn install_from_marketplace(
     target_agent: Option<String>,
 ) -> Result<manager::InstallResult, HkError> {
     let store_clone = state.store.clone();
+    let adapters = state.adapters.clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<manager::InstallResult, HkError> {
-        let adapters = adapter::all_adapters();
         let (target_dir, agent_name) = if let Some(ref agent) = target_agent {
             let a = adapters
                 .iter()
@@ -123,7 +123,7 @@ pub async fn install_from_marketplace(
             let store = store_clone.lock();
             service::post_install_sync(
                 &store,
-                &adapters,
+                &*adapters,
                 &agents,
                 &result.name,
                 Some(meta),

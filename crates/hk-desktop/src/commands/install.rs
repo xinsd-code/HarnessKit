@@ -1,6 +1,6 @@
 use super::helpers::find_skill_by_id;
 use super::{AppState, PendingClone};
-use hk_core::{HkError, adapter, deployer, manager, marketplace, models::*, scanner, service};
+use hk_core::{HkError, deployer, manager, marketplace, models::*, scanner, service};
 use tauri::State;
 
 // --- Multi-skill git install flow ---
@@ -46,7 +46,7 @@ pub fn install_from_local(
             .to_string()
     });
 
-    let adapters = adapter::all_adapters();
+    let adapters = &*state.adapters;
     let agents: Vec<String> = if target_agents.is_empty() {
         adapters
             .iter()
@@ -94,7 +94,7 @@ pub fn install_from_local(
         let store = state.store.lock();
         service::post_install_sync(
             &store,
-            &adapters,
+            adapters,
             &agents,
             &skill_name,
             Some(meta),
@@ -113,7 +113,7 @@ pub fn install_from_git(
     skill_id: Option<String>,
 ) -> Result<manager::InstallResult, HkError> {
     hk_core::sanitize::validate_git_url(&url).map_err(|e| HkError::Validation(e.to_string()))?;
-    let adapters = adapter::all_adapters();
+    let adapters = &*state.adapters;
     let (target_dir, agent_name) = if let Some(ref agent) = target_agent {
         let a = adapters
             .iter()
@@ -163,7 +163,7 @@ pub fn install_from_git(
         let store = state.store.lock();
         service::post_install_sync(
             &store,
-            &adapters,
+            adapters,
             &agents,
             &result.name,
             Some(meta),
@@ -187,6 +187,7 @@ pub async fn scan_git_repo(
     }
 
     let store_clone = state.store.clone();
+    let adapters = state.adapters.clone();
     let pending_clones = state.pending_clones.clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<ScanResult, HkError> {
@@ -212,7 +213,6 @@ pub async fn scan_git_repo(
             0 => Ok(ScanResult::NoSkills),
             1 => {
                 // Auto-install single skill
-                let adapters = adapter::all_adapters();
                 let agents = if target_agents.is_empty() {
                     vec![
                         adapters
@@ -266,7 +266,7 @@ pub async fn scan_git_repo(
                     let store = store_clone.lock();
                     service::post_install_sync(
                         &store,
-                        &adapters,
+                        &*adapters,
                         &installed_agents,
                         &result.name,
                         Some(meta),
@@ -315,9 +315,9 @@ pub async fn install_scanned_skills(
     };
 
     let store_clone = state.store.clone();
+    let adapters = state.adapters.clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<manager::InstallResult>, HkError> {
-        let adapters = adapter::all_adapters();
         let mut results = Vec::new();
 
         for agent_name in &target_agents {
@@ -389,7 +389,7 @@ pub async fn install_scanned_skills(
                 };
                 service::post_install_sync(
                     &store,
-                    &adapters,
+                    &*adapters,
                     &target_agents,
                     &result.name,
                     Some(meta),
@@ -421,7 +421,7 @@ pub fn deploy_to_agent(
             .ok_or_else(|| HkError::NotFound("Extension not found".into()))?
     };
 
-    let adapters = adapter::all_adapters();
+    let adapters = &*state.adapters;
     let target_adapter = adapters
         .iter()
         .find(|a| a.name() == target_agent)
@@ -430,7 +430,7 @@ pub fn deploy_to_agent(
     match ext.kind {
         ExtensionKind::Skill => {
             // Find source skill path
-            let source_path = find_skill_by_id(&adapters, &extension_id, &ext.agents)
+            let source_path = find_skill_by_id(adapters, &extension_id, &ext.agents)
                 .map(|loc| loc.entry_path)
                 .ok_or_else(|| HkError::Internal("Could not find source skill files".into()))?;
             let target_dir = target_adapter
@@ -451,7 +451,7 @@ pub fn deploy_to_agent(
         ExtensionKind::Mcp => {
             // Find the source MCP server entry
             let mut source_entry = None;
-            for adapter in &adapters {
+            for adapter in adapters {
                 if !ext.agents.contains(&adapter.name().to_string()) {
                     continue;
                 }
@@ -480,7 +480,7 @@ pub fn deploy_to_agent(
         ExtensionKind::Hook => {
             // Find the source hook entry
             let mut source_entry = None;
-            for adapter in &adapters {
+            for adapter in adapters {
                 if !ext.agents.contains(&adapter.name().to_string()) {
                     continue;
                 }
@@ -537,7 +537,7 @@ pub fn deploy_to_agent(
                 .as_ref()
                 .map(|m| m.binary_name.clone())
                 .unwrap_or_else(|| ext.name.to_lowercase());
-            let locations = scanner::skill_locations(&binary_name, &adapters);
+            let locations = scanner::skill_locations(&binary_name, adapters);
             let source_path = locations
                 .into_iter()
                 .next()
@@ -651,8 +651,7 @@ pub fn install_cli(
 
     // Step 3: Trigger re-scan
     let store = state.store.lock();
-    let adapters = adapter::all_adapters();
-    let exts = scanner::scan_all(&adapters);
+    let exts = scanner::scan_all(&*state.adapters);
     store.sync_extensions(&exts)?;
     Ok(())
 }

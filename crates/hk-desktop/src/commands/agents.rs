@@ -1,10 +1,10 @@
 use super::AppState;
-use hk_core::{HkError, adapter, models::*, scanner};
+use hk_core::{HkError, models::*, scanner};
 use tauri::State;
 
 #[tauri::command]
 pub fn list_agents(state: State<AppState>) -> Result<Vec<AgentInfo>, HkError> {
-    let adapters = adapter::all_adapters();
+    let adapters = &*state.adapters;
     let store = state.store.lock();
 
     // Build agent order map from DB (or fall back to adapter iteration order)
@@ -12,7 +12,7 @@ pub fn list_agents(state: State<AppState>) -> Result<Vec<AgentInfo>, HkError> {
     let order_map: std::collections::HashMap<String, i32> = db_order.into_iter().collect();
 
     let mut result = Vec::new();
-    for a in &adapters {
+    for a in adapters {
         let (custom_path, enabled) = store.get_agent_setting(a.name()).unwrap_or((None, true));
         let path = custom_path.unwrap_or_else(|| a.base_dir().to_string_lossy().to_string());
         result.push(AgentInfo {
@@ -51,7 +51,7 @@ pub fn set_agent_enabled(
 
 #[tauri::command]
 pub fn update_agent_order(state: State<AppState>, names: Vec<String>) -> Result<(), HkError> {
-    let adapters = adapter::all_adapters();
+    let adapters = &*state.adapters;
     let valid_names: std::collections::HashSet<&str> = adapters.iter().map(|a| a.name()).collect();
     if names.iter().any(|n| !valid_names.contains(n.as_str())) {
         return Err(HkError::Validation(
@@ -64,7 +64,7 @@ pub fn update_agent_order(state: State<AppState>, names: Vec<String>) -> Result<
 
 #[tauri::command]
 pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, HkError> {
-    let adapters = adapter::all_adapters();
+    let adapters = &*state.adapters;
     let store = state.store.lock();
 
     let projects: Vec<(String, String)> = store
@@ -75,7 +75,7 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, Hk
         .collect();
 
     let mut results = Vec::new();
-    for a in &adapters {
+    for a in adapters {
         let detected = a.detect();
         let mut config_files = if detected {
             scanner::scan_agent_configs(a.as_ref(), &projects)
