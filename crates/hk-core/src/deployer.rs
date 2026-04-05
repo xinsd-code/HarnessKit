@@ -104,7 +104,7 @@ fn deploy_mcp_server_toml(config_path: &Path, entry: &McpServerEntry) -> Result<
     mcp_servers.insert(entry.name.clone(), toml::Value::Table(server_table));
 
     // Write back atomically
-    std::fs::write(config_path, toml::to_string_pretty(&doc)?)?;
+    atomic_write(config_path, &toml::to_string_pretty(&doc)?)?;
 
     Ok(())
 }
@@ -184,7 +184,7 @@ pub fn remove_mcp_server(config_path: &Path, server_name: &str, format: McpForma
             if let Some(servers) = doc.get_mut("mcp_servers").and_then(|v| v.as_table_mut()) {
                 servers.remove(server_name);
             }
-            std::fs::write(config_path, toml::to_string_pretty(&doc)?)?;
+            atomic_write(config_path, &toml::to_string_pretty(&doc)?)?;
             Ok(())
         }
         _ => {
@@ -366,10 +366,7 @@ pub fn ensure_codex_hooks_enabled(codex_base_dir: &Path) -> Result<()> {
         new_content.push('\n');
     }
     new_content.push_str("\n[features]\ncodex_hooks = true\n");
-    if let Some(parent) = config_toml.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(&config_toml, new_content)?;
+    atomic_write(&config_toml, &new_content)?;
     Ok(())
 }
 
@@ -471,6 +468,17 @@ fn write_json(path: &Path, value: &serde_json::Value) -> Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(path, serde_json::to_string_pretty(value)?)?;
+    Ok(())
+}
+
+/// Write content to a file atomically: write to a temp file, then rename.
+fn atomic_write(path: &Path, content: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, content)?;
+    std::fs::rename(&tmp, path)?;
     Ok(())
 }
 
