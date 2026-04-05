@@ -16,6 +16,22 @@ import type {
   UpdateStatus,
 } from "./types";
 
+function validateGitUrl(url: string): void {
+  if (
+    !url.startsWith("https://") &&
+    !url.startsWith("git://") &&
+    !url.startsWith("git@")
+  ) {
+    throw new Error("Invalid git URL — must be https://, git://, or git@");
+  }
+}
+
+function validateNonEmpty(value: string, label: string): void {
+  if (!value || !value.trim()) {
+    throw new Error(`${label} cannot be empty`);
+  }
+}
+
 export const api = {
   listExtensions(kind?: string, agent?: string): Promise<Extension[]> {
     return invoke("list_extensions", { kind, agent });
@@ -30,6 +46,7 @@ export const api = {
   },
 
   toggleExtension(id: string, enabled: boolean): Promise<void> {
+    validateNonEmpty(id, "Extension ID");
     return invoke("toggle_extension", { id, enabled });
   },
 
@@ -46,6 +63,7 @@ export const api = {
   },
 
   deleteExtension(id: string): Promise<void> {
+    validateNonEmpty(id, "Extension ID");
     return invoke("delete_extension", { id });
   },
 
@@ -81,6 +99,7 @@ export const api = {
     targetAgent?: string,
     skillId?: string,
   ): Promise<InstallResult> {
+    validateGitUrl(url);
     return invoke("install_from_git", { url, targetAgent, skillId });
   },
 
