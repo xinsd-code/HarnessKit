@@ -206,6 +206,14 @@ pub fn add_custom_config_path(
     } else {
         path
     };
+    let resolved_path = std::path::Path::new(&resolved);
+    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+    if !resolved_path.starts_with(&home) {
+        return Err("Custom config paths must be within your home directory".into());
+    }
+    if resolved_path == home {
+        return Err("Cannot use home directory itself as a config path".into());
+    }
     let store = state.store.lock();
     store.add_custom_config_path(&agent, &resolved, &label, &category).map_err(|e| e.to_string())
 }
@@ -225,6 +233,14 @@ pub fn update_custom_config_path(
     } else {
         path
     };
+    let resolved_path = std::path::Path::new(&resolved);
+    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+    if !resolved_path.starts_with(&home) {
+        return Err("Custom config paths must be within your home directory".into());
+    }
+    if resolved_path == home {
+        return Err("Cannot use home directory itself as a config path".into());
+    }
     let store = state.store.lock();
     store.update_custom_config_path(id, &resolved, &label, &category).map_err(|e| e.to_string())
 }
