@@ -12,25 +12,8 @@ pub fn get_dashboard_stats(state: State<AppState>) -> Result<DashboardStats, HkE
     let store = state.store.lock();
     let all = store.list_extensions(None, None)?;
 
-    // Count issues from latest audit results
-    let mut critical_issues = 0usize;
-    let mut high_issues = 0usize;
-    let mut medium_issues = 0usize;
-    let mut low_issues = 0usize;
-    for ext in &all {
-        if let Ok(audits) = store.get_audit_results(&ext.id)
-            && let Some(latest) = audits.first()
-        {
-            for finding in &latest.findings {
-                match finding.severity {
-                    Severity::Critical => critical_issues += 1,
-                    Severity::High => high_issues += 1,
-                    Severity::Medium => medium_issues += 1,
-                    Severity::Low => low_issues += 1,
-                }
-            }
-        }
-    }
+    // Count issues from latest audit results in a single query instead of N+1
+    let severity_counts = store.count_latest_findings_by_severity()?;
 
     Ok(DashboardStats {
         total_extensions: all.len(),
@@ -45,10 +28,10 @@ pub fn get_dashboard_stats(state: State<AppState>) -> Result<DashboardStats, HkE
             .count(),
         hook_count: all.iter().filter(|e| e.kind == ExtensionKind::Hook).count(),
         cli_count: all.iter().filter(|e| e.kind == ExtensionKind::Cli).count(),
-        critical_issues,
-        high_issues,
-        medium_issues,
-        low_issues,
+        critical_issues: severity_counts.get("critical").copied().unwrap_or(0),
+        high_issues: severity_counts.get("high").copied().unwrap_or(0),
+        medium_issues: severity_counts.get("medium").copied().unwrap_or(0),
+        low_issues: severity_counts.get("low").copied().unwrap_or(0),
         updates_available: 0, // Populated by explicit check_updates call
     })
 }

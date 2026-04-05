@@ -1,12 +1,12 @@
 use crate::HkError;
 use chrono::{DateTime, Utc};
-use rusqlite::{Connection, params};
-use std::path::Path;
+use rusqlite::{params, Connection};
+use std::path::{Path, PathBuf};
 
 use crate::models::*;
 
 /// Latest schema version supported by this binary.
-const LATEST_SCHEMA_VERSION: i64 = 1;
+const LATEST_SCHEMA_VERSION: i64 = 2;
 
 /// Upsert SQL for scanner-derived extensions (17 columns, no install meta).
 /// Used by `sync_extensions` and `sync_extensions_for_agent`.
@@ -48,13 +48,15 @@ const UPSERT_EXTENSION_FULL_SQL: &str =
 
 pub struct Store {
     conn: Connection,
+    /// Path to the database file, used for pre-migration backups.
+    db_path: PathBuf,
 }
 
 impl Store {
     pub fn open(path: &Path) -> Result<Self, HkError> {
         let conn = Connection::open(path)?;
         conn.execute_batch("PRAGMA foreign_keys = ON")?;
-        let store = Self { conn };
+        let store = Self { conn, db_path: path.to_path_buf() };
         store.migrate()?;
 
         // Set file permissions to owner-only on Unix (0o600) to protect
@@ -90,6 +92,25 @@ impl Store {
         }
     }
 
+    /// Back up the database file before running migrations.
+    /// The backup is written to `{db_path}.backup-v{current_version}`.
+    /// Errors are logged but do not abort the migration — a failed backup
+    /// should not prevent the app from starting.
+    fn backup_before_migrate(&self, current_version: i64) {
+        let backup_path = self.db_path.with_extension(
+            format!("db.backup-v{}", current_version),
+        );
+        // Only create a backup if the DB file actually exists (skip for in-memory / new DBs)
+        if self.db_path.exists() && !backup_path.exists()
+            && let Err(e) = std::fs::copy(&self.db_path, &backup_path)
+        {
+            eprintln!(
+                "[harnesskit] Warning: failed to back up database before migration: {}",
+                e,
+            );
+        }
+    }
+
     fn migrate(&self) -> Result<(), HkError> {
         // Ensure schema_version table exists and has an initial row
         self.conn.execute_batch(
@@ -103,93 +124,13 @@ impl Store {
             |row| row.get(0),
         )?;
 
-        if current_version < 1 {
-            self.conn.execute_batch(
-                "
-                CREATE TABLE IF NOT EXISTS extensions (
-                    id TEXT PRIMARY KEY,
-                    kind TEXT NOT NULL,
-                    name TEXT NOT NULL,
-                    description TEXT NOT NULL DEFAULT '',
-                    source_json TEXT NOT NULL DEFAULT '{}',
-                    agents_json TEXT NOT NULL DEFAULT '[]',
-                    tags_json TEXT NOT NULL DEFAULT '[]',
-                    permissions_json TEXT NOT NULL DEFAULT '[]',
-                    enabled INTEGER NOT NULL DEFAULT 1,
-                    trust_score INTEGER,
-                    installed_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS audit_results (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    extension_id TEXT NOT NULL REFERENCES extensions(id) ON DELETE CASCADE,
-                    findings_json TEXT NOT NULL DEFAULT '[]',
-                    trust_score INTEGER NOT NULL,
-                    audited_at TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS projects (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    path TEXT NOT NULL UNIQUE,
-                    created_at TEXT NOT NULL
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_extensions_kind ON extensions(kind);
-                CREATE INDEX IF NOT EXISTS idx_audit_results_ext ON audit_results(extension_id);
-                ",
-            )?;
-            // Migration: add category column for existing databases
-            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN category TEXT");
-            // Migration: add pack column (replaces category for repo-based grouping)
-            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN pack TEXT");
-            // Migration: add last_used_at column for skill usage tracking
-            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN last_used_at TEXT");
-            // Migration: add disabled_config column for real enable/disable
-            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN disabled_config TEXT");
-            // Migration: add source_path column for tracking physical file locations
-            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN source_path TEXT");
-            // Migration: add cli_parent_id for linking child skills to parent CLI
-            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN cli_parent_id TEXT");
-            // Migration: add cli_meta_json for CLI-specific metadata
-            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN cli_meta_json TEXT");
-            // Migration: add install meta columns for install-source tracking
-            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN install_type TEXT");
-            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN install_url TEXT");
-            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN install_url_resolved TEXT");
-            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN install_branch TEXT");
-            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN install_subpath TEXT");
-            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN install_revision TEXT");
-            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN remote_revision TEXT");
-            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN checked_at TEXT");
-            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN check_error TEXT");
-            // Migration: hidden_extensions table for surviving re-scans
-            self.conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS hidden_extensions (id TEXT PRIMARY KEY)",
-            )?;
-            // Migration: agent_settings table for custom paths and enabled state
-            self.conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS agent_settings (
-                    name TEXT PRIMARY KEY,
-                    custom_path TEXT,
-                    enabled INTEGER NOT NULL DEFAULT 1
-                )",
-            )?;
-            // Migration: add sort_order to agent_settings
-            self.migrate_add_column("ALTER TABLE agent_settings ADD COLUMN sort_order INTEGER");
-            // Migration: custom_config_paths table for user-defined config file/folder paths
-            self.conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS custom_config_paths (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    agent TEXT NOT NULL,
-                    path TEXT NOT NULL,
-                    label TEXT NOT NULL,
-                    category TEXT NOT NULL DEFAULT 'settings',
-                    UNIQUE(agent, path)
-                )",
-            )?;
+        // Back up before running any migration
+        if current_version < LATEST_SCHEMA_VERSION {
+            self.backup_before_migrate(current_version);
         }
+
+        if current_version < 1 { self.migrate_v1()?; }
+        if current_version < 2 { self.migrate_v2()?; }
 
         // Update schema version to latest
         if current_version < LATEST_SCHEMA_VERSION {
@@ -199,6 +140,117 @@ impl Store {
             )?;
         }
 
+        Ok(())
+    }
+
+    /// Schema v1: core tables (extensions, audit_results, projects, etc.)
+    fn migrate_v1(&self) -> Result<(), HkError> {
+        self.conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS extensions (
+                id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                source_json TEXT NOT NULL DEFAULT '{}',
+                agents_json TEXT NOT NULL DEFAULT '[]',
+                tags_json TEXT NOT NULL DEFAULT '[]',
+                permissions_json TEXT NOT NULL DEFAULT '[]',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                trust_score INTEGER,
+                installed_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS audit_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                extension_id TEXT NOT NULL REFERENCES extensions(id) ON DELETE CASCADE,
+                findings_json TEXT NOT NULL DEFAULT '[]',
+                trust_score INTEGER NOT NULL,
+                audited_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS projects (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                path TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_extensions_kind ON extensions(kind);
+            CREATE INDEX IF NOT EXISTS idx_audit_results_ext ON audit_results(extension_id);
+            "
+        )?;
+        // Migration: add category column for existing databases
+        self.migrate_add_column("ALTER TABLE extensions ADD COLUMN category TEXT");
+        // Migration: add pack column (replaces category for repo-based grouping)
+        self.migrate_add_column("ALTER TABLE extensions ADD COLUMN pack TEXT");
+        // Migration: add last_used_at column for skill usage tracking
+        self.migrate_add_column("ALTER TABLE extensions ADD COLUMN last_used_at TEXT");
+        // Migration: add disabled_config column for real enable/disable
+        self.migrate_add_column("ALTER TABLE extensions ADD COLUMN disabled_config TEXT");
+        // Migration: add source_path column for tracking physical file locations
+        self.migrate_add_column("ALTER TABLE extensions ADD COLUMN source_path TEXT");
+        // Migration: add cli_parent_id for linking child skills to parent CLI
+        self.migrate_add_column("ALTER TABLE extensions ADD COLUMN cli_parent_id TEXT");
+        // Migration: add cli_meta_json for CLI-specific metadata
+        self.migrate_add_column("ALTER TABLE extensions ADD COLUMN cli_meta_json TEXT");
+        // Migration: add install meta columns for install-source tracking
+        self.migrate_add_column("ALTER TABLE extensions ADD COLUMN install_type TEXT");
+        self.migrate_add_column("ALTER TABLE extensions ADD COLUMN install_url TEXT");
+        self.migrate_add_column("ALTER TABLE extensions ADD COLUMN install_url_resolved TEXT");
+        self.migrate_add_column("ALTER TABLE extensions ADD COLUMN install_branch TEXT");
+        self.migrate_add_column("ALTER TABLE extensions ADD COLUMN install_subpath TEXT");
+        self.migrate_add_column("ALTER TABLE extensions ADD COLUMN install_revision TEXT");
+        self.migrate_add_column("ALTER TABLE extensions ADD COLUMN remote_revision TEXT");
+        self.migrate_add_column("ALTER TABLE extensions ADD COLUMN checked_at TEXT");
+        self.migrate_add_column("ALTER TABLE extensions ADD COLUMN check_error TEXT");
+        // Migration: hidden_extensions table for surviving re-scans
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS hidden_extensions (id TEXT PRIMARY KEY)"
+        )?;
+        // Migration: agent_settings table for custom paths and enabled state
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS agent_settings (
+                name TEXT PRIMARY KEY,
+                custom_path TEXT,
+                enabled INTEGER NOT NULL DEFAULT 1
+            )"
+        )?;
+        // Migration: add sort_order to agent_settings
+        self.migrate_add_column("ALTER TABLE agent_settings ADD COLUMN sort_order INTEGER");
+        // Migration: custom_config_paths table for user-defined config file/folder paths
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS custom_config_paths (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent TEXT NOT NULL,
+                path TEXT NOT NULL,
+                label TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT 'settings',
+                UNIQUE(agent, path)
+            )"
+        )?;
+        Ok(())
+    }
+
+    /// Schema v2: extension_agents join table for efficient agent-based filtering.
+    fn migrate_v2(&self) -> Result<(), HkError> {
+        self.conn.execute_batch("
+            CREATE TABLE IF NOT EXISTS extension_agents (
+                extension_id TEXT NOT NULL,
+                agent_name TEXT NOT NULL,
+                PRIMARY KEY (extension_id, agent_name),
+                FOREIGN KEY (extension_id) REFERENCES extensions(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_ext_agents_agent ON extension_agents(agent_name);
+        ")?;
+        // Backfill from existing agents_json (OR IGNORE for idempotency)
+        self.conn.execute_batch("
+            INSERT OR IGNORE INTO extension_agents (extension_id, agent_name)
+            SELECT e.id, json_each.value
+            FROM extensions e, json_each(e.agents_json)
+            WHERE e.agents_json IS NOT NULL AND e.agents_json != '[]';
+        ")?;
         Ok(())
     }
 
@@ -378,6 +430,8 @@ impl Store {
                 ext.pack,
             ],
         )?;
+        // Keep extension_agents join table in sync
+        Self::sync_extension_agents(&self.conn, &ext.id, &ext.agents)?;
         Ok(())
     }
 
@@ -400,28 +454,27 @@ impl Store {
         kind: Option<ExtensionKind>,
         agent: Option<&str>,
     ) -> Result<Vec<Extension>, HkError> {
-        let mut sql = "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack FROM extensions WHERE 1=1".to_string();
+        let ext_cols = "e.id, e.kind, e.name, e.description, e.source_json, e.agents_json, e.tags_json, e.permissions_json, e.enabled, e.trust_score, e.installed_at, e.updated_at, e.category, e.source_path, e.cli_parent_id, e.cli_meta_json, e.install_type, e.install_url, e.install_url_resolved, e.install_branch, e.install_subpath, e.install_revision, e.remote_revision, e.checked_at, e.check_error, e.pack";
+
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
+        // Build FROM/WHERE depending on whether we filter by agent
+        let mut sql = if let Some(agent_val) = agent {
+            param_values.push(Box::new(agent_val.to_string()));
+            format!(
+                "SELECT DISTINCT {} FROM extensions e INNER JOIN extension_agents ea ON e.id = ea.extension_id WHERE ea.agent_name = ?1",
+                ext_cols
+            )
+        } else {
+            format!("SELECT {} FROM extensions e WHERE 1=1", ext_cols)
+        };
+
         if let Some(k) = kind {
-            sql.push_str(&format!(" AND kind = ?{}", param_values.len() + 1));
+            sql.push_str(&format!(" AND e.kind = ?{}", param_values.len() + 1));
             param_values.push(Box::new(k.as_str().to_string()));
         }
 
-        if let Some(agent_val) = agent {
-            // Escape LIKE wildcards in user input to prevent unintended matches
-            let escaped = agent_val
-                .replace('\\', "\\\\")
-                .replace('%', "\\%")
-                .replace('_', "\\_");
-            sql.push_str(&format!(
-                " AND agents_json LIKE ?{} ESCAPE '\\'",
-                param_values.len() + 1
-            ));
-            param_values.push(Box::new(format!("%\"{}%", escaped)));
-        }
-
-        sql.push_str(" ORDER BY name ASC");
+        sql.push_str(" ORDER BY e.name ASC");
 
         let mut stmt = self.conn.prepare(&sql)?;
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
@@ -600,9 +653,21 @@ impl Store {
         Ok(())
     }
 
+    /// Sync the extension_agents join table for a single extension.
+    /// Deletes existing rows and re-inserts from the provided agent list.
+    fn sync_extension_agents(conn: &rusqlite::Connection, ext_id: &str, agents: &[String]) -> Result<(), HkError> {
+        conn.execute("DELETE FROM extension_agents WHERE extension_id = ?1", params![ext_id])?;
+        for agent in agents {
+            conn.execute(
+                "INSERT INTO extension_agents (extension_id, agent_name) VALUES (?1, ?2)",
+                params![ext_id, agent],
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn delete_extension(&self, id: &str) -> Result<(), HkError> {
-        self.conn
-            .execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
+        self.conn.execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
         Ok(())
     }
 
@@ -638,6 +703,8 @@ impl Store {
                     ext.pack,
                 ],
             )?;
+            // Keep extension_agents join table in sync
+            Self::sync_extension_agents(&tx, &ext.id, &ext.agents)?;
         }
 
         // Remove stale extensions no longer on disk — but keep disabled ones
@@ -712,25 +779,22 @@ impl Store {
                     ext.pack,
                 ],
             )?;
+            // Keep extension_agents join table in sync
+            Self::sync_extension_agents(&tx, &ext.id, &ext.agents)?;
         }
 
         // Remove stale extensions for THIS agent only — keep disabled ones
         let scanned_ids: std::collections::HashSet<&str> =
             extensions.iter().map(|e| e.id.as_str()).collect();
-        let escaped_agent = agent
-            .replace('\\', "\\\\")
-            .replace('%', "\\%")
-            .replace('_', "\\_");
-        let agent_pattern = format!("%\"{}%", escaped_agent);
         let stale_ids: Vec<(String, bool)> = {
             let mut stmt = tx.prepare(
-                "SELECT id, enabled FROM extensions WHERE agents_json LIKE ?1 ESCAPE '\\'",
+                "SELECT DISTINCT e.id, e.enabled FROM extensions e
+                 INNER JOIN extension_agents ea ON e.id = ea.extension_id
+                 WHERE ea.agent_name = ?1"
             )?;
-            stmt.query_map(params![agent_pattern], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?))
-            })?
-            .filter_map(|r| r.map_err(|e| eprintln!("[hk] row error: {e}")).ok())
-            .collect()
+            stmt.query_map(params![agent], |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?)))?
+                .filter_map(|r| r.ok())
+                .collect()
         };
         for (id, enabled) in &stale_ids {
             if !scanned_ids.contains(id.as_str()) && *enabled {
@@ -864,6 +928,20 @@ impl Store {
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    /// Count audit findings by severity across all latest audit results.
+    /// Uses a single SQL query (list_latest_audit_results) then aggregates
+    /// in Rust, replacing the previous N+1 pattern of querying per-extension.
+    pub fn count_latest_findings_by_severity(&self) -> Result<std::collections::HashMap<String, usize>, HkError> {
+        let results = self.list_latest_audit_results()?;
+        let mut counts = std::collections::HashMap::new();
+        for result in &results {
+            for finding in &result.findings {
+                *counts.entry(finding.severity.as_str().to_string()).or_insert(0) += 1;
+            }
+        }
+        Ok(counts)
     }
 
     // --- Project methods ---
@@ -1758,5 +1836,216 @@ mod tests {
         // A wildcard agent filter should NOT match everything
         let results = store.list_extensions(None, Some("%")).unwrap();
         assert_eq!(results.len(), 0, "Wildcard '%' should not match any agent");
+    }
+
+    #[test]
+    fn test_extension_agents_join_table_populated_by_insert() {
+        let (store, _dir) = test_store();
+
+        let mut ext = sample_extension();
+        ext.agents = vec!["claude".into(), "cursor".into()];
+        store.insert_extension(&ext).unwrap();
+
+        // Verify join table rows exist
+        let count: i64 = store.conn.query_row(
+            "SELECT COUNT(*) FROM extension_agents WHERE extension_id = ?1",
+            params![ext.id],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(count, 2);
+
+        // Verify agent filter uses the join table correctly
+        let claude = store.list_extensions(None, Some("claude")).unwrap();
+        assert_eq!(claude.len(), 1);
+        let cursor = store.list_extensions(None, Some("cursor")).unwrap();
+        assert_eq!(cursor.len(), 1);
+        let codex = store.list_extensions(None, Some("codex")).unwrap();
+        assert!(codex.is_empty());
+    }
+
+    #[test]
+    fn test_extension_agents_join_table_synced_by_sync_extensions() {
+        let (store, _dir) = test_store();
+
+        let mut ext1 = sample_extension();
+        ext1.id = "ext-1".into();
+        ext1.name = "ext-one".into();
+        ext1.agents = vec!["claude".into()];
+
+        let mut ext2 = sample_extension();
+        ext2.id = "ext-2".into();
+        ext2.name = "ext-two".into();
+        ext2.agents = vec!["cursor".into(), "claude".into()];
+
+        store.sync_extensions(&[ext1.clone(), ext2.clone()]).unwrap();
+
+        // Verify both come back for claude
+        let claude = store.list_extensions(None, Some("claude")).unwrap();
+        assert_eq!(claude.len(), 2);
+
+        // Only ext2 for cursor
+        let cursor = store.list_extensions(None, Some("cursor")).unwrap();
+        assert_eq!(cursor.len(), 1);
+        assert_eq!(cursor[0].id, "ext-2");
+
+        // Re-sync ext1 with changed agents (now also cursor)
+        ext1.agents = vec!["claude".into(), "cursor".into()];
+        store.sync_extensions(&[ext1, ext2]).unwrap();
+
+        let cursor = store.list_extensions(None, Some("cursor")).unwrap();
+        assert_eq!(cursor.len(), 2);
+    }
+
+    #[test]
+    fn test_extension_agents_backfill_from_migration() {
+        // Simulate a v1 database by inserting directly then running migrate_v2
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("test.db");
+        let store = Store::open(&db_path).unwrap();
+
+        // The migration already ran in open(), but the table should be populated
+        // Insert an extension and verify backfill works for freshly-opened DBs
+        let mut ext = sample_extension();
+        ext.agents = vec!["claude".into(), "codex".into()];
+        store.insert_extension(&ext).unwrap();
+
+        let claude = store.list_extensions(None, Some("claude")).unwrap();
+        assert_eq!(claude.len(), 1);
+        let codex = store.list_extensions(None, Some("codex")).unwrap();
+        assert_eq!(codex.len(), 1);
+    }
+
+    #[test]
+    fn test_sync_extensions_for_agent_uses_join_table() {
+        let (store, _dir) = test_store();
+
+        let mut ext1 = sample_extension();
+        ext1.id = "agent-ext-1".into();
+        ext1.name = "agent-ext-one".into();
+        ext1.agents = vec!["claude".into()];
+
+        let mut ext2 = sample_extension();
+        ext2.id = "agent-ext-2".into();
+        ext2.name = "agent-ext-two".into();
+        ext2.agents = vec!["cursor".into()];
+
+        // Sync for claude agent
+        store.sync_extensions_for_agent("claude", &[ext1.clone()]).unwrap();
+        // Sync for cursor agent separately
+        store.sync_extensions_for_agent("cursor", &[ext2.clone()]).unwrap();
+
+        let claude = store.list_extensions(None, Some("claude")).unwrap();
+        assert_eq!(claude.len(), 1);
+        assert_eq!(claude[0].id, "agent-ext-1");
+
+        let cursor = store.list_extensions(None, Some("cursor")).unwrap();
+        assert_eq!(cursor.len(), 1);
+        assert_eq!(cursor[0].id, "agent-ext-2");
+
+        // Remove ext1 from claude scan — it should be deleted
+        store.sync_extensions_for_agent("claude", &[]).unwrap();
+        let claude = store.list_extensions(None, Some("claude")).unwrap();
+        assert!(claude.is_empty());
+
+        // cursor extension should still exist
+        let cursor = store.list_extensions(None, Some("cursor")).unwrap();
+        assert_eq!(cursor.len(), 1);
+    }
+
+    #[test]
+    fn test_count_latest_findings_by_severity() {
+        let (store, _dir) = test_store();
+
+        // Create two extensions
+        let mut ext1 = sample_extension();
+        ext1.id = "ext-1".into();
+        ext1.name = "ext-one".into();
+        store.insert_extension(&ext1).unwrap();
+
+        let mut ext2 = sample_extension();
+        ext2.id = "ext-2".into();
+        ext2.name = "ext-two".into();
+        store.insert_extension(&ext2).unwrap();
+
+        // Insert audit results for ext1 (2 findings: 1 critical, 1 high)
+        let audit1 = AuditResult {
+            extension_id: "ext-1".into(),
+            findings: vec![
+                AuditFinding {
+                    rule_id: "rule-a".into(),
+                    severity: Severity::Critical,
+                    message: "bad".into(),
+                    location: "file:1".into(),
+                },
+                AuditFinding {
+                    rule_id: "rule-b".into(),
+                    severity: Severity::High,
+                    message: "also bad".into(),
+                    location: "file:2".into(),
+                },
+            ],
+            trust_score: 60,
+            audited_at: Utc::now(),
+        };
+        store.insert_audit_result(&audit1).unwrap();
+
+        // Insert audit results for ext2 (1 finding: medium)
+        let audit2 = AuditResult {
+            extension_id: "ext-2".into(),
+            findings: vec![AuditFinding {
+                rule_id: "rule-c".into(),
+                severity: Severity::Medium,
+                message: "meh".into(),
+                location: "file:3".into(),
+            }],
+            trust_score: 80,
+            audited_at: Utc::now(),
+        };
+        store.insert_audit_result(&audit2).unwrap();
+
+        let counts = store.count_latest_findings_by_severity().unwrap();
+        assert_eq!(counts.get("critical").copied().unwrap_or(0), 1);
+        assert_eq!(counts.get("high").copied().unwrap_or(0), 1);
+        assert_eq!(counts.get("medium").copied().unwrap_or(0), 1);
+        assert_eq!(counts.get("low").copied().unwrap_or(0), 0);
+    }
+
+    #[test]
+    fn test_count_latest_findings_uses_only_latest_audit() {
+        let (store, _dir) = test_store();
+
+        let mut ext = sample_extension();
+        ext.id = "ext-latest".into();
+        ext.name = "ext-latest".into();
+        store.insert_extension(&ext).unwrap();
+
+        // Insert an old audit with 1 critical finding
+        let old_audit = AuditResult {
+            extension_id: "ext-latest".into(),
+            findings: vec![AuditFinding {
+                rule_id: "rule-old".into(),
+                severity: Severity::Critical,
+                message: "old issue".into(),
+                location: "file:1".into(),
+            }],
+            trust_score: 50,
+            audited_at: chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+                .unwrap().with_timezone(&Utc),
+        };
+        store.insert_audit_result(&old_audit).unwrap();
+
+        // Insert a newer audit with 0 findings (resolved)
+        let new_audit = AuditResult {
+            extension_id: "ext-latest".into(),
+            findings: vec![],
+            trust_score: 100,
+            audited_at: chrono::DateTime::parse_from_rfc3339("2025-01-01T00:00:00Z")
+                .unwrap().with_timezone(&Utc),
+        };
+        store.insert_audit_result(&new_audit).unwrap();
+
+        // Only the latest audit (with 0 findings) should be counted
+        let counts = store.count_latest_findings_by_severity().unwrap();
+        assert_eq!(counts.get("critical").copied().unwrap_or(0), 0);
     }
 }
