@@ -636,14 +636,29 @@ pub struct CliRegistryEntry {
     pub install_args: Option<Vec<String>>,
 }
 
+/// Shell interpreters that must never be used as `install_program`.
+/// If one of these is set, `resolved_command()` returns `None` so the
+/// caller falls back to the `sh -c install_command` path — which is the
+/// only path audited for shell execution.
+const BLOCKED_INSTALL_PROGRAMS: &[&str] = &["sh", "bash", "zsh", "dash", "fish", "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh"];
+
 impl CliRegistryEntry {
     /// Returns the resolved command to execute for installation.
     /// If structured fields (`install_program` + `install_args`) are present,
     /// returns `Some((program, args))` for use with `Command::new(program).args(args)`.
     /// Falls back to `None`, meaning the caller must use `sh -c install_command`.
+    ///
+    /// Returns `None` (forcing `sh -c` fallback) when `install_program` is a
+    /// shell interpreter, since that would defeat the purpose of structured execution.
     pub fn resolved_command(&self) -> Option<(&str, &[String])> {
         match (&self.install_program, &self.install_args) {
-            (Some(prog), Some(args)) => Some((prog.as_str(), args.as_slice())),
+            (Some(prog), Some(args)) => {
+                if BLOCKED_INSTALL_PROGRAMS.iter().any(|s| s.eq_ignore_ascii_case(prog)) {
+                    None
+                } else {
+                    Some((prog.as_str(), args.as_slice()))
+                }
+            }
             _ => None,
         }
     }
@@ -990,6 +1005,33 @@ mod tests {
             install_args: None,
         };
         assert!(entry.resolved_command().is_none());
+    }
+
+    #[test]
+    fn test_resolved_command_rejects_shell_interpreters() {
+        let shells = &["sh", "bash", "zsh", "cmd", "powershell", "Bash", "SH", "cmd.exe", "pwsh"];
+        for shell in shells {
+            let entry = CliRegistryEntry {
+                binary_name: "test".into(),
+                display_name: "Test".into(),
+                description: "".into(),
+                install_command: format!("{} -c 'echo hello'", shell),
+                skills_repo: "test/test".into(),
+                skills_install_command: None,
+                icon_url: None,
+                categories: vec![],
+                verified: false,
+                api_domains: vec![],
+                credentials_path: None,
+                install_program: Some(shell.to_string()),
+                install_args: Some(vec!["-c".into(), "echo hello".into()]),
+            };
+            assert!(
+                entry.resolved_command().is_none(),
+                "resolved_command() should return None for shell '{}', forcing sh -c fallback",
+                shell,
+            );
+        }
     }
 
     #[test]

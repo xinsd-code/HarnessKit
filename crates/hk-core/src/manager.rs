@@ -147,15 +147,17 @@ fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
             let saved = store.get_disabled_config(&ext.id)?
                 .ok_or_else(|| anyhow::anyhow!("No saved config for MCP server '{}'", ext.name))?;
             let entry: serde_json::Value = serde_json::from_str(&saved)?;
-            // Check for redacted env values — user must reconfigure
+            // Warn about redacted env values — server will be restored but
+            // the user needs to manually set the real values in the config.
             if let Some(env_obj) = entry.get("env").and_then(|v| v.as_object()) {
                 let redacted_keys: Vec<&str> = env_obj.iter()
                     .filter(|(_, v)| v.as_str() == Some("<redacted>"))
                     .map(|(k, _)| k.as_str())
                     .collect();
                 if !redacted_keys.is_empty() {
-                    anyhow::bail!(
-                        "MCP server '{}' has redacted environment variables ({}) — please reconfigure them before re-enabling",
+                    eprintln!(
+                        "[hk] warning: MCP server '{}' has redacted environment variables ({}) — \
+                         the server has been re-enabled but you must set the real values in the agent config",
                         ext.name,
                         redacted_keys.join(", ")
                     );
@@ -766,14 +768,23 @@ fn copy_dir_contents(src: &Path, dst: &Path) -> Result<()> {
     for entry in std::fs::read_dir(src)?.flatten() {
         // Skip symlinks to prevent symlink-following attacks
         if entry.file_type().map(|t| t.is_symlink()).unwrap_or(false) {
+            eprintln!("[hk] warning: skipping symlink: {}", entry.path().display());
             continue;
         }
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
         // Re-check via symlink_metadata right before copy to close the TOCTOU
         // window between the readdir check above and the actual I/O below.
-        let meta = std::fs::symlink_metadata(&src_path)?;
+        // If the file was deleted between readdir and now, skip instead of aborting.
+        let meta = match std::fs::symlink_metadata(&src_path) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("[hk] warning: cannot read metadata for {}: {e}", src_path.display());
+                continue;
+            }
+        };
         if meta.file_type().is_symlink() {
+            eprintln!("[hk] warning: skipping symlink: {}", src_path.display());
             continue;
         }
         if meta.file_type().is_dir() {

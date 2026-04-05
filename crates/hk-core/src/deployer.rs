@@ -24,14 +24,23 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
     for entry in std::fs::read_dir(src)?.flatten() {
         // Skip symlinks to prevent symlink-following attacks
         if entry.file_type().map(|t| t.is_symlink()).unwrap_or(false) {
+            eprintln!("[hk] warning: skipping symlink: {}", entry.path().display());
             continue;
         }
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
         // Re-check via symlink_metadata right before copy to close the TOCTOU
         // window between the readdir check above and the actual I/O below.
-        let meta = std::fs::symlink_metadata(&src_path)?;
+        // If the file was deleted between readdir and now, skip instead of aborting.
+        let meta = match std::fs::symlink_metadata(&src_path) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("[hk] warning: cannot read metadata for {}: {e}", src_path.display());
+                continue;
+            }
+        };
         if meta.file_type().is_symlink() {
+            eprintln!("[hk] warning: skipping symlink: {}", src_path.display());
             continue;
         }
         if meta.file_type().is_dir() {
