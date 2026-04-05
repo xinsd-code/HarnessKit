@@ -31,6 +31,9 @@ enum Commands {
         /// Filter by agent name
         #[arg(long)]
         agent: Option<String>,
+        /// Filter by source pack (owner/repo)
+        #[arg(long)]
+        pack: Option<String>,
         /// List subcommand (e.g., "agents")
         sub: Option<String>,
     },
@@ -50,10 +53,22 @@ enum Commands {
         #[arg(long)]
         severity: Option<String>,
     },
-    /// Enable an extension
-    Enable { name: String },
-    /// Disable an extension
-    Disable { name: String },
+    /// Enable an extension (or all in a pack)
+    Enable {
+        /// Extension name
+        name: Option<String>,
+        /// Enable all extensions in a pack (owner/repo)
+        #[arg(long)]
+        pack: Option<String>,
+    },
+    /// Disable an extension (or all in a pack)
+    Disable {
+        /// Extension name
+        name: Option<String>,
+        /// Disable all extensions in a pack (owner/repo)
+        #[arg(long)]
+        pack: Option<String>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -64,27 +79,25 @@ fn main() -> Result<()> {
     let adapters = adapter::all_adapters();
 
     // Sync: scan all agents and upsert into store
-    let extensions = scanner::scan_all(&adapters);
-    for ext in &extensions {
-        if store.get_extension(&ext.id).ok().flatten().is_none() {
-            let _ = store.insert_extension(ext);
-        }
-    }
+    let scanned = scanner::scan_all(&adapters);
+    store.sync_extensions(&scanned)?;
+    // Read back from DB so we get backfilled fields (e.g. pack from install_url)
+    let extensions = store.list_extensions(None, None)?;
 
     match cli.command {
         Commands::Status => cmd_status(&store, &adapters, &extensions),
-        Commands::List { kind, agent, sub } => {
+        Commands::List { kind, agent, pack, sub } => {
             if sub.as_deref() == Some("agents") {
                 cmd_list_agents(&adapters)
             } else {
                 let kind_filter = kind.as_deref().and_then(|k| k.parse().ok());
-                cmd_list(&store, kind_filter, agent.as_deref(), &extensions)
+                cmd_list(&store, kind_filter, agent.as_deref(), pack.as_deref(), &extensions)
             }
         }
         Commands::Info { name } => cmd_info(&extensions, &name),
         Commands::Audit { name, kind, severity } => cmd_audit(&extensions, name.as_deref(), kind.as_deref(), severity.as_deref()),
-        Commands::Enable { name } => cmd_toggle(&store, &extensions, &name, true),
-        Commands::Disable { name } => cmd_toggle(&store, &extensions, &name, false),
+        Commands::Enable { name, pack } => cmd_toggle(&store, &extensions, name.as_deref(), pack.as_deref(), true),
+        Commands::Disable { name, pack } => cmd_toggle(&store, &extensions, name.as_deref(), pack.as_deref(), false),
     }
 }
 
@@ -110,26 +123,29 @@ fn cmd_status(_store: &Store, adapters: &[Box<dyn adapter::AgentAdapter>], exten
     Ok(())
 }
 
-fn cmd_list(_store: &Store, kind: Option<ExtensionKind>, agent: Option<&str>, extensions: &[Extension]) -> Result<()> {
+fn cmd_list(_store: &Store, kind: Option<ExtensionKind>, agent: Option<&str>, pack: Option<&str>, extensions: &[Extension]) -> Result<()> {
     let filtered: Vec<&Extension> = extensions.iter()
         .filter(|e| kind.is_none() || Some(e.kind) == kind)
         .filter(|e| agent.is_none() || e.agents.iter().any(|a| a == agent.unwrap()))
+        .filter(|e| pack.is_none() || e.pack.as_deref() == pack)
         .collect();
 
     let mut table = Table::new();
     table.load_preset(UTF8_FULL_CONDENSED);
     table.set_content_arrangement(ContentArrangement::Dynamic);
-    table.set_header(vec!["Name", "Kind", "Agent", "Score", "Status"]);
+    table.set_header(vec!["Name", "Kind", "Agent", "Source", "Score", "Status"]);
 
     for ext in &filtered {
         let score_str = ext.trust_score
             .map(format_score)
             .unwrap_or_else(|| "—".dimmed().to_string());
         let status = if ext.enabled { "enabled".green().to_string() } else { "disabled".red().to_string() };
+        let source = ext.pack.as_deref().unwrap_or("—");
         table.add_row(vec![
             &ext.name,
             ext.kind.as_str(),
             &ext.agents.join(", "),
+            source,
             &score_str,
             &status,
         ]);
@@ -195,6 +211,7 @@ fn cmd_audit(extensions: &[Extension], name: Option<&str>, _kind: Option<&str>, 
             cli_parent_id: ext.cli_parent_id.clone(),
             cli_meta: ext.cli_meta.clone(),
             child_permissions: vec![],
+            pack: ext.pack.clone(),
         };
         let result = auditor.audit(&input);
         println!();
@@ -219,7 +236,23 @@ fn cmd_audit(extensions: &[Extension], name: Option<&str>, _kind: Option<&str>, 
     Ok(())
 }
 
-fn cmd_toggle(store: &Store, extensions: &[Extension], name: &str, enabled: bool) -> Result<()> {
+fn cmd_toggle(store: &Store, extensions: &[Extension], name: Option<&str>, pack: Option<&str>, enabled: bool) -> Result<()> {
+    if let Some(pack_name) = pack {
+        let targets: Vec<&Extension> = extensions.iter()
+            .filter(|e| e.pack.as_deref() == Some(pack_name))
+            .collect();
+        if targets.is_empty() {
+            return Err(anyhow::anyhow!("No extensions found with source: {pack_name}"));
+        }
+        for ext in &targets {
+            manager::toggle_extension(store, &ext.id, enabled)?;
+        }
+        let action = if enabled { "Enabled" } else { "Disabled" };
+        println!("{} {} extensions from source '{}'", action.green(), targets.len(), pack_name);
+        return Ok(());
+    }
+
+    let name = name.ok_or_else(|| anyhow::anyhow!("Either --pack or a name is required"))?;
     let ext = extensions.iter().find(|e| e.name == name)
         .ok_or_else(|| anyhow::anyhow!("Extension not found: {name}"))?;
     manager::toggle_extension(store, &ext.id, enabled)?;
