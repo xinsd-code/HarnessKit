@@ -63,20 +63,27 @@ pub fn install_from_local(state: State<AppState>, path: String, target_agents: V
             }
         }
         // Save install metadata for each agent
+        // If the local folder is inside a git repo, record the git URL
+        let git_source = scanner::detect_source_for(source_path);
         let meta = InstallMeta {
             install_type: "local".into(),
-            url: Some(path.clone()),
+            url: git_source.url.clone().or_else(|| Some(path.clone())),
             url_resolved: None,
             branch: None,
             subpath: None,
-            revision: None,
+            revision: git_source.commit_hash.clone(),
             remote_revision: None,
             checked_at: None,
             check_error: None,
         };
+        let pack = git_source.url.as_deref()
+            .and_then(hk_core::scanner::extract_pack_from_url);
         for agent_name in &agents {
             let ext_id = scanner::stable_id_for(&skill_name, "skill", agent_name);
             let _ = store.set_install_meta(&ext_id, &meta);
+            if let Some(ref p) = pack {
+                let _ = store.update_pack(&ext_id, Some(p));
+            }
         }
     }
 
@@ -139,6 +146,12 @@ pub fn install_from_git(state: State<AppState>, url: String, target_agent: Optio
             check_error: None,
         };
         let _ = store.set_install_meta(&ext_id, &meta);
+        // Set pack from install URL so Source filter works immediately
+        let pack = meta.url.as_deref()
+            .and_then(hk_core::scanner::extract_pack_from_url);
+        if let Some(ref p) = pack {
+            let _ = store.update_pack(&ext_id, Some(p));
+        }
     } // Lock released before slow file I/O
 
     // Audit the newly installed extension (no lock held)
@@ -230,9 +243,14 @@ pub async fn scan_git_repo(state: State<'_, AppState>, url: String, target_agent
                             checked_at: None,
                             check_error: None,
                         };
+                        let pack = meta.url.as_deref()
+                            .and_then(hk_core::scanner::extract_pack_from_url);
                         for agent_name in &installed_agents {
                             let ext_id = scanner::stable_id_for(&result.name, "skill", agent_name);
                             let _ = store.set_install_meta(&ext_id, &meta);
+                            if let Some(ref p) = pack {
+                                let _ = store.update_pack(&ext_id, Some(p));
+                            }
                         }
                     }
                 }
@@ -300,6 +318,7 @@ pub async fn install_scanned_skills(
                 }
             }
             // Persist install source metadata for each installed skill+agent
+            let install_pack = hk_core::scanner::extract_pack_from_url(&pending.url);
             for (agent_name, sid, result) in &results {
                 let ext_id = scanner::stable_id_for(&result.name, "skill", agent_name);
                 let meta = InstallMeta {
@@ -314,6 +333,9 @@ pub async fn install_scanned_skills(
                     check_error: None,
                 };
                 let _ = store.set_install_meta(&ext_id, &meta);
+                if let Some(ref p) = install_pack {
+                    let _ = store.update_pack(&ext_id, Some(p));
+                }
             }
         }
 

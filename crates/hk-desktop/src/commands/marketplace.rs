@@ -81,6 +81,13 @@ pub fn install_from_marketplace(state: State<AppState>, source: String, skill_id
             check_error: None,
         };
         let _ = store.set_install_meta(&ext_id, &meta);
+        // Set pack from install source URL so Source filter works immediately
+        let pack = meta.url.as_deref()
+            .and_then(hk_core::scanner::extract_pack_from_url)
+            .or_else(|| meta.url_resolved.as_deref().and_then(hk_core::scanner::extract_pack_from_url));
+        if let Some(ref p) = pack {
+            let _ = store.update_pack(&ext_id, Some(p));
+        }
     } // Lock released before slow file I/O
 
     // Audit the newly installed extension (no lock held)

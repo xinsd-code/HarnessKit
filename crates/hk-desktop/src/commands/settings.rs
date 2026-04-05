@@ -61,9 +61,26 @@ pub fn get_all_tags(state: State<AppState>) -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
-pub fn update_category(state: State<AppState>, id: String, category: Option<String>) -> Result<(), String> {
+pub fn update_pack(state: State<AppState>, id: String, pack: Option<String>) -> Result<(), String> {
     let store = state.store.lock().map_err(|e| e.to_string())?;
-    store.update_category(&id, category.as_deref()).map_err(|e| e.to_string())
+    store.update_pack(&id, pack.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_all_packs(state: State<AppState>) -> Result<Vec<String>, String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    store.get_all_packs().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn toggle_by_pack(state: State<AppState>, pack: String, enabled: bool) -> Result<Vec<String>, String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let ids = store.find_ids_by_pack(&pack).map_err(|e| e.to_string())?;
+    for id in &ids {
+        hk_core::manager::toggle_extension(&store, id, enabled)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(ids)
 }
 
 // --- Config file preview ---
