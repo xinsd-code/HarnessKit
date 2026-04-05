@@ -340,11 +340,13 @@ export default function AuditPage() {
     return map;
   }, [allExtensions]);
 
-  // Use same grouping as extensions page for consistent count
-  const totalExtensions = useMemo(
-    () => buildGroups(allExtensions).length,
-    [allExtensions],
-  );
+  // Count extensions that actually have audit results
+  const totalExtensions = useMemo(() => {
+    const auditedIds = new Set(results.map((r) => r.extension_id));
+    return buildGroups(
+      allExtensions.filter((e) => auditedIds.has(e.id)),
+    ).length;
+  }, [allExtensions, results]);
 
   const sortedResults = useMemo(
     () =>
