@@ -22,6 +22,10 @@ pub fn deploy_skill(source_path: &Path, target_skill_dir: &Path) -> Result<Strin
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)?.flatten() {
+        // Skip symlinks to prevent symlink-following attacks
+        if entry.file_type().map(|t| t.is_symlink()).unwrap_or(false) {
+            continue;
+        }
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
         if src_path.is_dir() {
@@ -840,5 +844,27 @@ mod tests {
         let hooks = content["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(hooks.len(), 1);
         assert_eq!(hooks[0]["command"], "./other.sh");
+    }
+
+    #[test]
+    fn test_copy_dir_recursive_skips_symlinks() {
+        let src_dir = TempDir::new().unwrap();
+        let skill_dir = src_dir.path().join("my-skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), "# My Skill").unwrap();
+
+        // Create a symlink to a file outside the skill directory
+        let secret = src_dir.path().join("secret.txt");
+        std::fs::write(&secret, "TOP SECRET").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&secret, skill_dir.join("link-to-secret")).unwrap();
+
+        let target_dir = TempDir::new().unwrap();
+        deploy_skill(&skill_dir, target_dir.path()).unwrap();
+
+        assert!(target_dir.path().join("my-skill").join("SKILL.md").exists());
+        // Symlink should NOT have been followed/copied
+        #[cfg(unix)]
+        assert!(!target_dir.path().join("my-skill").join("link-to-secret").exists());
     }
 }
