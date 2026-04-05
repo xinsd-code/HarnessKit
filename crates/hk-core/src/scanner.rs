@@ -131,16 +131,17 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
                 (name, String::new(), vec![])
             });
 
-        let category = infer_category(&name, &content);
+        let source = detect_source(&path, true);
+        let pack = source.url.as_deref().and_then(extract_pack_from_url);
         extensions.push(Extension {
             id: stable_id(&name, "skill", agent_name),
             kind: ExtensionKind::Skill,
             name,
             description,
-            source: detect_source(&path, true),
+            source,
             agents: vec![agent_name.to_string()],
             tags: vec![],
-            category,
+            pack,
             permissions: infer_skill_permissions(&content),
             enabled: !is_disabled,
             trust_score: None,
@@ -210,15 +211,6 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             }
         };
 
-        // Build rich text for categorization: name + command + args + env keys
-        let cat_text = format!("{} {} {} {}",
-            description,
-            server.command,
-            server.args.join(" "),
-            server.env.keys().cloned().collect::<Vec<_>>().join(" "),
-        );
-        let category = infer_category(&server.name, &cat_text);
-
         Extension {
             id: stable_id(&server.name, "mcp", adapter.name()),
             kind: ExtensionKind::Mcp,
@@ -227,7 +219,7 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             source: Source { origin: SourceOrigin::Agent, url: None, version: None, commit_hash: None },
             agents: vec![adapter.name().to_string()],
             tags: vec![],
-            category,
+            pack: None,
             permissions,
             enabled: true,
             trust_score: None,
@@ -254,7 +246,6 @@ pub fn scan_hooks(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             .map(|c| Path::new(c).file_name().unwrap_or_default().to_string_lossy().to_string())
             .unwrap_or_default();
         let description = format!("Runs `{}` on {} event", hook.command, hook.event);
-        let category = infer_category(&hook_name, &hook.command);
 
         Extension {
             id: stable_id(&hook_name, "hook", adapter.name()),
@@ -264,7 +255,7 @@ pub fn scan_hooks(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             source: Source { origin: SourceOrigin::Agent, url: None, version: None, commit_hash: None },
             agents: vec![adapter.name().to_string()],
             tags: vec![],
-            category,
+            pack: None,
             permissions: vec![Permission::Shell {
                 commands: if hook.command == cmd_basename {
                     vec![cmd_basename]
@@ -293,20 +284,6 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
         } else {
             format!("Plugin from {}", plugin.source)
         };
-        // Read manifest content for richer categorization
-        let manifest_text = plugin.path.as_ref().and_then(|p| {
-            // Try common manifest files
-            for name in &["plugin.json", ".cursor-plugin/plugin.json", ".codex-plugin/plugin.json"] {
-                let manifest = p.join(name);
-                if manifest.exists()
-                    && let Ok(content) = std::fs::read_to_string(&manifest) {
-                        return Some(content);
-                    }
-            }
-            None
-        }).unwrap_or_default();
-        let category = infer_category(&plugin.name, &format!("{} {}", description, manifest_text));
-
         // Plugins run code, so they implicitly have shell/filesystem permissions
         let permissions = vec![
             Permission::Shell { commands: vec![] },
@@ -328,7 +305,7 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             source: Source { origin: SourceOrigin::Agent, url: None, version: None, commit_hash: None },
             agents: vec![adapter.name().to_string()],
             tags: vec![],
-            category,
+            pack: None,
             permissions,
             enabled: plugin.enabled,
             trust_score: None,
@@ -555,6 +532,7 @@ fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, Hash
             version: version.clone(),
             commit_hash: None,
         };
+        let pack = source.url.as_deref().and_then(extract_pack_from_url);
 
         let (installed_at, updated_at) = cli_timestamps(&bin_path, &install_method);
 
@@ -566,7 +544,7 @@ fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, Hash
             source,
             agents: cli_agents,
             tags: vec![],
-            category: None,
+            pack,
             permissions,
             enabled: bin_path.is_some(),
             trust_score: None,
@@ -762,34 +740,6 @@ fn discover_projects_recursive(
     }
 }
 
-/// Infer a category based on name and content.
-/// For short text (MCP, hooks, plugins) a single keyword match suffices.
-/// For long text (skills with full content) requires 2+ matches to avoid false positives.
-fn infer_category(name: &str, content: &str) -> Option<String> {
-    let text = format!("{} {}", name, content).to_lowercase();
-    let rules: &[(&str, &[&str])] = &[
-        ("Testing", &["test", "spec", "assert", "mock", "fixture", "coverage", "jest", "pytest", "vitest", "cypress"]),
-        ("Security", &["security", "auth", "permission", "encrypt", "credential", "vulnerability", "audit", "pentest", "firewall", "ssl", "tls"]),
-        ("DevOps", &["docker", "kubernetes", "k8s", "ci/cd", "deploy", "terraform", "ansible", "nginx", "aws", "gcp", "azure", "infra", "cloudflare", "vercel", "netlify"]),
-        ("Data", &["database", "sql", "csv", "json", "data", "analytics", "pandas", "spark", "etl", "migration", "postgres", "mysql", "sqlite", "mongo", "redis", "supabase", "bigquery"]),
-        ("Design", &["css", "tailwind", "ui", "ux", "design", "figma", "layout", "responsive", "animation", "svg", "sketch", "canvas"]),
-        ("Finance", &["finance", "payment", "stripe", "invoice", "accounting", "tax", "budget", "trading"]),
-        ("Education", &["learn", "tutorial", "teach", "course", "quiz", "flashcard", "study", "education"]),
-        ("Writing", &["write", "blog", "article", "documentation", "markdown", "content", "copywriting", "grammar", "proofread", "notion"]),
-        ("Research", &["research", "paper", "arxiv", "citation", "literature", "survey", "experiment"]),
-        ("Productivity", &["todo", "task", "calendar", "schedule", "workflow", "automate", "organize", "template", "slack", "email", "gmail", "trello", "jira", "linear", "asana", "discord"]),
-        ("Coding", &["code", "programming", "refactor", "debug", "lint", "compile", "build", "api", "frontend", "backend", "react", "rust", "python", "typescript", "javascript", "github", "gitlab", "git", "npm", "cargo", "pip", "filesystem", "file-system", "editor", "lsp", "server-github"]),
-    ];
-    // Short text (MCP names, plugin names) → 1 match is enough
-    // Long text (skill content) → require 2 matches to avoid false positives
-    let threshold = if text.len() < 300 { 1 } else { 2 };
-    for (category, keywords) in rules {
-        let matches = keywords.iter().filter(|kw| text.contains(**kw)).count();
-        if matches >= threshold { return Some(category.to_string()); }
-    }
-    None
-}
-
 // --- Helpers ---
 
 /// Extract the skill name from a SKILL.md file (public for use in commands)
@@ -883,6 +833,11 @@ pub fn parse_skill_frontmatter(content: &str) -> Option<(String, String, Vec<Str
     Some((name?, description.unwrap_or_default(), bins))
 }
 
+/// Detect source info for a path (public wrapper for install flows).
+pub fn detect_source_for(path: &Path) -> Source {
+    detect_source(path, false)
+}
+
 fn detect_source(path: &Path, agent_managed: bool) -> Source {
     // Check the path itself and all parent directories for .git
     let mut dir = path.to_path_buf();
@@ -923,6 +878,39 @@ fn read_git_commit_hash(repo_dir: &Path) -> Option<String> {
         // Detached HEAD — the hash is directly in HEAD
         Some(head.to_string()).filter(|s| !s.is_empty())
     }
+}
+
+/// Extract "owner/repo" from a git remote URL or short reference.
+/// Handles: https://github.com/owner/repo.git, git@github.com:owner/repo.git,
+/// and short "owner/repo" or "owner/repo/subpath" formats.
+pub fn extract_pack_from_url(url: &str) -> Option<String> {
+    // SSH: git@host:owner/repo.git
+    if let Some(path) = url.strip_prefix("git@") {
+        let after_colon = path.split_once(':')?.1;
+        let clean = after_colon.trim_end_matches(".git");
+        let parts: Vec<&str> = clean.splitn(3, '/').collect();
+        if parts.len() >= 2 && !parts[0].is_empty() && !parts[1].is_empty() {
+            return Some(format!("{}/{}", parts[0], parts[1]));
+        }
+    }
+    // HTTPS/SSH URL: https://host/owner/repo.git
+    if let Some(pos) = url.find("://") {
+        let after_scheme = &url[pos + 3..];
+        let after_host = after_scheme.split_once('/')?.1;
+        let clean = after_host.trim_end_matches(".git");
+        let parts: Vec<&str> = clean.splitn(3, '/').collect();
+        if parts.len() >= 2 && !parts[0].is_empty() && !parts[1].is_empty() {
+            return Some(format!("{}/{}", parts[0], parts[1]));
+        }
+    }
+    // Short format: "owner/repo" or "owner/repo/subpath"
+    let parts: Vec<&str> = url.splitn(3, '/').collect();
+    if parts.len() >= 2 && !parts[0].is_empty() && !parts[1].is_empty()
+        && !parts[0].contains('.') && !parts[0].contains(':')
+    {
+        return Some(format!("{}/{}", parts[0], parts[1]));
+    }
+    None
 }
 
 fn read_git_remote(repo_dir: &Path) -> Option<String> {
@@ -1171,33 +1159,28 @@ mod tests {
     }
 
     #[test]
-    fn test_infer_category_security() {
-        let cat = infer_category("auth-checker", "Check security permissions for the auth module");
-        assert_eq!(cat, Some("Security".to_string()));
+    fn test_extract_pack_https() {
+        assert_eq!(extract_pack_from_url("https://github.com/alice/repo.git"), Some("alice/repo".into()));
+        assert_eq!(extract_pack_from_url("https://github.com/alice/repo"), Some("alice/repo".into()));
+        assert_eq!(extract_pack_from_url("https://gitlab.com/org/project.git"), Some("org/project".into()));
     }
 
     #[test]
-    fn test_infer_category_testing() {
-        let cat = infer_category("test-runner", "Run jest tests and check assert results");
-        assert_eq!(cat, Some("Testing".to_string()));
+    fn test_extract_pack_ssh() {
+        assert_eq!(extract_pack_from_url("git@github.com:alice/repo.git"), Some("alice/repo".into()));
+        assert_eq!(extract_pack_from_url("git@gitlab.com:org/project.git"), Some("org/project".into()));
     }
 
     #[test]
-    fn test_infer_category_coding() {
-        let cat = infer_category("refactor-helper", "Helps refactor code and debug issues");
-        assert_eq!(cat, Some("Coding".to_string()));
+    fn test_extract_pack_short() {
+        assert_eq!(extract_pack_from_url("alice/repo"), Some("alice/repo".into()));
+        assert_eq!(extract_pack_from_url("alice/repo/subpath"), Some("alice/repo".into()));
     }
 
     #[test]
-    fn test_infer_category_none() {
-        let cat = infer_category("my-tool", "A generic tool that does stuff");
-        assert_eq!(cat, None);
-    }
-
-    #[test]
-    fn test_infer_category_devops() {
-        let cat = infer_category("deploy-tool", "Deploy to kubernetes using docker containers");
-        assert_eq!(cat, Some("DevOps".to_string()));
+    fn test_extract_pack_none() {
+        assert_eq!(extract_pack_from_url("not-a-url"), None);
+        assert_eq!(extract_pack_from_url(""), None);
     }
 
     #[test]

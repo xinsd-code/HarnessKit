@@ -15,7 +15,7 @@ pub struct Extension {
     pub source: Source,
     pub agents: Vec<String>,
     pub tags: Vec<String>,
-    pub category: Option<String>,
+    pub pack: Option<String>,
     pub permissions: Vec<Permission>,
     pub enabled: bool,
     pub trust_score: Option<u8>,

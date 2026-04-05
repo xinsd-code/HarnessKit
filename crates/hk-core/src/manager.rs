@@ -42,6 +42,14 @@ impl Manager {
         // Implementation: read extension, modify tags, write back
         Ok(())
     }
+
+    pub fn toggle_by_pack(&self, pack: &str, enabled: bool) -> Result<Vec<String>> {
+        let ids = self.store.find_ids_by_pack(pack)?;
+        for id in &ids {
+            toggle_extension(&self.store, id, enabled)?;
+        }
+        Ok(ids)
+    }
 }
 
 /// Toggle an extension's enabled state. Handles all 5 kinds:
@@ -745,7 +753,7 @@ mod tests {
             source: Source { origin: SourceOrigin::Local, url: None, version: None, commit_hash: None },
             agents: vec!["claude".into()],
             tags: vec![],
-            category: None,
+            pack: None,
             permissions: vec![],
             enabled: true,
             trust_score: None,
@@ -785,7 +793,7 @@ mod tests {
             source: Source { origin: SourceOrigin::Local, url: None, version: None, commit_hash: None },
             agents: vec!["claude".into()],
             tags: vec![],
-            category: None,
+            pack: None,
             permissions: vec![],
             enabled: true,
             trust_score: None,
@@ -829,7 +837,7 @@ mod tests {
             source: Source { origin: SourceOrigin::Local, url: None, version: None, commit_hash: None },
             agents: vec!["claude".into()],
             tags: vec![],
-            category: None,
+            pack: None,
             permissions: vec![],
             enabled: true,
             trust_score: None,

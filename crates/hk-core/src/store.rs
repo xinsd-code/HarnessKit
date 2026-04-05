@@ -82,6 +82,8 @@ impl Store {
             )?;
             // Migration: add category column for existing databases
             let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN category TEXT", []);
+            // Migration: add pack column (replaces category for repo-based grouping)
+            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN pack TEXT", []);
             // Migration: add last_used_at column for skill usage tracking
             let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN last_used_at TEXT", []);
             // Migration: add disabled_config column for real enable/disable
@@ -257,12 +259,12 @@ impl Store {
     }
 
     /// Upsert an extension: insert if new, update scanner-derived fields if existing.
-    /// Preserves user-set fields: enabled, tags, category, trust_score, and install meta.
+    /// Preserves user-set fields: enabled, tags, pack, trust_score, and install meta.
     pub fn insert_extension(&self, ext: &Extension) -> Result<()> {
         let im = ext.install_meta.as_ref();
         self.conn.execute(
-            "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)
+            "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)
              ON CONFLICT(id) DO UPDATE SET
                kind = excluded.kind,
                name = excluded.name,
@@ -272,7 +274,7 @@ impl Store {
                permissions_json = excluded.permissions_json,
                installed_at = extensions.installed_at,
                updated_at = excluded.updated_at,
-               category = extensions.category,
+               pack = COALESCE(extensions.pack, excluded.pack),
                source_path = excluded.source_path,
                cli_parent_id = excluded.cli_parent_id,
                cli_meta_json = excluded.cli_meta_json",
@@ -289,7 +291,7 @@ impl Store {
                 ext.trust_score.map(|s| s as i32),
                 ext.installed_at.to_rfc3339(),
                 ext.updated_at.to_rfc3339(),
-                ext.category,
+                Option::<String>::None,
                 ext.source_path,
                 ext.cli_parent_id,
                 ext.cli_meta.as_ref().map(|m| serde_json::to_string(m).unwrap_or_default()),
@@ -302,6 +304,7 @@ impl Store {
                 im.and_then(|m| m.remote_revision.as_deref()),
                 im.and_then(|m| m.checked_at.map(|t| t.to_rfc3339())),
                 im.and_then(|m| m.check_error.as_deref()),
+                ext.pack,
             ],
         )?;
         Ok(())
@@ -309,7 +312,7 @@ impl Store {
 
     pub fn get_extension(&self, id: &str) -> Result<Option<Extension>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error
+            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack
              FROM extensions WHERE id = ?1"
         )?;
         let mut rows = stmt.query_map(params![id], |row| Ok(self.row_to_extension(row)))?;
@@ -322,7 +325,7 @@ impl Store {
     }
 
     pub fn list_extensions(&self, kind: Option<ExtensionKind>, agent: Option<&str>) -> Result<Vec<Extension>> {
-        let mut sql = "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error FROM extensions WHERE 1=1".to_string();
+        let mut sql = "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack FROM extensions WHERE 1=1".to_string();
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
         if let Some(k) = kind {
@@ -440,12 +443,28 @@ impl Store {
         Ok(all_tags.into_iter().collect())
     }
 
-    pub fn update_category(&self, id: &str, category: Option<&str>) -> Result<()> {
+    pub fn update_pack(&self, id: &str, pack: Option<&str>) -> Result<()> {
         self.conn.execute(
-            "UPDATE extensions SET category = ?1 WHERE id = ?2",
-            params![category, id],
+            "UPDATE extensions SET pack = ?1 WHERE id = ?2",
+            params![pack, id],
         )?;
         Ok(())
+    }
+
+    pub fn get_all_packs(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT pack FROM extensions WHERE pack IS NOT NULL ORDER BY pack"
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn find_ids_by_pack(&self, pack: &str) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id FROM extensions WHERE pack = ?1"
+        )?;
+        let rows = stmt.query_map(params![pack], |row| row.get::<_, String>(0))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
     /// Find all extension IDs that share the same source_path as the given extension.
@@ -462,7 +481,7 @@ impl Store {
     /// Get all child skills linked to a CLI extension
     pub fn get_child_skills(&self, cli_id: &str) -> Result<Vec<Extension>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error
+            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack
              FROM extensions WHERE cli_parent_id = ?1"
         )?;
         let rows = stmt.query_map(params![cli_id], |row| Ok(self.row_to_extension(row)))?;
@@ -508,8 +527,8 @@ impl Store {
 
         for ext in extensions {
             tx.execute(
-                "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, pack)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
                  ON CONFLICT(id) DO UPDATE SET
                    kind = excluded.kind,
                    name = excluded.name,
@@ -519,7 +538,7 @@ impl Store {
                    permissions_json = excluded.permissions_json,
                    installed_at = extensions.installed_at,
                    updated_at = excluded.updated_at,
-                   category = extensions.category,
+                   pack = COALESCE(extensions.pack, excluded.pack),
                    source_path = excluded.source_path,
                    cli_parent_id = excluded.cli_parent_id,
                    cli_meta_json = excluded.cli_meta_json
@@ -537,10 +556,11 @@ impl Store {
                     ext.trust_score.map(|s| s as i32),
                     ext.installed_at.to_rfc3339(),
                     ext.updated_at.to_rfc3339(),
-                    ext.category,
+                    Option::<String>::None,
                     ext.source_path,
                     ext.cli_parent_id,
                     ext.cli_meta.as_ref().map(|m| serde_json::to_string(m).unwrap_or_default()),
+                    ext.pack,
                 ],
             )?;
         }
@@ -575,6 +595,10 @@ impl Store {
                AND json_extract(source_json, '$.url') IS NOT NULL"
         )?;
 
+        // Backfill pack from install_url or source_json URL for deployed extensions
+        // that lost their git context after being copied to agent directories
+        Self::backfill_packs(&tx)?;
+
         tx.commit()?;
         Ok(())
     }
@@ -585,8 +609,8 @@ impl Store {
         let tx = self.conn.unchecked_transaction()?;
         for ext in extensions {
             tx.execute(
-                "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, pack)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
                  ON CONFLICT(id) DO UPDATE SET
                    kind = excluded.kind,
                    name = excluded.name,
@@ -596,7 +620,7 @@ impl Store {
                    permissions_json = excluded.permissions_json,
                    installed_at = extensions.installed_at,
                    updated_at = excluded.updated_at,
-                   category = extensions.category,
+                   pack = COALESCE(extensions.pack, excluded.pack),
                    source_path = excluded.source_path,
                    cli_parent_id = excluded.cli_parent_id,
                    cli_meta_json = excluded.cli_meta_json
@@ -614,10 +638,11 @@ impl Store {
                     ext.trust_score.map(|s| s as i32),
                     ext.installed_at.to_rfc3339(),
                     ext.updated_at.to_rfc3339(),
-                    ext.category,
+                    Option::<String>::None,
                     ext.source_path,
                     ext.cli_parent_id,
                     ext.cli_meta.as_ref().map(|m| serde_json::to_string(m).unwrap_or_default()),
+                    ext.pack,
                 ],
             )?;
         }
@@ -649,7 +674,53 @@ impl Store {
                AND json_extract(source_json, '$.url') IS NOT NULL"
         )?;
 
+        Self::backfill_packs(&tx)?;
+
         tx.commit()?;
+        Ok(())
+    }
+
+    /// Backfill `pack` from install_url, source_json URL, or child extensions.
+    /// Deployed skills lose their git context after being copied to agent directories,
+    /// but install_url retains the repo URL. CLI parent extensions inherit pack from children.
+    fn backfill_packs(conn: &rusqlite::Connection) -> Result<()> {
+        // 1. Backfill from own install_url or source_json URL
+        let mut stmt = conn.prepare(
+            "SELECT id, install_url, json_extract(source_json, '$.url')
+             FROM extensions
+             WHERE pack IS NULL
+               AND (install_url IS NOT NULL OR json_extract(source_json, '$.url') IS NOT NULL)"
+        )?;
+        let rows: Vec<(String, Option<String>, Option<String>)> = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?.filter_map(|r| r.ok()).collect();
+
+        for (id, install_url, source_url) in &rows {
+            let url = install_url.as_deref().or(source_url.as_deref());
+            if let Some(pack) = url.and_then(crate::scanner::extract_pack_from_url) {
+                conn.execute("UPDATE extensions SET pack = ?1 WHERE id = ?2", params![pack, id])?;
+            }
+        }
+
+        // 2. CLI parents inherit pack from their children
+        conn.execute_batch(
+            "UPDATE extensions SET pack = (
+                SELECT c.pack FROM extensions c
+                WHERE c.cli_parent_id = extensions.id AND c.pack IS NOT NULL
+                LIMIT 1
+             )
+             WHERE pack IS NULL
+               AND kind = 'cli'
+               AND EXISTS (
+                SELECT 1 FROM extensions c
+                WHERE c.cli_parent_id = extensions.id AND c.pack IS NOT NULL
+               )"
+        )?;
+
         Ok(())
     }
 
@@ -788,7 +859,7 @@ impl Store {
             source: serde_json::from_str(&source_json)?,
             agents: serde_json::from_str(&agents_json)?,
             tags: serde_json::from_str(&tags_json)?,
-            category: row.get::<_, Option<String>>(12).ok().flatten(),
+            pack: row.get::<_, Option<String>>(25).ok().flatten(),
             permissions: serde_json::from_str(&permissions_json)?,
             enabled: row.get::<_, i32>(8)? != 0,
             trust_score: row.get::<_, Option<i32>>(9)?.map(|s| s as u8),
@@ -830,7 +901,7 @@ mod tests {
             },
             agents: vec!["claude".into()],
             tags: vec!["test".into()],
-            category: None,
+            pack: None,
             permissions: vec![Permission::FileSystem {
                 paths: vec!["/tmp".into()],
             }],
@@ -983,19 +1054,19 @@ mod tests {
     }
 
     #[test]
-    fn test_update_category() {
+    fn test_update_pack() {
         let (store, _dir) = test_store();
         let ext = sample_extension();
         store.insert_extension(&ext).unwrap();
-        assert_eq!(store.get_extension(&ext.id).unwrap().unwrap().category, None);
+        assert_eq!(store.get_extension(&ext.id).unwrap().unwrap().pack, None);
 
-        store.update_category(&ext.id, Some("Security")).unwrap();
+        store.update_pack(&ext.id, Some("alice/repo")).unwrap();
         let fetched = store.get_extension(&ext.id).unwrap().unwrap();
-        assert_eq!(fetched.category, Some("Security".to_string()));
+        assert_eq!(fetched.pack, Some("alice/repo".to_string()));
 
-        store.update_category(&ext.id, None).unwrap();
+        store.update_pack(&ext.id, None).unwrap();
         let fetched = store.get_extension(&ext.id).unwrap().unwrap();
-        assert_eq!(fetched.category, None);
+        assert_eq!(fetched.pack, None);
     }
 
     #[test]
