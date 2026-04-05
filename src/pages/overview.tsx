@@ -46,7 +46,13 @@ async function fetchTips(): Promise<Tip[]> {
     return tips;
   } catch {
     const cached = localStorage.getItem(TIPS_CACHE_KEY);
-    if (cached) return JSON.parse(cached) as Tip[];
+    if (cached) {
+      try {
+        return JSON.parse(cached) as Tip[];
+      } catch {
+        localStorage.removeItem(TIPS_CACHE_KEY);
+      }
+    }
     return [];
   }
 }
@@ -204,7 +210,7 @@ export default function OverviewPage() {
       .listAgentConfigs()
       .then(setAgentConfigs)
       .catch(() => {});
-    fetchTips().then(setTips);
+    fetchTips().then(setTips).catch(() => {});
   }, [loadCached, fetchAgents]);
 
   // Filter extensions to only those belonging to enabled agents

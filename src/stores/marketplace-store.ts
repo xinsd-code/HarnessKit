@@ -49,6 +49,11 @@ interface MarketplaceState {
 function prefetchSkillData(
   items: MarketplaceItem[],
   get: () => MarketplaceState,
+  set: (
+    partial:
+      | Partial<MarketplaceState>
+      | ((s: MarketplaceState) => Partial<MarketplaceState>),
+  ) => void,
 ) {
   for (const item of items) {
     if (item.kind !== "skill") continue;
@@ -64,20 +69,36 @@ function prefetchSkillData(
         api
           .fetchSkillPreview(source, skillId, gitUrl)
           .then((content) => {
-            get().previewCache.set(item.id, content);
+            set((s) => {
+              const cache = new Map(s.previewCache);
+              cache.set(item.id, content);
+              return { previewCache: cache };
+            });
           })
           .catch(() => {
-            get().previewCache.set(item.id, null);
+            set((s) => {
+              const cache = new Map(s.previewCache);
+              cache.set(item.id, null);
+              return { previewCache: cache };
+            });
           });
       }
       if (!get().auditCache.has(item.id)) {
         api
           .fetchSkillAudit(source, skillId)
           .then((info) => {
-            get().auditCache.set(item.id, info);
+            set((s) => {
+              const cache = new Map(s.auditCache);
+              cache.set(item.id, info);
+              return { auditCache: cache };
+            });
           })
           .catch(() => {
-            get().auditCache.set(item.id, null);
+            set((s) => {
+              const cache = new Map(s.auditCache);
+              cache.set(item.id, null);
+              return { auditCache: cache };
+            });
           });
       }
     };
@@ -196,7 +217,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       });
       // Pre-fetch preview + audit for skill items in background
       if (tab === "skill") {
-        prefetchSkillData(trending, get);
+        prefetchSkillData(trending, get, set);
       }
     } catch (e) {
       console.error("Failed to load marketplace trending data:", e);
@@ -227,16 +248,28 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       api
         .fetchCliReadme(item.source)
         .then((content) => {
-          get().cliReadmeCache.set(item.source, content);
-          if (get().selectedItem?.id === expectedId) {
-            set({ cliReadme: content, cliReadmeLoading: false });
-          }
+          set((s) => {
+            const cache = new Map(s.cliReadmeCache);
+            cache.set(item.source, content);
+            const update: Partial<MarketplaceState> = { cliReadmeCache: cache };
+            if (s.selectedItem?.id === expectedId) {
+              update.cliReadme = content;
+              update.cliReadmeLoading = false;
+            }
+            return update;
+          });
         })
         .catch(() => {
-          get().cliReadmeCache.set(item.source, null);
-          if (get().selectedItem?.id === expectedId) {
-            set({ cliReadme: null, cliReadmeLoading: false });
-          }
+          set((s) => {
+            const cache = new Map(s.cliReadmeCache);
+            cache.set(item.source, null);
+            const update: Partial<MarketplaceState> = { cliReadmeCache: cache };
+            if (s.selectedItem?.id === expectedId) {
+              update.cliReadme = null;
+              update.cliReadmeLoading = false;
+            }
+            return update;
+          });
         });
     }
 
@@ -253,32 +286,56 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         api
           .fetchSkillPreview(source, skill_id, gitUrl)
           .then((content) => {
-            get().previewCache.set(item.id, content);
-            if (get().selectedItem?.id === expectedId) {
-              set({ previewContent: content, previewLoading: false });
-            }
+            set((s) => {
+              const cache = new Map(s.previewCache);
+              cache.set(item.id, content);
+              const update: Partial<MarketplaceState> = { previewCache: cache };
+              if (s.selectedItem?.id === expectedId) {
+                update.previewContent = content;
+                update.previewLoading = false;
+              }
+              return update;
+            });
           })
           .catch(() => {
-            get().previewCache.set(item.id, null);
-            if (get().selectedItem?.id === expectedId) {
-              set({ previewContent: null, previewLoading: false });
-            }
+            set((s) => {
+              const cache = new Map(s.previewCache);
+              cache.set(item.id, null);
+              const update: Partial<MarketplaceState> = { previewCache: cache };
+              if (s.selectedItem?.id === expectedId) {
+                update.previewContent = null;
+                update.previewLoading = false;
+              }
+              return update;
+            });
           });
       }
       if (!hasAudit) {
         api
           .fetchSkillAudit(source, skill_id)
           .then((auditInfo) => {
-            get().auditCache.set(item.id, auditInfo);
-            if (get().selectedItem?.id === expectedId) {
-              set({ auditInfo, auditLoading: false });
-            }
+            set((s) => {
+              const cache = new Map(s.auditCache);
+              cache.set(item.id, auditInfo);
+              const update: Partial<MarketplaceState> = { auditCache: cache };
+              if (s.selectedItem?.id === expectedId) {
+                update.auditInfo = auditInfo;
+                update.auditLoading = false;
+              }
+              return update;
+            });
           })
           .catch(() => {
-            get().auditCache.set(item.id, null);
-            if (get().selectedItem?.id === expectedId) {
-              set({ auditInfo: null, auditLoading: false });
-            }
+            set((s) => {
+              const cache = new Map(s.auditCache);
+              cache.set(item.id, null);
+              const update: Partial<MarketplaceState> = { auditCache: cache };
+              if (s.selectedItem?.id === expectedId) {
+                update.auditInfo = null;
+                update.auditLoading = false;
+              }
+              return update;
+            });
           });
       }
     };
