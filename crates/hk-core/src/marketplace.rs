@@ -17,6 +17,21 @@ static SKILL_CONTENT_CACHE: TimedCache<String> =
 static AUDIT_INFO_CACHE: TimedCache<SkillAuditInfo> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 const DETAIL_CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
+const MAX_CACHE_ENTRIES: usize = 200;
+
+/// Insert into a timed cache with size limit. Evicts the oldest entry if at capacity.
+fn cache_insert<T>(cache: &Mutex<HashMap<String, (Instant, Option<T>)>>, key: String, value: Option<T>) {
+    let Ok(mut map) = cache.lock() else { return };
+    if map.len() >= MAX_CACHE_ENTRIES {
+        if let Some(oldest_key) = map.iter()
+            .min_by_key(|(_, (ts, _))| *ts)
+            .map(|(k, _)| k.clone())
+        {
+            map.remove(&oldest_key);
+        }
+    }
+    map.insert(key, (Instant::now(), value));
+}
 
 fn client() -> Result<reqwest::blocking::Client> {
     reqwest::blocking::Client::builder()
@@ -430,9 +445,7 @@ pub fn fetch_skill_content(source: &str, skill_id: &str, git_url: Option<&str>) 
                     && resp.status().is_success()
                         && let Ok(text) = resp.text()
                             && !text.is_empty() {
-                                if let Ok(mut cache) = SKILL_CONTENT_CACHE.lock() {
-                                    cache.insert(cache_key, (Instant::now(), Some(text.clone())));
-                                }
+                                cache_insert(&SKILL_CONTENT_CACHE, cache_key.clone(), Some(text.clone()));
                                 return Ok(text);
                             }
             }
@@ -446,16 +459,12 @@ pub fn fetch_skill_content(source: &str, skill_id: &str, git_url: Option<&str>) 
                 && resp.status().is_success()
                     && let Ok(text) = resp.text()
                         && !text.is_empty() {
-                            if let Ok(mut cache) = SKILL_CONTENT_CACHE.lock() {
-                                cache.insert(cache_key, (Instant::now(), Some(text.clone())));
-                            }
+                            cache_insert(&SKILL_CONTENT_CACHE, cache_key.clone(), Some(text.clone()));
                             return Ok(text);
                         }
         }
     }
-    if let Ok(mut cache) = SKILL_CONTENT_CACHE.lock() {
-        cache.insert(cache_key, (Instant::now(), None));
-    }
+    cache_insert(&SKILL_CONTENT_CACHE, cache_key, None::<String>);
     anyhow::bail!("Could not find SKILL.md for {source}/{skill_id}")
 }
 
@@ -496,9 +505,7 @@ pub fn fetch_audit_info(source: &str, skill_id: &str) -> Result<Option<SkillAudi
     } else {
         None
     };
-    if let Ok(mut cache) = AUDIT_INFO_CACHE.lock() {
-        cache.insert(cache_key, (Instant::now(), result.clone()));
-    }
+    cache_insert(&AUDIT_INFO_CACHE, cache_key, result.clone());
     Ok(result)
 }
 
@@ -523,9 +530,7 @@ pub async fn fetch_skill_content_async(source: &str, skill_id: &str, git_url: Op
                     && resp.status().is_success()
                         && let Ok(text) = resp.text().await
                             && !text.is_empty() {
-                                if let Ok(mut cache) = SKILL_CONTENT_CACHE.lock() {
-                                    cache.insert(cache_key, (Instant::now(), Some(text.clone())));
-                                }
+                                cache_insert(&SKILL_CONTENT_CACHE, cache_key.clone(), Some(text.clone()));
                                 return Ok(text);
                             }
             }
@@ -539,16 +544,12 @@ pub async fn fetch_skill_content_async(source: &str, skill_id: &str, git_url: Op
                 && resp.status().is_success()
                     && let Ok(text) = resp.text().await
                         && !text.is_empty() {
-                            if let Ok(mut cache) = SKILL_CONTENT_CACHE.lock() {
-                                cache.insert(cache_key, (Instant::now(), Some(text.clone())));
-                            }
+                            cache_insert(&SKILL_CONTENT_CACHE, cache_key.clone(), Some(text.clone()));
                             return Ok(text);
                         }
         }
     }
-    if let Ok(mut cache) = SKILL_CONTENT_CACHE.lock() {
-        cache.insert(cache_key, (Instant::now(), None));
-    }
+    cache_insert(&SKILL_CONTENT_CACHE, cache_key, None::<String>);
     anyhow::bail!("Could not find SKILL.md for {source}/{skill_id}")
 }
 
@@ -571,9 +572,7 @@ pub async fn fetch_audit_info_async(source: &str, skill_id: &str) -> Result<Opti
     } else {
         None
     };
-    if let Ok(mut cache) = AUDIT_INFO_CACHE.lock() {
-        cache.insert(cache_key, (Instant::now(), result.clone()));
-    }
+    cache_insert(&AUDIT_INFO_CACHE, cache_key, result.clone());
     Ok(result)
 }
 
@@ -604,16 +603,12 @@ pub async fn fetch_cli_readme_async(source: &str) -> Result<String> {
                 && resp.status().is_success()
                     && let Ok(text) = resp.text().await
                         && !text.is_empty() {
-                            if let Ok(mut cache) = CLI_README_CACHE.lock() {
-                                cache.insert(source.to_string(), (Instant::now(), Some(text.clone())));
-                            }
+                            cache_insert(&CLI_README_CACHE, source.to_string(), Some(text.clone()));
                             return Ok(text);
                         }
         }
     }
-    if let Ok(mut cache) = CLI_README_CACHE.lock() {
-        cache.insert(source.to_string(), (Instant::now(), None));
-    }
+    cache_insert(&CLI_README_CACHE, source.to_string(), None::<String>);
     anyhow::bail!("No README found for {source}")
 }
 
@@ -831,9 +826,7 @@ fn fetch_github_stars(owner_repo: &str) -> Option<u64> {
         .and_then(|r| r.json::<serde_json::Value>().ok())
         .and_then(|v| v.get("stargazers_count")?.as_u64());
 
-    if let Ok(mut cache) = CACHE.lock() {
-        cache.insert(owner_repo.to_string(), (std::time::Instant::now(), stars));
-    }
+    cache_insert(&CACHE, owner_repo.to_string(), stars);
     stars
 }
 
