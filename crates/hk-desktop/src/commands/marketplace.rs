@@ -123,7 +123,7 @@ pub async fn install_from_marketplace(
             let store = store_clone.lock();
             service::post_install_sync(
                 &store,
-                &*adapters,
+                &adapters,
                 &agents,
                 &result.name,
                 Some(meta),

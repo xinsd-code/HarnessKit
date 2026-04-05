@@ -98,7 +98,7 @@ pub async fn install_from_local(
             let store = store.lock();
             service::post_install_sync(
                 &store,
-                &*adapters,
+                &adapters,
                 &agents,
                 &skill_name,
                 Some(meta),
@@ -173,7 +173,7 @@ pub async fn install_from_git(
             let store = store.lock();
             service::post_install_sync(
                 &store,
-                &*adapters,
+                &adapters,
                 &agents,
                 &result.name,
                 Some(meta),
@@ -279,7 +279,7 @@ pub async fn scan_git_repo(
                     let store = store_clone.lock();
                     service::post_install_sync(
                         &store,
-                        &*adapters,
+                        &adapters,
                         &installed_agents,
                         &result.name,
                         Some(meta),
@@ -402,7 +402,7 @@ pub async fn install_scanned_skills(
                 };
                 service::post_install_sync(
                     &store,
-                    &*adapters,
+                    &adapters,
                     &target_agents,
                     &result.name,
                     Some(meta),
