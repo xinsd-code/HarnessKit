@@ -156,7 +156,7 @@ export function ExtensionTable({ data, scrollToId }: { data: GroupedExtension[];
               className={
                 ext.enabled
                   ? "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-primary/15 text-primary hover:bg-primary/20 transition-colors"
-                  : "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-destructive/15 text-destructive hover:bg-destructive/20 transition-colors"
+                  : "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
               }
             >
               {ext.enabled ? "enabled" : "disabled"}

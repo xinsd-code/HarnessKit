@@ -239,7 +239,7 @@ export function ExtensionDetail() {
             className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${
               group.enabled
                 ? "bg-primary/10 text-primary"
-                : "bg-destructive/10 text-destructive"
+                : "bg-muted text-muted-foreground"
             }`}
           >
             {group.enabled ? "Enabled" : "Disabled"}
