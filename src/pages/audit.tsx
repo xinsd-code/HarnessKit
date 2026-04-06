@@ -108,13 +108,6 @@ const AUDIT_RULES = [
     description: "Extension origin cannot be determined",
   },
   {
-    id: "duplicate-conflict",
-    label: "Duplicate / Conflict",
-    severity: "Low" as Severity,
-    deduction: 3,
-    description: "Multiple extensions with overlapping functionality",
-  },
-  {
     id: "permission-combo-risk",
     label: "Permission Combination Risk",
     severity: "High" as Severity,

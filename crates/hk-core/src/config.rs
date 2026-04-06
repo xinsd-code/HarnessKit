@@ -35,7 +35,6 @@ pub struct RulesEnabled {
     pub supply_chain: bool,
     pub outdated: bool,
     pub unknown_source: bool,
-    pub duplicate_conflict: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -78,7 +77,6 @@ impl Default for RulesEnabled {
             supply_chain: true,
             outdated: true,
             unknown_source: true,
-            duplicate_conflict: true,
         }
     }
 }

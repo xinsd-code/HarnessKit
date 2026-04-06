@@ -92,50 +92,8 @@ impl Auditor {
 
     /// Audit multiple extensions, with batch-level duplicate detection.
     pub fn audit_batch(&self, inputs: &[AuditInput]) -> Vec<AuditResult> {
-        let mut results: Vec<AuditResult> = inputs.iter().map(|input| self.audit(input)).collect();
+        let results: Vec<AuditResult> = inputs.iter().map(|input| self.audit(input)).collect();
 
-        // Batch pass: detect name collisions across extensions of the same kind.
-        // Skip child skills that share a CLI parent — they're meant to have the same name.
-        let mut name_map: std::collections::HashMap<
-            (&str, crate::models::ExtensionKind),
-            Vec<usize>,
-        > = std::collections::HashMap::new();
-        for (idx, input) in inputs.iter().enumerate() {
-            name_map
-                .entry((input.name.as_str(), input.kind))
-                .or_default()
-                .push(idx);
-        }
-        for ((name, kind), indices) in &name_map {
-            // If all extensions in this group share the same CLI parent, it's not a conflict
-            let parents: std::collections::HashSet<_> = indices
-                .iter()
-                .filter_map(|&idx| inputs[idx].cli_parent_id.as_deref())
-                .collect();
-            if parents.len() == 1
-                && indices
-                    .iter()
-                    .all(|&idx| inputs[idx].cli_parent_id.is_some())
-            {
-                continue;
-            }
-            if indices.len() > 1 {
-                for &idx in indices {
-                    results[idx].findings.push(AuditFinding {
-                        rule_id: "duplicate-conflict".into(),
-                        severity: Severity::Low,
-                        message: format!(
-                            "Name collision: {} other {}(s) share the name \"{}\"",
-                            indices.len() - 1,
-                            kind.as_str(),
-                            name
-                        ),
-                        location: inputs[idx].file_path.clone(),
-                    });
-                    results[idx].trust_score = compute_trust_score(&results[idx].findings);
-                }
-            }
-        }
         results
     }
 }
@@ -215,7 +173,7 @@ mod tests {
     #[test]
     fn test_auditor_runs_all_enabled_rules() {
         let auditor = Auditor::new();
-        assert_eq!(auditor.rules.len(), 18);
+        assert_eq!(auditor.rules.len(), 17);
     }
 
     #[test]

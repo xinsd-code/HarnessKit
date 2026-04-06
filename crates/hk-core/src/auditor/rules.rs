@@ -40,7 +40,6 @@ pub fn all_rules() -> Vec<Box<dyn AuditRule>> {
         Box::new(SupplyChainRisk),
         Box::new(Outdated { threshold_days: 90 }),
         Box::new(UnknownSource),
-        Box::new(DuplicateConflict),
         Box::new(PermissionCombinationRisk),
         Box::new(CliCredentialStorage),
         Box::new(CliNetworkAccess),
@@ -544,25 +543,7 @@ impl AuditRule for UnknownSource {
     }
 }
 
-// --- Rule 12: Duplicate/Conflict ---
-pub struct DuplicateConflict;
-
-impl AuditRule for DuplicateConflict {
-    fn id(&self) -> &str {
-        "duplicate-conflict"
-    }
-    fn severity(&self) -> Severity {
-        Severity::Low
-    }
-    fn check(&self, _input: &AuditInput) -> Vec<AuditFinding> {
-        // Duplicate detection requires comparing against all other extensions.
-        // This is handled at the Auditor level in a batch pass, not per-extension.
-        // Stub for v1 — batch duplicate detection added in Task 10 (scanner integration).
-        vec![]
-    }
-}
-
-// --- Rule 13: Permission Combination Risk ---
+// --- Rule 12: Permission Combination Risk ---
 pub struct PermissionCombinationRisk;
 
 impl AuditRule for PermissionCombinationRisk {
