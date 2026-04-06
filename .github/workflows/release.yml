@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  MACOSX_DEPLOYMENT_TARGET: "12.0"
+
+jobs:
+  build:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            arch: arm64
+          - target: x86_64-apple-darwin
+            arch: x64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build desktop app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target ${{ matrix.target }}
+
+      - name: Sign app
+        run: |
+          APP_PATH="target/${{ matrix.target }}/release/bundle/macos/HarnessKit.app"
+          xattr -cr "$APP_PATH"
+          codesign --force --deep --sign - "$APP_PATH"
+
+      - name: Build CLI
+        run: cargo build --release --target ${{ matrix.target }} -p hk-cli
+
+      - name: Prepare artifacts
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          DMG_PATH=$(ls target/${{ matrix.target }}/release/bundle/dmg/*.dmg)
+          cp "$DMG_PATH" "HarnessKit_${VERSION}_${{ matrix.arch }}.dmg"
+          cp "target/${{ matrix.target }}/release/hk" "hk-macos-${{ matrix.arch }}"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.arch }}
+          path: |
+            HarnessKit_*_${{ matrix.arch }}.dmg
+            hk-macos-${{ matrix.arch }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            HarnessKit_*.dmg
+            hk-macos-*
+          generate_release_notes: true
