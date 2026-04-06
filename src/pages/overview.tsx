@@ -63,6 +63,7 @@ async function fetchTips(): Promise<Tip[]> {
 
 interface ActivityItem {
   type: "extension" | "config";
+  kind?: string;
   label: string;
   sublabel: string;
   timestamp: number;
@@ -356,6 +357,7 @@ export default function OverviewPage() {
       seenExtNames.add(ext.name);
       items.push({
         type: "extension",
+        kind: ext.kind,
         label: ext.name,
         sublabel: `${ext.kind.toUpperCase()} · Installed ${formatRelativeTime(ext.installed_at)}`,
         timestamp: new Date(ext.installed_at).getTime(),
@@ -579,11 +581,10 @@ export default function OverviewPage() {
                     className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-muted/30"
                   >
                     <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                      <Sparkles
-                        size={13}
-                        strokeWidth={1.75}
-                        aria-hidden="true"
-                      />
+                      {(() => {
+                        const Icon = item.kind === "plugin" ? Puzzle : item.kind === "cli" ? Terminal : Package;
+                        return <Icon size={13} strokeWidth={1.75} aria-hidden="true" />;
+                      })()}
                     </span>
                     <div className="min-w-0 flex-1">
                       <span className="truncate text-sm font-medium text-foreground block">

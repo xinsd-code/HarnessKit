@@ -35,7 +35,7 @@ export function AgentCard({ agent }: AgentCardProps) {
           {agentDisplayName(agent.name)}
         </span>
         <span className="block text-xs text-muted-foreground">
-          {agent.extension_count} ext.
+          <span className="font-semibold">{agent.extension_count}</span> ext.
         </span>
       </div>
     </button>
