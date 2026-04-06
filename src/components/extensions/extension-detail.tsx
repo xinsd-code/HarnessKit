@@ -42,7 +42,7 @@ export function ExtensionDetail() {
   const updateStatuses = useExtensionStore((s) => s.updateStatuses);
   const updateExtension = useExtensionStore((s) => s.updateExtension);
   const updatePack = useExtensionStore((s) => s.updatePack);
-  const deployToAgent = useExtensionStore((s) => s.deployToAgent);
+  const installToAgent = useExtensionStore((s) => s.installToAgent);
   const deleteFromAgents = useExtensionStore((s) => s.deleteFromAgents);
   const extensions = useExtensionStore((s) => s.extensions);
   const group = grouped().find((g) => g.groupKey === selectedId);
@@ -367,7 +367,7 @@ export function ExtensionDetail() {
                   className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
                   title="Copy this extension's configuration to another agent on your machine"
                 >
-                  Deploy to Agent
+                  Install to Agent
                 </h4>
                 <div className="flex flex-wrap gap-1.5">
                   {otherAgents.map((agent) => {
@@ -381,15 +381,15 @@ export function ExtensionDetail() {
                         if (hookUnsupported) return;
                         setDeploying(agent.name);
                         try {
-                          await deployToAgent(
+                          await installToAgent(
                             group.instances[0].id,
                             agent.name,
                           );
-                          const msg = `Deployed to ${agentDisplayName(agent.name)}. Takes effect in new sessions`;
+                          const msg = `Installed to ${agentDisplayName(agent.name)}. Takes effect in new sessions`;
                           toast.success(msg);
                         } catch {
                           toast.error(
-                            `Failed to deploy to ${agentDisplayName(agent.name)}`,
+                            `Failed to install to ${agentDisplayName(agent.name)}`,
                           );
                         } finally {
                           setDeploying(null);

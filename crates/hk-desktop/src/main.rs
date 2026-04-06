@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod commands;
 mod icon;
 
@@ -7,7 +9,6 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 use tauri::Manager;
 
-#[cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 fn main() {
     let data_dir = dirs::home_dir()
         .expect("Cannot determine home directory — set HOME environment variable")
@@ -24,6 +25,8 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(AppState {
             store: Arc::new(Mutex::new(store)),
             adapters: Arc::new(adapter::all_adapters()),
@@ -56,7 +59,7 @@ fn main() {
             commands::fetch_cli_readme,
             commands::fetch_skill_audit,
             commands::install_from_marketplace,
-            commands::deploy_to_agent,
+            commands::install_to_agent,
             commands::list_projects,
             commands::add_project,
             commands::remove_project,

@@ -422,7 +422,7 @@ pub async fn install_scanned_skills(
 // --- Cross-agent deploy command ---
 
 #[tauri::command]
-pub async fn deploy_to_agent(
+pub async fn install_to_agent(
     state: State<'_, AppState>,
     extension_id: String,
     target_agent: String,

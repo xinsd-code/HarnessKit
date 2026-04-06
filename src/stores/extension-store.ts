@@ -49,7 +49,7 @@ interface ExtensionState {
   updateTags: (groupKey: string, tags: string[]) => Promise<void>;
   updatePack: (groupKey: string, pack: string | null) => Promise<void>;
   fetchPacks: () => Promise<void>;
-  deployToAgent: (id: string, targetAgent: string) => Promise<void>;
+  installToAgent: (id: string, targetAgent: string) => Promise<void>;
   toggle: (groupKey: string, enabled: boolean) => Promise<void>;
   batchToggle: (enabled: boolean) => Promise<void>;
   undoDelete: () => void;
@@ -320,8 +320,8 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     set({ allPacks });
   },
 
-  async deployToAgent(id, targetAgent) {
-    await api.deployToAgent(id, targetAgent);
+  async installToAgent(id, targetAgent) {
+    await api.installToAgent(id, targetAgent);
     get().fetch();
   },
 
