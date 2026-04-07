@@ -745,6 +745,24 @@ button:focus-visible,
   }
 }
 
+@keyframes trust-ring-fill {
+  to {
+    stroke-dashoffset: 50.24;
+  }
+}
+
+@keyframes trust-ring-fill-lg {
+  to {
+    stroke-dashoffset: 57.8;
+  }
+}
+
+@keyframes trust-ring-fill-full {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -842,6 +860,81 @@ button:focus-visible,
   }
   100% {
     transform: translateX(400%);
+  }
+}
+
+@keyframes text-shimmer {
+  0%, 100% {
+    background-position: 0% center;
+  }
+  50% {
+    background-position: 200% center;
+  }
+}
+
+@keyframes card-breathe {
+  0%, 100% {
+    box-shadow: 0 1px 4px -1px color-mix(in oklch, var(--primary) 6%, transparent);
+  }
+  50% {
+    box-shadow: 0 2px 8px -1px color-mix(in oklch, var(--primary) 12%, transparent);
+  }
+}
+
+@keyframes halo-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes mesh-drift-1 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(40px, -30px) scale(1.08);
+  }
+  66% {
+    transform: translate(-30px, 20px) scale(0.95);
+  }
+}
+
+@keyframes mesh-drift-2 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(-35px, 25px) scale(1.12);
+  }
+  66% {
+    transform: translate(25px, -15px) scale(0.92);
+  }
+}
+
+@keyframes mesh-drift-3 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(20px, 35px) scale(1.06);
+  }
+}
+
+@keyframes entrance-spring {
+  0% {
+    opacity: 0;
+    transform: translateY(24px) scale(0.96);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-4px) scale(1.01);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
