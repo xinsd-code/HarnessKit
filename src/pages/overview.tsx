@@ -9,7 +9,6 @@ import {
   Server,
   Shield,
   ShoppingBag,
-  Sparkles,
   Terminal,
   Webhook,
 } from "lucide-react";
