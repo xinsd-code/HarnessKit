@@ -209,7 +209,7 @@ export function sortAgents<T extends { name: string }>(
 const AGENT_DISPLAY_NAMES: Record<string, string> = {
   claude: "Claude Code",
   codex: "Codex",
-  gemini: "Gemini",
+  gemini: "Gemini CLI",
   cursor: "Cursor",
   antigravity: "Antigravity",
   copilot: "Copilot",
