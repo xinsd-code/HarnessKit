@@ -78,8 +78,8 @@
   --kind-plugin: oklch(0.55 0.12 170);
   --kind-hook: oklch(0.58 0.13 80);
   --kind-cli: oklch(0.58 0.14 45);
-  --tag-global: oklch(0.52 0.1 250);
-  --tag-project: oklch(0.54 0.1 175);
+  --tag-global: oklch(0.5144 0.1605 267.44);
+  --tag-project: oklch(0.48 0.08 175);
   --agent-claude: oklch(0.62 0.14 25);
   --agent-codex: oklch(0.55 0.01 250);
   --agent-gemini: oklch(0.58 0.16 260);
@@ -167,8 +167,8 @@
   --kind-plugin: oklch(0.68 0.11 170);
   --kind-hook: oklch(0.72 0.12 80);
   --kind-cli: oklch(0.65 0.14 45);
-  --tag-global: oklch(0.73 0.09 250);
-  --tag-project: oklch(0.74 0.09 175);
+  --tag-global: oklch(0.72 0.12 267.44);
+  --tag-project: oklch(0.68 0.07 175);
   --agent-claude: oklch(0.72 0.12 25);
   --agent-codex: oklch(0.72 0.01 250);
   --agent-gemini: oklch(0.72 0.14 260);
@@ -434,8 +434,8 @@
   --kind-plugin: oklch(0.55 0.12 170);
   --kind-hook: oklch(0.58 0.13 80);
   --kind-cli: oklch(0.58 0.14 45);
-  --tag-global: oklch(0.52 0.1 250);
-  --tag-project: oklch(0.54 0.1 175);
+  --tag-global: oklch(0.5144 0.1605 267.44);
+  --tag-project: oklch(0.48 0.08 175);
   --agent-claude: oklch(0.62 0.14 25);
   --agent-codex: oklch(0.55 0.01 250);
   --agent-gemini: oklch(0.58 0.16 260);
@@ -523,8 +523,8 @@
   --kind-plugin: oklch(0.68 0.11 170);
   --kind-hook: oklch(0.72 0.12 80);
   --kind-cli: oklch(0.65 0.14 45);
-  --tag-global: oklch(0.73 0.09 250);
-  --tag-project: oklch(0.74 0.09 175);
+  --tag-global: oklch(0.72 0.12 267.44);
+  --tag-project: oklch(0.68 0.07 175);
   --agent-claude: oklch(0.72 0.12 25);
   --agent-codex: oklch(0.72 0.01 250);
   --agent-gemini: oklch(0.72 0.14 260);
@@ -935,6 +935,30 @@ button:focus-visible,
   100% {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes mock-toggle-on {
+  0% {
+    background: var(--muted);
+  }
+  100% {
+    background: color-mix(in oklch, var(--primary) 15%, transparent);
+  }
+}
+
+@keyframes mock-expand {
+  from {
+    opacity: 0;
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 150px;
+    padding-top: 4px;
+    padding-bottom: 4px;
   }
 }
 

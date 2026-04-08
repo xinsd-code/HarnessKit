@@ -78,17 +78,20 @@ export default function App() {
   // Apply theme + dark class to <html>, and sync window appearance for vibrancy
   useEffect(() => {
     const root = document.documentElement;
-    root.setAttribute("data-theme", themeName);
-    if (resolved === "dark") {
+    // Force Tiesen light during onboarding
+    const activeTheme = showOnboarding ? "tiesen" : themeName;
+    const activeDark = showOnboarding ? false : resolved === "dark";
+    root.setAttribute("data-theme", activeTheme);
+    if (activeDark) {
       root.classList.add("dark");
     } else {
       root.classList.remove("dark");
     }
     // Force macOS vibrancy to match — "light" | "dark" | null (system)
     getCurrentWindow()
-      .setTheme(mode === "system" ? null : resolved)
+      .setTheme(showOnboarding ? "light" : mode === "system" ? null : resolved)
       .catch((e) => console.error("Failed to set window theme:", e));
-  }, [themeName, mode, resolved]);
+  }, [themeName, mode, resolved, showOnboarding]);
 
   // Restore app icon from saved preference
   useEffect(() => {
