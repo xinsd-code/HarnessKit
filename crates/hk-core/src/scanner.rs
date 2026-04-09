@@ -227,6 +227,8 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                     (a.starts_with('/') || a.starts_with("~/")) && !a.starts_with("//")
                 })
                 .cloned()
+                .collect::<HashSet<_>>()
+                .into_iter()
                 .collect();
             if !fs_paths.is_empty() {
                 permissions.push(Permission::FileSystem { paths: fs_paths });
@@ -1485,6 +1487,25 @@ mod tests {
         assert!(fs_perm.is_some(), "expected FileSystem permission for /data/repo");
         if let Some(Permission::FileSystem { paths }) = fs_perm {
             assert_eq!(paths, &vec!["/data/repo".to_string()]);
+        }
+    }
+
+    #[test]
+    fn test_mcp_filesystem_path_dedup() {
+        let dir = TempDir::new().unwrap();
+        // Duplicate paths should be deduplicated
+        std::fs::write(
+            dir.path().join(".claude.json"),
+            r#"{"mcpServers":{"fs":{"command":"node","args":["/data/repo","/data/repo"],"env":{}}}}"#,
+        ).unwrap();
+        let adapter = crate::adapter::claude::ClaudeAdapter::with_home(dir.path().to_path_buf());
+        let extensions = scan_mcp_servers(&adapter);
+        assert_eq!(extensions.len(), 1);
+        let fs_perm = extensions[0].permissions.iter().find(|p| matches!(p, Permission::FileSystem { .. }));
+        assert!(fs_perm.is_some(), "expected FileSystem permission");
+        if let Some(Permission::FileSystem { paths }) = fs_perm {
+            assert_eq!(paths.len(), 1, "duplicate paths should be deduplicated");
+            assert_eq!(paths[0], "/data/repo");
         }
     }
 
