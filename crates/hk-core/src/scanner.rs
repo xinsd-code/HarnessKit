@@ -1132,78 +1132,90 @@ static SKILL_DB_ENGINES: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(postgres(?:ql)?|mysql|mariadb|sqlite|mongodb|redis)\b").unwrap()
 });
 
+static SKILL_ENV_VARS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\$([A-Z][A-Z0-9_]{2,})\b|process\.env\.([A-Z][A-Z0-9_]{2,})\b|(?:export|set)\s+([A-Z][A-Z0-9_]{2,})=").unwrap()
+});
+
 fn infer_skill_permissions(content: &str) -> Vec<Permission> {
     let mut perms = Vec::new();
-    let lower = content.to_lowercase();
 
-    if lower.contains("file")
-        || lower.contains("read")
-        || lower.contains("write")
-        || lower.contains("path")
-    {
-        let paths: Vec<String> = SKILL_SENSITIVE_PATHS
-            .find_iter(content)
-            .map(|m| m.as_str().to_string())
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect();
+    // Filesystem: always scan, only add if paths found
+    let paths: Vec<String> = SKILL_SENSITIVE_PATHS
+        .find_iter(content)
+        .map(|m| m.as_str().to_string())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    if !paths.is_empty() {
         perms.push(Permission::FileSystem { paths });
     }
-    if lower.contains("http")
-        || lower.contains("api")
-        || lower.contains("fetch")
-        || lower.contains("url")
-    {
-        let domains: Vec<String> = SKILL_URL_DOMAINS
-            .captures_iter(content)
-            .map(|c| c[1].to_string())
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect();
+
+    // Network: always scan, only add if domains found
+    let domains: Vec<String> = SKILL_URL_DOMAINS
+        .captures_iter(content)
+        .map(|c| c[1].to_string())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    if !domains.is_empty() {
         perms.push(Permission::Network { domains });
     }
-    if lower.contains("bash")
-        || lower.contains("shell")
-        || lower.contains("command")
-        || lower.contains("exec")
-    {
-        let mut cmds = HashSet::new();
-        for block_cap in SKILL_SHELL_BLOCK.captures_iter(content) {
-            let body = &block_cap[1];
-            for line in body.lines() {
-                let trimmed = line.trim();
-                if trimmed.is_empty() || trimmed.starts_with('#') {
-                    continue;
-                }
-                if let Some(token) = trimmed.split_whitespace().next() {
-                    let basename = Path::new(token)
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string();
-                    if !basename.is_empty() {
-                        cmds.insert(basename);
-                    }
+
+    // Shell: always scan code blocks, only add if commands found
+    let mut cmds = HashSet::new();
+    for block_cap in SKILL_SHELL_BLOCK.captures_iter(content) {
+        let body = &block_cap[1];
+        for line in body.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') { continue; }
+            if let Some(token) = trimmed.split_whitespace().next() {
+                let basename = Path::new(token)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                if !basename.is_empty() {
+                    cmds.insert(basename);
                 }
             }
         }
-        perms.push(Permission::Shell {
-            commands: cmds.into_iter().collect(),
-        });
     }
-    if lower.contains("database")
-        || lower.contains("sql")
-        || lower.contains("postgres")
-        || lower.contains("mysql")
-    {
-        let engines: Vec<String> = SKILL_DB_ENGINES
-            .captures_iter(&lower)
-            .map(|c| c[1].to_string())
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect();
+    if !cmds.is_empty() {
+        perms.push(Permission::Shell { commands: cmds.into_iter().collect() });
+    }
+
+    // Database: always scan, only add if engines found
+    let engines: Vec<String> = SKILL_DB_ENGINES
+        .captures_iter(&content.to_lowercase())
+        .map(|c| c[1].to_string())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    if !engines.is_empty() {
         perms.push(Permission::Database { engines });
     }
+
+    // Env: detect env var references (excluding common non-sensitive shell vars)
+    let non_sensitive_vars = [
+        "PATH", "HOME", "USER", "SHELL", "TERM", "LANG", "PWD", "EDITOR",
+        "TMPDIR", "HOSTNAME", "LOGNAME", "DISPLAY", "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME", "XDG_CACHE_HOME", "COLUMNS", "LINES",
+    ];
+    let mut env_keys = HashSet::new();
+    for cap in SKILL_ENV_VARS.captures_iter(content) {
+        for i in 1..=3 {
+            if let Some(m) = cap.get(i) {
+                let key = m.as_str();
+                if !non_sensitive_vars.contains(&key) {
+                    env_keys.insert(key.to_string());
+                }
+            }
+        }
+    }
+    if !env_keys.is_empty() {
+        perms.push(Permission::Env { keys: env_keys.into_iter().collect() });
+    }
+
     perms
 }
 
@@ -1940,5 +1952,33 @@ mod config_tests {
         // Should fallback to empty Shell + FileSystem
         assert!(perms.iter().any(|p| matches!(p, Permission::Shell { .. })));
         assert!(perms.iter().any(|p| matches!(p, Permission::FileSystem { .. })));
+    }
+
+    #[test]
+    fn test_skill_env_detection() {
+        let content = "Set your API key: export OPENAI_API_KEY=sk-xxx";
+        let perms = infer_skill_permissions(content);
+        let has_env = perms.iter().any(|p| matches!(p, Permission::Env { keys } if !keys.is_empty()));
+        assert!(has_env, "Should detect env var references");
+    }
+
+    #[test]
+    fn test_skill_no_false_positive_filesystem() {
+        let content = "Read the documentation carefully before proceeding.";
+        let perms = infer_skill_permissions(content);
+        let has_fs = perms.iter().any(|p| matches!(p, Permission::FileSystem { .. }));
+        assert!(!has_fs, "No filesystem permission when no paths found");
+    }
+
+    #[test]
+    fn test_skill_env_excludes_common_vars() {
+        let content = "Use $HOME and $PATH to locate the binary, but set $API_TOKEN=xxx";
+        let perms = infer_skill_permissions(content);
+        let env_keys: Vec<&str> = perms.iter().filter_map(|p| {
+            if let Permission::Env { keys } = p { Some(keys.iter().map(|s| s.as_str()).collect::<Vec<_>>()) } else { None }
+        }).flatten().collect();
+        assert!(env_keys.contains(&"API_TOKEN"), "Should detect API_TOKEN");
+        assert!(!env_keys.contains(&"HOME"), "Should exclude HOME");
+        assert!(!env_keys.contains(&"PATH"), "Should exclude PATH");
     }
 }
