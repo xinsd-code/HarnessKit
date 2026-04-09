@@ -91,7 +91,10 @@ pub fn run_full_audit(
                 (raw_command, None, vec![], Default::default(), ext.name.clone())
             }
             ExtensionKind::Plugin => {
-                (String::new(), None, vec![], Default::default(), ext.name.clone())
+                let plugin_dir = ext.source_path.as_deref().unwrap_or(&ext.name);
+                let content = read_plugin_content(plugin_dir);
+                let file_path = ext.source_path.clone().unwrap_or_else(|| ext.name.clone());
+                (content, None, vec![], Default::default(), file_path)
             }
             ExtensionKind::Cli => {
                 (String::new(), None, vec![], Default::default(), ext.name.clone())
@@ -174,6 +177,45 @@ fn audit_extension_by_name(
     results
 }
 
+/// Read source files from a plugin directory for audit analysis.
+/// Returns concatenated content with file markers.
+/// Reads .js, .ts, .py, .sh files up to a total of 512 KB.
+/// NOTE: .json files are excluded — package.json is handled separately by
+/// `infer_plugin_permissions` and `plugin-lifecycle-scripts` rule, and
+/// package-lock.json would consume the entire read budget with URLs.
+fn read_plugin_content(plugin_path: &str) -> String {
+    use std::path::Path;
+
+    let dir = Path::new(plugin_path);
+    if !dir.is_dir() {
+        return String::new();
+    }
+
+    let allowed_extensions = ["js", "ts", "py", "sh", "mjs", "cjs"];
+    let max_total_bytes: usize = 512 * 1024;
+    let mut total_bytes = 0usize;
+    let mut parts = Vec::new();
+
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return String::new();
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() { continue; }
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if !allowed_extensions.contains(&ext) { continue; }
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            let bytes_to_add = content.len();
+            if total_bytes + bytes_to_add > max_total_bytes { break; }
+            parts.push(format!("// === {} ===\n{}", path.file_name().unwrap_or_default().to_string_lossy(), content));
+            total_bytes += bytes_to_add;
+        }
+    }
+
+    parts.join("\n")
+}
+
 /// Find skill content and file path by scanning adapters for the matching extension.
 fn find_skill_content(
     adapters: &[Box<dyn AgentAdapter>],
@@ -242,5 +284,22 @@ mod tests {
         let result = run_full_audit(&store, &adapters);
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_read_plugin_content_reads_js_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("index.js"), "eval(user_input)").unwrap();
+        std::fs::write(tmp.path().join("readme.md"), "# Hello").unwrap(); // should be skipped
+        let content = read_plugin_content(&tmp.path().to_string_lossy());
+        assert!(content.contains("eval(user_input)"));
+        assert!(!content.contains("# Hello"));
+    }
+
+    #[test]
+    fn test_read_plugin_content_empty_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let content = read_plugin_content(&tmp.path().to_string_lossy());
+        assert!(content.is_empty());
     }
 }
