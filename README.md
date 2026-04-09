@@ -145,9 +145,6 @@ $ hk disable --pack owner/repo           # batch disable by source
 2. Open the DMG and drag **HarnessKit** to the Applications folder.
 3. Launch HarnessKit. It will automatically detect your installed agents and scan their extensions.
 
-> [!NOTE]
-> On first launch, macOS may show a security warning because the app is signed but not notarized. Go to **System Settings → Privacy & Security** and click **Open Anyway**.
-
 ### CLI
 
 ```bash
