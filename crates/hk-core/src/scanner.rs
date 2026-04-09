@@ -1120,7 +1120,7 @@ fn read_git_remote(repo_dir: &Path) -> Option<String> {
 }
 
 static SKILL_SENSITIVE_PATHS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?:~|/(?:etc|home/\w+))/[\w.\-/]+").unwrap());
+    LazyLock::new(|| Regex::new(r"(?:~|/(?:etc|home/\w+|tmp|var|opt|usr/local|Library|Applications))/[\w.\-/]+").unwrap());
 
 static SKILL_URL_DOMAINS: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"https?://([\w.\-]+)").unwrap());
@@ -1980,5 +1980,23 @@ mod config_tests {
         assert!(env_keys.contains(&"API_TOKEN"), "Should detect API_TOKEN");
         assert!(!env_keys.contains(&"HOME"), "Should exclude HOME");
         assert!(!env_keys.contains(&"PATH"), "Should exclude PATH");
+    }
+
+    #[test]
+    fn test_skill_filesystem_tmp_path() {
+        let content = "Write output to /tmp/hk-cache/data.json";
+        let perms = infer_skill_permissions(content);
+        let paths: Vec<String> = perms.iter().filter_map(|p| {
+            if let Permission::FileSystem { paths } = p { Some(paths.clone()) } else { None }
+        }).flatten().collect();
+        assert!(paths.iter().any(|p| p.contains("/tmp/")), "Should detect /tmp/ paths");
+    }
+
+    #[test]
+    fn test_skill_filesystem_library_path() {
+        let content = "Check /Library/Application";
+        let perms = infer_skill_permissions(content);
+        let has_fs = perms.iter().any(|p| matches!(p, Permission::FileSystem { paths } if !paths.is_empty()));
+        assert!(has_fs, "Should detect macOS /Library/ paths");
     }
 }
