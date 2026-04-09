@@ -597,8 +597,13 @@ pub fn fetch_audit_info(source: &str, skill_id: &str) -> Result<Option<SkillAudi
         .send()
         .map_err(|e| HkError::Network(format!("Failed to reach audit service: {e}")))?;
     let result = if resp.status().is_success() {
-        let data: HashMap<String, SkillAuditInfo> = resp.json().unwrap_or_default();
-        data.into_values().next()
+        match resp.json::<HashMap<String, SkillAuditInfo>>() {
+            Ok(data) => data.into_values().next(),
+            Err(e) => {
+                eprintln!("[hk] warning: failed to parse audit response for {cache_key}: {e}");
+                None
+            }
+        }
     } else {
         None
     };
@@ -684,8 +689,13 @@ pub async fn fetch_audit_info_async(
         .await
         .map_err(|e| HkError::Network(format!("Failed to reach audit service: {e}")))?;
     let result = if resp.status().is_success() {
-        let data: HashMap<String, SkillAuditInfo> = resp.json().await.unwrap_or_default();
-        data.into_values().next()
+        match resp.json::<HashMap<String, SkillAuditInfo>>().await {
+            Ok(data) => data.into_values().next(),
+            Err(e) => {
+                eprintln!("[hk] warning: failed to parse audit response for {cache_key}: {e}");
+                None
+            }
+        }
     } else {
         None
     };
