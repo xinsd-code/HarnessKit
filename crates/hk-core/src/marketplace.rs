@@ -203,6 +203,8 @@ pub fn search_skills(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>, 
         .query(&[("q", query), ("limit", &limit.to_string())])
         .send()
         .map_err(|e| HkError::Network(format!("Failed to reach skills.sh: {e}")))?
+        .error_for_status()
+        .map_err(|e| HkError::Network(format!("skills.sh returned error: {e}")))?
         .json()
         .map_err(|e| HkError::Network(format!("Failed to parse skills.sh response: {e}")))?;
     Ok(resp
@@ -239,6 +241,8 @@ pub async fn search_skills_async(
         .send()
         .await
         .map_err(|e| HkError::Network(format!("Failed to reach skills.sh: {e}")))?
+        .error_for_status()
+        .map_err(|e| HkError::Network(format!("skills.sh returned error: {e}")))?
         .json()
         .await
         .map_err(|e| HkError::Network(format!("Failed to parse skills.sh response: {e}")))?;
@@ -273,6 +277,8 @@ pub fn search_servers(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>,
         .query(&[("q", query), ("pageSize", &limit.to_string())])
         .send()
         .map_err(|e| HkError::Network(format!("Failed to reach Smithery: {e}")))?
+        .error_for_status()
+        .map_err(|e| HkError::Network(format!("Smithery returned error: {e}")))?
         .json()
         .map_err(|e| HkError::Network(format!("Failed to parse Smithery response: {e}")))?;
     Ok(resp
@@ -309,6 +315,8 @@ pub async fn search_servers_async(
         .send()
         .await
         .map_err(|e| HkError::Network(format!("Failed to reach Smithery: {e}")))?
+        .error_for_status()
+        .map_err(|e| HkError::Network(format!("Smithery returned error: {e}")))?
         .json()
         .await
         .map_err(|e| HkError::Network(format!("Failed to parse Smithery response: {e}")))?;
@@ -342,6 +350,8 @@ pub fn trending_skills(limit: usize) -> Result<Vec<MarketplaceItem>, HkError> {
         .get(&url)
         .send()
         .map_err(|e| HkError::Network(format!("Failed to reach Smithery: {e}")))?
+        .error_for_status()
+        .map_err(|e| HkError::Network(format!("Smithery returned error: {e}")))?
         .json()
         .map_err(|e| HkError::Network(format!("Failed to parse Smithery response: {e}")))?;
     Ok(resp
@@ -388,6 +398,8 @@ pub fn trending_servers(limit: usize) -> Result<Vec<MarketplaceItem>, HkError> {
         .get(&url)
         .send()
         .map_err(|e| HkError::Network(format!("Failed to reach Smithery: {e}")))?
+        .error_for_status()
+        .map_err(|e| HkError::Network(format!("Smithery returned error: {e}")))?
         .json()
         .map_err(|e| HkError::Network(format!("Failed to parse Smithery response: {e}")))?;
     Ok(resp
@@ -419,6 +431,8 @@ pub async fn trending_skills_async(limit: usize) -> Result<Vec<MarketplaceItem>,
         .send()
         .await
         .map_err(|e| HkError::Network(format!("Failed to reach Smithery: {e}")))?
+        .error_for_status()
+        .map_err(|e| HkError::Network(format!("Smithery returned error: {e}")))?
         .json()
         .await
         .map_err(|e| HkError::Network(format!("Failed to parse Smithery response: {e}")))?;
@@ -460,6 +474,8 @@ pub async fn trending_servers_async(limit: usize) -> Result<Vec<MarketplaceItem>
         .send()
         .await
         .map_err(|e| HkError::Network(format!("Failed to reach Smithery: {e}")))?
+        .error_for_status()
+        .map_err(|e| HkError::Network(format!("Smithery returned error: {e}")))?
         .json()
         .await
         .map_err(|e| HkError::Network(format!("Failed to parse Smithery response: {e}")))?;
