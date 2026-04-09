@@ -1128,9 +1128,9 @@ fn infer_skill_permissions(content: &str) -> Vec<Permission> {
         .collect::<HashSet<_>>()
         .into_iter()
         .collect();
-    if !paths.is_empty() {
-        perms.push(Permission::FileSystem { paths });
-    }
+    // Always include FileSystem for skills — they inherently guide the agent to
+    // read/write files. If specific paths were found, list them; otherwise empty.
+    perms.push(Permission::FileSystem { paths });
 
     // Network: always scan, only add if domains found
     let domains: Vec<String> = SKILL_URL_DOMAINS
@@ -2004,11 +2004,16 @@ mod config_tests {
     }
 
     #[test]
-    fn test_skill_no_false_positive_filesystem() {
+    fn test_skill_always_has_filesystem() {
+        // Skills always get FileSystem permission (they guide agents to read/write files)
         let content = "Read the documentation carefully before proceeding.";
         let perms = infer_skill_permissions(content);
-        let has_fs = perms.iter().any(|p| matches!(p, Permission::FileSystem { .. }));
-        assert!(!has_fs, "No filesystem permission when no paths found");
+        let fs = perms.iter().find(|p| matches!(p, Permission::FileSystem { .. }));
+        assert!(fs.is_some(), "Skills should always have FileSystem permission");
+        // But no specific paths detected
+        if let Some(Permission::FileSystem { paths }) = fs {
+            assert!(paths.is_empty(), "No specific paths should be listed");
+        }
     }
 
     #[test]
