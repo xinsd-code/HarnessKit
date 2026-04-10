@@ -22,7 +22,7 @@
 <br/>
 
 <p align="center">
-  <img src="docs/demo.gif" alt="HarnessKit Demo" width="800" />
+  <img src="media/agents-animation.gif" alt="HarnessKit Agents Animation" width="800" />
 </p>
 
 <br/>
@@ -32,6 +32,10 @@
 Every agent, a different world. Extensions, configs, memory, and rules — scattered across different directories, in different formats, with different conventions.
 
 **HarnessKit brings them all under one roof** — one native desktop app to see, secure, and manage everything across every agent.
+
+<p align="center">
+  <img src="media/overview.png" alt="HarnessKit Overview" width="800" />
+</p>
 
 ---
 
@@ -61,6 +65,11 @@ HarnessKit manages **all five extension types** from a unified interface — **S
 - **Effortless management** — Enable or disable right from the list. Check for updates across all extensions with one click.
 - **Cross-agent deployment** — See which agents have the extension and which don't — deploy to any missing agent with one click. HarnessKit handles the format differences between agents (JSON, TOML, hook conventions, MCP schemas) automatically.
 
+<p align="center">
+  <video src="media/extensions-demo.mp4" width="800" autoplay loop muted playsinline></video>
+  <video src="media/extensions-demo2.mp4" width="800" autoplay loop muted playsinline></video>
+</p>
+
 ---
 
 ### 🤖 Agent Configs, Memory & Rules
@@ -72,17 +81,24 @@ HarnessKit manages every agent's **Configs**, **Memory**, **Rules**, and **Ignor
 - **Custom paths** — Add any file or folder to an agent's dashboard for tracking. Useful for custom configs or scripts that HarnessKit doesn't auto-discover — they show up alongside everything else with the same live preview.
 - **Real-time detection** — The moment a config file is modified, the dashboard reflects it.
 
+<p align="center">
+  <video src="media/agents-demo.mp4" width="800" autoplay loop muted playsinline></video>
+</p>
 
 ---
 
 ### 🛡️ Security Audit & Permission Transparency
 
-Every extension is scanned by a built-in security engine with 17 static analysis rules and receives a **Trust Score** (0–100), grouped into three tiers — **Safe** (80+), **Low Risk** (60–79), and **Needs Review** (below 60). A dedicated Audit page lets you search, filter by tier, and drill into every finding.
+Every extension is scanned by a built-in security engine with 18 static analysis rules and receives a **Trust Score** (0–100), grouped into three tiers — **Safe** (80+), **Low Risk** (60–79), and **Needs Review** (below 60). A dedicated Audit page lets you search, filter by tier, and drill into every finding.
 
 - **One-click audit** — Run a full security scan across all extensions with a single click. The dashboard shows how many extensions were scanned and when the last audit ran.
 - **Precise tracing** — Every finding pinpoints the exact file and line number, so you can trace the issue immediately.
 - **Per-agent scanning** — Even if multiple agents share the same extension, each agent's copy is audited independently — because versions can drift, and a safe copy on one agent doesn't guarantee safety on another.
 - **Permission transparency** — Every extension's permissions are surfaced across five dimensions — filesystem paths, network domains, shell commands, database engines, and environment variables. You see exactly what each extension can reach before you decide to keep it.
+
+<p align="center">
+  <video src="media/audit-demo.mp4" width="800" autoplay loop muted playsinline></video>
+</p>
 
 ---
 
@@ -95,6 +111,10 @@ Discover, evaluate, and install — three marketplaces in one, each with trendin
 - **Agent-first CLI** — Discover CLI tools built specifically for agents — the newest frontier of the agent extension ecosystem.
 
 Every listing shows its description, install count, and source. For skills, you can preview the documentation, check third-party security audit scores before installing, and install to any agent with one click — HarnessKit tracks the source so you always know where each extension came from.
+
+<p align="center">
+  <video src="media/marketplace-demo.mp4" width="800" autoplay loop muted playsinline></video>
+</p>
 
 ---
 
@@ -130,8 +150,13 @@ $ hk disable --pack owner/repo           # batch disable by source
 - 💡 **Tip of the Day** — The Overview dashboard surfaces contextual tips for each detected agent from a community-maintained library. Learn shortcuts and best practices as you work.
 - 📊 **Dynamic Activity Feed** — Agent Activity and Recently Installed timelines capture every config change, extension install, and agent event in real time.
 - ⚡ **Quick Actions** — One-click View Agents, Run Audit, Check Updates, and Marketplace access right from the dashboard.
-- 🎨 **Themes** — Multiple themes with Light, Dark, and System mode support.
 - 🎯 **Playful Touches** — Smooth animations and micro-interactions throughout the app make daily use feel alive.
+- 🎨 **Themes** — Multiple themes with Light, Dark, and System mode support.
+
+<p align="center">
+  <img src="media/theme-tiesen.png" alt="Tiesen Theme" width="40%" />
+  <img src="media/theme-claude.png" alt="Claude Theme" width="40%" />
+</p>
 
 ---
 
@@ -139,17 +164,36 @@ $ hk disable --pack owner/repo           # batch disable by source
 
 **Requirements:** macOS 12+, at least one supported AI coding agent installed.
 
+<a href="https://github.com/RealZST/HarnessKit/releases/latest"><img src="https://img.shields.io/badge/Download-Latest_Release-brightgreen?style=for-the-badge&logo=github" alt="Download Latest Release" /></a>
+
 ### Desktop App
 
-1. Download the DMG for your architecture (Apple Silicon or Intel) from the [latest release](https://github.com/RealZST/HarnessKit/releases).
+1. Download the DMG for your architecture from the [latest release](https://github.com/RealZST/HarnessKit/releases/latest):
+
+   | Chip | File |
+   |------|------|
+   | Apple Silicon (M1/M2/M3/M4) | `HarnessKit_x.x.x_aarch64.dmg` |
+   | Intel | `HarnessKit_x.x.x_x64.dmg` |
+
 2. Open the DMG and drag **HarnessKit** to the Applications folder.
 3. Launch HarnessKit. It will automatically detect your installed agents and scan their extensions.
 
+Already installed? Open **Settings → Check for Updates** to upgrade in-app.
+
 ### CLI
+
+**One-line install** (auto-detects architecture):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.sh | sh
 ```
+
+Or download the binary manually:
+
+| Chip | File |
+|------|------|
+| Apple Silicon (M1/M2/M3/M4) | `hk-macos-arm64` |
+| Intel | `hk-macos-x64` |
 
 After installation, restart your terminal and verify with `hk status`.
 
