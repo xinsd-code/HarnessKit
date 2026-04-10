@@ -27,22 +27,24 @@ function buildPathItems(
   childMcps?: Extension[],
   instanceData?: Map<string, ExtContent>,
 ): DeleteItem[] {
-  // Group by physical path → list of agents
-  const pathMap = new Map<string, string[]>();
-  for (const [agent, path] of locations) {
-    const list = pathMap.get(path) ?? [];
-    if (!list.includes(agent)) list.push(agent);
-    pathMap.set(path, list);
+  // Group by physical path → list of agents + symlink target
+  const pathMap = new Map<string, { agents: string[]; symlink?: string }>();
+  for (const [agent, path, symlinkTarget] of locations) {
+    const entry = pathMap.get(path) ?? { agents: [] };
+    if (!entry.agents.includes(agent)) entry.agents.push(agent);
+    if (symlinkTarget) entry.symlink = symlinkTarget;
+    pathMap.set(path, entry);
   }
 
   const items: DeleteItem[] = [];
-  for (const [path, agents] of pathMap) {
+  for (const [path, { agents, symlink }] of pathMap) {
     items.push({
       key: `path:${path}`,
       agents,
       paths: [path],
       mcps: [],
       shared: agents.length > 1,
+      symlink,
     });
   }
 
@@ -91,6 +93,7 @@ function buildAgentItems(
       mcps: [],
       shared: false,
       description: desc ?? undefined,
+      symlink: data?.symlink_target ?? undefined,
     };
   });
 }
@@ -298,6 +301,55 @@ export function DeleteDialog({
               </span>
             </div>
           )}
+
+          {/* Symlink warnings */}
+          {(() => {
+            const selected = isSingle ? items : items.filter((i) => selectedKeys.has(i.key));
+            const warnings: React.ReactNode[] = [];
+
+            // 1. Deleting a symlink removes the original
+            const symlinkItems = selected.filter((i) => i.symlink);
+            if (symlinkItems.length > 0) {
+              warnings.push(
+                <div key="symlink" className="flex items-start gap-1.5 rounded-lg border border-chart-5/30 bg-chart-5/5 p-2.5 text-xs text-chart-5">
+                  <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                  <span>
+                    {symlinkItems.length === 1
+                      ? "This is a symlink — the original files at "
+                      : "These are symlinks — the original files at "}
+                    {symlinkItems.map((s, i) => (
+                      <span key={s.key}>
+                        {i > 0 && ", "}
+                        <span className="font-mono">{s.symlink}</span>
+                      </span>
+                    ))}
+                    {" will also be removed."}
+                  </span>
+                </div>,
+              );
+            }
+
+            // 2. Deleting an original breaks symlinks that point to it
+            const selectedPaths = new Set(selected.flatMap((i) => i.paths));
+            const affectedSymlinks = items.filter(
+              (i) => i.symlink && selectedPaths.has(i.symlink) && !selected.includes(i),
+            );
+            if (affectedSymlinks.length > 0) {
+              const affectedAgents = affectedSymlinks.flatMap((i) => i.agents);
+              warnings.push(
+                <div key="broken-symlink" className="flex items-start gap-1.5 rounded-lg border border-chart-5/30 bg-chart-5/5 p-2.5 text-xs text-chart-5">
+                  <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                  <span>
+                    {affectedAgents.map(agentDisplayName).join(", ")}{" "}
+                    {affectedAgents.length === 1 ? "has a symlink" : "have symlinks"}{" "}
+                    pointing to this path — {affectedAgents.length === 1 ? "it" : "they"} will become invalid.
+                  </span>
+                </div>,
+              );
+            }
+
+            return warnings.length > 0 ? <>{warnings}</> : null;
+          })()}
 
           {/* Delete button */}
           {isSingle ? (

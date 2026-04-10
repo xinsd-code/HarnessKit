@@ -41,6 +41,7 @@ fn main() {
             commands::run_audit,
             commands::scan_and_sync,
             commands::delete_extension,
+            commands::uninstall_cli_binary,
             commands::get_extension_content,
             commands::get_skill_locations,
             commands::get_cached_update_statuses,

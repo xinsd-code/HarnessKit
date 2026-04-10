@@ -67,6 +67,10 @@ export const api = {
     return invoke("delete_extension", { id });
   },
 
+  uninstallCliBinary(binaryPath: string): Promise<void> {
+    return invoke("uninstall_cli_binary", { binaryPath });
+  },
+
   getExtensionContent(id: string): Promise<ExtensionContent> {
     return invoke("get_extension_content", { id });
   },
