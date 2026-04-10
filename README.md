@@ -66,8 +66,8 @@ HarnessKit manages **all five extension types** from a unified interface — **S
 - **Cross-agent deployment** — See which agents have the extension and which don't — deploy to any missing agent with one click. HarnessKit handles the format differences between agents (JSON, TOML, hook conventions, MCP schemas) automatically.
 
 <p align="center">
-  <video src="media/extensions-demo.mp4" width="800" autoplay loop muted playsinline></video>
-  <video src="media/extensions-demo2.mp4" width="800" autoplay loop muted playsinline></video>
+  <video src="https://github.com/user-attachments/assets/d641d5c5-8f76-4d88-bd30-8d715a027a0b" width="800" autoplay loop muted playsinline></video>
+  <video src="https://github.com/user-attachments/assets/8439afc0-ad37-4b87-9f45-9aea5ba3bfed" width="800" autoplay loop muted playsinline></video>
 </p>
 
 ---
@@ -82,7 +82,7 @@ HarnessKit manages every agent's **Configs**, **Memory**, **Rules**, and **Ignor
 - **Real-time detection** — The moment a config file is modified, the dashboard reflects it.
 
 <p align="center">
-  <video src="media/agents-demo.mp4" width="800" autoplay loop muted playsinline></video>
+  <video src="https://github.com/user-attachments/assets/911e15c9-eea5-4921-b348-b8332ab5fbe9" width="800" autoplay loop muted playsinline></video>
 </p>
 
 ---
@@ -97,7 +97,7 @@ Every extension is scanned by a built-in security engine with 18 static analysis
 - **Permission transparency** — Every extension's permissions are surfaced across five dimensions — filesystem paths, network domains, shell commands, database engines, and environment variables. You see exactly what each extension can reach before you decide to keep it.
 
 <p align="center">
-  <video src="media/audit-demo.mp4" width="800" autoplay loop muted playsinline></video>
+  <video src="https://github.com/user-attachments/assets/2acad5bd-1a18-4303-8950-0f30628f5534" width="800" autoplay loop muted playsinline></video>
 </p>
 
 ---
@@ -113,7 +113,7 @@ Discover, evaluate, and install — three marketplaces in one, each with trendin
 Every listing shows its description, install count, and source. For skills, you can preview the documentation, check third-party security audit scores before installing, and install to any agent with one click — HarnessKit tracks the source so you always know where each extension came from.
 
 <p align="center">
-  <video src="media/marketplace-demo.mp4" width="800" autoplay loop muted playsinline></video>
+  <video src="https://github.com/user-attachments/assets/39eecd83-6cf8-461f-b40b-364bbd8df2de" width="800" autoplay loop muted playsinline></video>
 </p>
 
 ---
