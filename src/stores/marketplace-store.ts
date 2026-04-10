@@ -221,9 +221,19 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       previewCache: new Map(),
       auditCache: new Map(),
     });
+
+    const cacheKey = `hk_trending_${tab}`;
+    const saveToDisk = (items: MarketplaceItem[]) => {
+      try { localStorage.setItem(cacheKey, JSON.stringify(items)); } catch {}
+    };
+    const loadFromDisk = (): MarketplaceItem[] => {
+      try { return JSON.parse(localStorage.getItem(cacheKey) ?? "[]"); } catch { return []; }
+    };
+
     try {
       if (tab === "cli") {
         const trending = await api.listCliMarketplace();
+        saveToDisk(trending);
         set({
           trending,
           trendingLoading: false,
@@ -233,6 +243,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         return;
       }
       const trending = await api.trendingMarketplace(tab, 10);
+      saveToDisk(trending);
       set({
         trending,
         trendingLoading: false,
@@ -245,7 +256,9 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       }
     } catch (e) {
       console.error("Failed to load marketplace trending data:", e);
-      set({ trending: [], trendingLoading: false });
+      // Fallback to last successful fetch from disk
+      const cached = loadFromDisk();
+      set({ trending: cached, trendingLoading: false });
     }
   },
   selectItem(item) {

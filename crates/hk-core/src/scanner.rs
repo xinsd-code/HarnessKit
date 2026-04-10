@@ -831,16 +831,44 @@ pub fn skill_locations(
     name: &str,
     adapters: &[Box<dyn AgentAdapter>],
 ) -> Vec<(String, std::path::PathBuf)> {
+    // Strip surrounding quotes if present (some SKILL.md frontmatters include them)
+    let clean_name = name.trim_matches('"');
     let mut locations = Vec::new();
     for adapter in adapters {
         if !adapter.detect() {
             continue;
         }
         for skill_dir in adapter.skill_dirs() {
-            let skill_path = skill_dir.join(name);
+            // 1. Direct directory name match
+            let skill_path = skill_dir.join(clean_name);
             if skill_path.join("SKILL.md").exists() || skill_path.join("SKILL.md.disabled").exists()
             {
                 locations.push((adapter.name().to_string(), skill_path));
+                continue;
+            }
+            // 2. Fallback: scan directories and match by SKILL.md frontmatter name
+            if let Ok(entries) = std::fs::read_dir(&skill_dir) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if !p.is_dir() {
+                        continue;
+                    }
+                    let skill_md = p.join("SKILL.md");
+                    let skill_md_disabled = p.join("SKILL.md.disabled");
+                    let md_path = if skill_md.exists() {
+                        skill_md
+                    } else if skill_md_disabled.exists() {
+                        skill_md_disabled
+                    } else {
+                        continue;
+                    };
+                    if let Some(parsed_name) = parse_skill_name(&md_path) {
+                        if parsed_name == name || parsed_name == clean_name {
+                            locations.push((adapter.name().to_string(), p));
+                            break;
+                        }
+                    }
+                }
             }
         }
     }

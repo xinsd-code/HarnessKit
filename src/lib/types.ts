@@ -225,6 +225,7 @@ export function agentDisplayName(name: string): string {
 export interface InstallResult {
   name: string;
   was_update: boolean;
+  skipped?: boolean;
 }
 
 export interface DiscoveredSkill {

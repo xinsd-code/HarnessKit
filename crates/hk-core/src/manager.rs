@@ -5,11 +5,15 @@ use crate::{adapter, deployer, sanitize, scanner};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct InstallResult {
     pub name: String,
     pub was_update: bool,
     pub revision: Option<String>,
+    /// When true the skill was not found in the repo (e.g. removed by author)
+    /// and the update was silently skipped.
+    #[serde(default)]
+    pub skipped: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -450,6 +454,15 @@ fn find_disabled_manifest(adapter: &dyn adapter::AgentAdapter, ext_id: &str) -> 
 /// Check if an installed extension has an update available.
 /// Uses `InstallMeta` (persisted install source) for the remote URL and local revision.
 pub fn check_update(meta: &InstallMeta) -> UpdateStatus {
+    check_update_with_cache(meta, &mut std::collections::HashMap::new())
+}
+
+/// Like `check_update`, but reuses a cache of `url -> Result<remote_hash>` to
+/// avoid redundant `git ls-remote` calls for extensions sharing the same repo.
+pub fn check_update_with_cache(
+    meta: &InstallMeta,
+    cache: &mut std::collections::HashMap<String, Result<String, String>>,
+) -> UpdateStatus {
     let url = match meta.url_resolved.as_deref().or(meta.url.as_deref()) {
         Some(u) => u,
         None => {
@@ -462,8 +475,15 @@ pub fn check_update(meta: &InstallMeta) -> UpdateStatus {
     if let Err(e) = sanitize::validate_git_url(url) {
         return UpdateStatus::Error { message: e.to_string() };
     }
-    match get_remote_head(url) {
+    let remote_result = cache
+        .entry(url.to_string())
+        .or_insert_with(|| {
+            get_remote_head(url)
+                .map_err(|e| e.to_string())
+        });
+    match remote_result {
         Ok(remote_hash) => {
+            let remote_hash = remote_hash.clone();
             match meta.revision.as_deref() {
                 Some(local_hash)
                     if remote_hash.starts_with(local_hash)
@@ -478,16 +498,13 @@ pub fn check_update(meta: &InstallMeta) -> UpdateStatus {
                 }
             }
         }
-        Err(e) => {
-            let msg = e.to_string();
+        Err(msg) => {
             if msg.contains("No main or master branch found") {
-                // Repo has no main/master — we can't reliably determine updates,
-                // so default to up-to-date to avoid false positives / infinite loops.
                 UpdateStatus::UpToDate {
                     remote_hash: meta.revision.clone().unwrap_or_default(),
                 }
             } else {
-                UpdateStatus::Error { message: msg }
+                UpdateStatus::Error { message: msg.clone() }
             }
         }
     }
@@ -597,6 +614,7 @@ fn resolve_and_copy_skill(
                     name,
                     was_update,
                     revision: None,
+                    ..Default::default()
                 });
             }
         }
@@ -645,6 +663,7 @@ fn resolve_and_copy_skill(
                     name,
                     was_update,
                     revision: None,
+                    ..Default::default()
                 });
             }
         }
@@ -667,6 +686,7 @@ fn resolve_and_copy_skill(
                 name,
                 was_update,
                 revision: None,
+                ..Default::default()
             });
         }
         return Err(HkError::NotFound(format!(
@@ -692,6 +712,7 @@ fn resolve_and_copy_skill(
             name,
             was_update,
             revision: None,
+            ..Default::default()
         });
     }
 
@@ -719,6 +740,7 @@ fn resolve_and_copy_skill(
                     name,
                     was_update,
                     revision: None,
+                    ..Default::default()
                 });
             }
         }
