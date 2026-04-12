@@ -1,5 +1,4 @@
-import { check } from "@tauri-apps/plugin-updater";
-import { relaunch } from "@tauri-apps/plugin-process";
+import { useUpdateStore } from "@/stores/update-store";
 import { clsx } from "clsx";
 import {
   Check,
@@ -56,54 +55,21 @@ const ICON_OPTIONS: { value: AppIcon; label: string; src: string }[] = [
 ];
 
 function UpdateSection() {
-  const [checking, setChecking] = useState(false);
-  const [installing, setInstalling] = useState(false);
-  const [updateAvailable, setUpdateAvailable] = useState<{
-    version: string;
-    body: string;
-  } | null>(null);
-  const [checked, setChecked] = useState(false);
-
-  const handleCheck = async () => {
-    setChecking(true);
-    try {
-      const update = await check();
-      if (update) {
-        setUpdateAvailable({ version: update.version, body: update.body ?? "" });
-      } else {
-        setChecked(true);
-        toast.success("Already up to date");
-      }
-    } catch {
-      toast.error("Failed to check for updates");
-    } finally {
-      setChecking(false);
-    }
-  };
-
-  const handleInstall = async () => {
-    if (!updateAvailable) return;
-    setInstalling(true);
-    try {
-      const update = await check();
-      if (update) {
-        await update.downloadAndInstall();
-        await relaunch();
-      }
-    } catch {
-      toast.error("Failed to install update");
-      setInstalling(false);
-    }
-  };
+  const available = useUpdateStore((s) => s.available);
+  const checking = useUpdateStore((s) => s.checking);
+  const installing = useUpdateStore((s) => s.installing);
+  const checked = useUpdateStore((s) => s.checked);
+  const checkForUpdate = useUpdateStore((s) => s.checkForUpdate);
+  const installUpdate = useUpdateStore((s) => s.installUpdate);
 
   return (
     <div className="flex items-center gap-3">
       <span className="text-xs text-muted-foreground">
         v{__APP_VERSION__}
       </span>
-      {updateAvailable ? (
+      {available ? (
         <button
-          onClick={handleInstall}
+          onClick={installUpdate}
           disabled={installing}
           className="flex items-center gap-1.5 rounded-lg bg-primary px-2.5 py-1 text-xs text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50 transition-colors"
         >
@@ -112,11 +78,11 @@ function UpdateSection() {
           ) : (
             <Download size={12} />
           )}
-          {installing ? "Installing..." : `Update to v${updateAvailable.version}`}
+          {installing ? "Updating..." : `Update to v${available.version}`}
         </button>
       ) : (
         <button
-          onClick={handleCheck}
+          onClick={checkForUpdate}
           disabled={checking}
           className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50 transition-colors"
         >

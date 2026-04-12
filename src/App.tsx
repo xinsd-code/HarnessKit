@@ -14,6 +14,7 @@ import OverviewPage from "./pages/overview";
 import SettingsPage from "./pages/settings";
 import { useAuditStore } from "./stores/audit-store";
 import { useExtensionStore } from "./stores/extension-store";
+import { useUpdateStore } from "./stores/update-store";
 import { resolveMode, useUIStore } from "./stores/ui-store";
 
 /** Minimum interval (ms) between consecutive scan_and_sync calls */
@@ -45,6 +46,11 @@ export default function App() {
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, [mode]);
+
+  // Check for updates on startup (non-blocking, silent failure)
+  useEffect(() => {
+    useUpdateStore.getState().checkForUpdate();
+  }, []);
 
   // Background scan + rescan on window focus
   useEffect(() => {
