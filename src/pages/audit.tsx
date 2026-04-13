@@ -165,24 +165,11 @@ export default function AuditPage() {
     return map;
   }, [allExtensions]);
 
-  // Map extension ID → cli_parent_id for resolving child → parent names
-  const parentIdMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const ext of allExtensions) {
-      if (ext.cli_parent_id) map.set(ext.id, ext.cli_parent_id);
-    }
-    return map;
-  }, [allExtensions]);
-
-  // Group results by extension — child skill findings merge into parent CLI
+  // Group results by extension
   const groupedResults = useMemo<GroupedResult[]>(() => {
     const groups = new Map<string, GroupedResult>();
     for (const result of sortedResults) {
-      // Use parent CLI's name for child skills
-      const parentId = parentIdMap.get(result.extension_id);
-      const name = parentId
-        ? (nameMap.get(parentId) ?? result.extension_id)
-        : (nameMap.get(result.extension_id) ?? result.extension_id);
+      const name = nameMap.get(result.extension_id) ?? result.extension_id;
       const key = groupKeyMap.get(result.extension_id) ?? result.extension_id;
       const agentNames = agentMap.get(result.extension_id) ?? ["unknown"];
       const agentLabel = agentNames.join(", ");
@@ -206,7 +193,7 @@ export default function AuditPage() {
           ...existing.agents.map((a) => a.trust_score),
         );
       } else {
-        const kind = (kindMap.get(parentId ?? result.extension_id) ?? "skill") as import("@/lib/types").ExtensionKind;
+        const kind = (kindMap.get(result.extension_id) ?? "skill") as import("@/lib/types").ExtensionKind;
         groups.set(key, {
           name,
           kind,
