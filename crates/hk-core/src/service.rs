@@ -101,7 +101,7 @@ pub fn run_full_audit(
             }
         };
 
-        let mut input = AuditInput {
+        let input = AuditInput {
             extension_id: ext.id.clone(),
             kind: ext.kind,
             name: ext.name.clone(),
@@ -119,11 +119,6 @@ pub fn run_full_audit(
             child_permissions: vec![],
             pack: ext.pack.clone(),
         };
-        if ext.kind == ExtensionKind::Cli
-            && let Ok(children) = store.get_child_skills(&ext.id)
-        {
-            input.child_permissions = children.into_iter().flat_map(|c| c.permissions).collect();
-        }
         inputs.push(input);
     }
 
