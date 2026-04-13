@@ -102,25 +102,8 @@ pub fn toggle_extension_with_adapters(
             store.set_enabled(id, enabled)?;
         }
         ExtensionKind::Cli => {
-            let children = store.get_child_skills(id)?;
-            for child in &children {
-                match child.kind {
-                    ExtensionKind::Skill => {
-                        toggle_skill(child, enabled, adapters)?;
-                        let sibling_ids = store.find_siblings_by_source_path(&child.id)?;
-                        for sib_id in &sibling_ids {
-                            store.set_enabled(sib_id, enabled)?;
-                        }
-                    }
-                    ExtensionKind::Mcp => {
-                        toggle_mcp(child, enabled, store, adapters)?;
-                        store.set_enabled(&child.id, enabled)?;
-                    }
-                    _ => {
-                        store.set_enabled(&child.id, enabled)?;
-                    }
-                }
-            }
+            // CLI toggle only sets the CLI's own enabled state.
+            // Child skills/MCPs are toggled independently by the frontend.
             store.set_enabled(id, enabled)?;
         }
     }

@@ -103,26 +103,24 @@ export default function AuditPage() {
   const nameMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const ext of allExtensions) {
-      map.set(ext.id, ext.name);
+      let name = ext.name;
+      if (ext.kind === "hook") {
+        const parts = name.split(":");
+        if (parts.length >= 3) {
+          name = parts.slice(2).join(":").split(" ").map((t) => t.split("/").pop() || t).join(" ");
+        }
+      }
+      map.set(ext.id, name);
     }
     return map;
   }, [allExtensions]);
 
   // Map extension ID → groupKey for audit deduplication.
-  // Uses auditGroupKey (ignores kind) so Skill/MCP/CLI of the same logical
   // Group by extensionGroupKey (same as extensions page).
-  // Child skills are mapped to their parent CLI's key so their findings merge into the parent.
   const groupKeyMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const ext of allExtensions) {
       map.set(ext.id, extensionGroupKey(ext));
-    }
-    // Override child skills → parent CLI's key
-    for (const ext of allExtensions) {
-      if (ext.cli_parent_id) {
-        const parentKey = map.get(ext.cli_parent_id);
-        if (parentKey) map.set(ext.id, parentKey);
-      }
     }
     return map;
   }, [allExtensions]);
@@ -165,24 +163,11 @@ export default function AuditPage() {
     return map;
   }, [allExtensions]);
 
-  // Map extension ID → cli_parent_id for resolving child → parent names
-  const parentIdMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const ext of allExtensions) {
-      if (ext.cli_parent_id) map.set(ext.id, ext.cli_parent_id);
-    }
-    return map;
-  }, [allExtensions]);
-
-  // Group results by extension — child skill findings merge into parent CLI
+  // Group results by extension
   const groupedResults = useMemo<GroupedResult[]>(() => {
     const groups = new Map<string, GroupedResult>();
     for (const result of sortedResults) {
-      // Use parent CLI's name for child skills
-      const parentId = parentIdMap.get(result.extension_id);
-      const name = parentId
-        ? (nameMap.get(parentId) ?? result.extension_id)
-        : (nameMap.get(result.extension_id) ?? result.extension_id);
+      const name = nameMap.get(result.extension_id) ?? result.extension_id;
       const key = groupKeyMap.get(result.extension_id) ?? result.extension_id;
       const agentNames = agentMap.get(result.extension_id) ?? ["unknown"];
       const agentLabel = agentNames.join(", ");
@@ -206,9 +191,10 @@ export default function AuditPage() {
           ...existing.agents.map((a) => a.trust_score),
         );
       } else {
-        const kind = (kindMap.get(parentId ?? result.extension_id) ?? "skill") as import("@/lib/types").ExtensionKind;
+        const kind = (kindMap.get(result.extension_id) ?? "skill") as import("@/lib/types").ExtensionKind;
         groups.set(key, {
           name,
+          groupKey: key,
           kind,
           agents: [
             {
@@ -627,7 +613,7 @@ export default function AuditPage() {
                               <button
                                 onClick={() =>
                                   navigate(
-                                    `/extensions?name=${encodeURIComponent(group.name)}`,
+                                    `/extensions?groupKey=${encodeURIComponent(group.groupKey)}`,
                                   )
                                 }
                                 className="flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"

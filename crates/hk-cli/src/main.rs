@@ -175,9 +175,6 @@ fn cmd_status(
     let mut clis = 0u32;
 
     for ext in extensions {
-        if ext.cli_parent_id.is_some() {
-            continue;
-        }
         let key = group_key(ext);
         if !groups.insert(key) {
             continue;
@@ -229,7 +226,6 @@ fn cmd_list(
     let mut seen_groups = std::collections::HashSet::new();
     let filtered: Vec<&Extension> = extensions
         .iter()
-        .filter(|e| e.cli_parent_id.is_none())
         .filter(|e| seen_groups.insert(group_key(e)))
         .filter(|e| kind.is_none() || Some(e.kind) == kind)
         .filter(|e| agent.is_none() || e.agents.iter().any(|a| a == agent.unwrap()))
@@ -343,9 +339,6 @@ fn cmd_audit(
             Some(e) => e,
             None => continue,
         };
-        if ext.cli_parent_id.is_some() {
-            continue;
-        }
         let key = group_key(ext);
         let group = groups.entry(key).or_insert_with(|| GroupedAudit {
             name: ext.name.clone(),
