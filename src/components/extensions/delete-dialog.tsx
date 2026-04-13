@@ -361,8 +361,8 @@ export function DeleteDialog({
                   <AlertTriangle size={12} className="mt-0.5 shrink-0" />
                   <span>
                     {symlinkItems.length === 1
-                      ? "This is a symlink \u2014 the original files at "
-                      : "These are symlinks \u2014 the original files at "}
+                      ? "This is a symlink  — the original files at "
+                      : "These are symlinks  — the original files at "}
                     {symlinkItems.map((s, i) => (
                       <span key={s.key}>
                         {i > 0 && ", "}
@@ -387,7 +387,7 @@ export function DeleteDialog({
                   <span>
                     {affectedAgents.map(agentDisplayName).join(", ")}{" "}
                     {affectedAgents.length === 1 ? "has a symlink" : "have symlinks"}{" "}
-                    pointing to this path \u2014 {affectedAgents.length === 1 ? "it" : "they"} will become invalid.
+                    pointing to this path  — {affectedAgents.length === 1 ? "it" : "they"} will become invalid.
                   </span>
                 </div>,
               );
