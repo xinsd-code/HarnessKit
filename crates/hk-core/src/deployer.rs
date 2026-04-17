@@ -643,6 +643,40 @@ pub fn set_codex_plugin_enabled(
     Ok(())
 }
 
+/// Remove a [plugins."plugin_key"] entry from Codex config.toml.
+pub fn remove_codex_plugin_entry(
+    config_path: &Path,
+    plugin_key: &str,
+) -> Result<(), HkError> {
+    if !config_path.exists() {
+        return Ok(());
+    }
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(config_path)?;
+    file.lock_exclusive()?;
+
+    let mut content = String::new();
+    (&file).read_to_string(&mut content)?;
+    let mut doc: toml::Table = content
+        .parse::<toml::Table>()
+        .map_err(|e| HkError::ConfigCorrupted(e.to_string()))?;
+
+    if let Some(plugins) = doc.get_mut("plugins").and_then(|v| v.as_table_mut()) {
+        plugins.remove(plugin_key);
+    }
+
+    let output = toml::to_string_pretty(&doc).map_err(|e| HkError::Internal(e.to_string()))?;
+    (&file).seek(SeekFrom::Start(0))?;
+    file.set_len(0)?;
+    (&file).write_all(output.as_bytes())?;
+    (&file).flush()?;
+
+    file.unlock()?;
+    Ok(())
+}
+
 /// Set VS Code agent plugin enablement in state.vscdb.
 /// Reads the current `agentPlugins.enablement` array, updates the entry for the
 /// given plugin URI, and writes it back. Creates the entry if it doesn't exist.
@@ -695,12 +729,97 @@ pub fn set_vscode_plugin_enabled(
     Ok(())
 }
 
+/// Remove a plugin entry from VS Code's state.vscdb enablement array.
+pub fn remove_vscode_plugin_entry(
+    vscode_user_dir: &Path,
+    plugin_uri: &str,
+) -> Result<(), HkError> {
+    let db_path = vscode_user_dir.join("globalStorage").join("state.vscdb");
+    if !db_path.exists() {
+        return Ok(());
+    }
+    let conn = rusqlite::Connection::open(&db_path)
+        .map_err(|e| HkError::Internal(format!("Failed to open VS Code state DB: {}", e)))?;
+
+    let current: String = conn
+        .query_row(
+            "SELECT value FROM ItemTable WHERE key = 'agentPlugins.enablement'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or_else(|_| "[]".to_string());
+
+    let mut entries: Vec<(String, bool)> =
+        serde_json::from_str(&current).unwrap_or_default();
+
+    entries.retain(|e| e.0 != plugin_uri);
+
+    let new_value = serde_json::to_string(&entries)
+        .map_err(|e| HkError::Internal(e.to_string()))?;
+
+    conn.execute(
+        "INSERT INTO ItemTable (key, value) VALUES ('agentPlugins.enablement', ?1)
+         ON CONFLICT(key) DO UPDATE SET value = ?1",
+        rusqlite::params![new_value],
+    )
+    .map_err(|e| HkError::Internal(format!("Failed to update VS Code state DB: {}", e)))?;
+
+    Ok(())
+}
+
 /// Set Gemini extension enablement in extension-enablement.json.
 /// Updates only the user-scope rule (`{homedir}/*`) and preserves workspace-scope rules.
 pub fn set_gemini_extension_enabled(
     extensions_dir: &Path,
     extension_name: &str,
     enabled: bool,
+    home: &Path,
+) -> Result<(), HkError> {
+    let home_str = home.to_string_lossy();
+    let enable_rule = format!("{}/*", home_str);
+    let disable_rule = format!("!{}/*", home_str);
+
+    modify_gemini_enablement(extensions_dir, |config| {
+        let entry = config
+            .entry(extension_name.to_string())
+            .or_insert_with(|| serde_json::json!({"overrides": []}));
+        let overrides = entry
+            .get_mut("overrides")
+            .and_then(|v| v.as_array_mut())
+            .ok_or_else(|| HkError::ConfigCorrupted("overrides is not an array".into()))?;
+
+        // Remove existing user-scope rules (both enable and disable)
+        overrides.retain(|v| {
+            let s = v.as_str().unwrap_or("");
+            s != enable_rule && s != disable_rule
+        });
+
+        // Add the new rule
+        let rule = if enabled { &enable_rule } else { &disable_rule };
+        overrides.push(serde_json::Value::String(rule.to_string()));
+        Ok(())
+    })
+}
+
+/// Remove an extension entry from Gemini's extension-enablement.json.
+pub fn remove_gemini_extension_entry(
+    extensions_dir: &Path,
+    extension_name: &str,
+) -> Result<(), HkError> {
+    let enablement_path = extensions_dir.join("extension-enablement.json");
+    if !enablement_path.exists() {
+        return Ok(());
+    }
+    modify_gemini_enablement(extensions_dir, |config| {
+        config.remove(extension_name);
+        Ok(())
+    })
+}
+
+/// Locked read-modify-write for extension-enablement.json.
+fn modify_gemini_enablement(
+    extensions_dir: &Path,
+    modify: impl FnOnce(&mut serde_json::Map<String, serde_json::Value>) -> Result<(), HkError>,
 ) -> Result<(), HkError> {
     let enablement_path = extensions_dir.join("extension-enablement.json");
     if let Some(parent) = enablement_path.parent() {
@@ -723,29 +842,7 @@ pub fn set_gemini_extension_enabled(
             .map_err(|e| HkError::ConfigCorrupted(format!("extension-enablement.json: {}", e)))?
     };
 
-    let home = dirs::home_dir()
-        .ok_or_else(|| HkError::Internal("Cannot determine home directory".into()))?;
-    let home_str = home.to_string_lossy();
-    let enable_rule = format!("{}/*", home_str);
-    let disable_rule = format!("!{}/*", home_str);
-
-    let entry = config
-        .entry(extension_name)
-        .or_insert_with(|| serde_json::json!({"overrides": []}));
-    let overrides = entry
-        .get_mut("overrides")
-        .and_then(|v| v.as_array_mut())
-        .ok_or_else(|| HkError::ConfigCorrupted("overrides is not an array".into()))?;
-
-    // Remove existing user-scope rules (both enable and disable)
-    overrides.retain(|v| {
-        let s = v.as_str().unwrap_or("");
-        s != enable_rule && s != disable_rule
-    });
-
-    // Add the new rule
-    let rule = if enabled { &enable_rule } else { &disable_rule };
-    overrides.push(serde_json::Value::String(rule.to_string()));
+    modify(&mut config)?;
 
     let output = serde_json::to_string_pretty(&config)
         .map_err(|e| HkError::Internal(e.to_string()))?;
@@ -1642,59 +1739,57 @@ mod tests {
     #[test]
     fn test_set_gemini_extension_enabled_disable() {
         let dir = TempDir::new().unwrap();
-        let ext_dir = dir.path().join("extensions");
+        let home = dir.path();
+        let ext_dir = home.join(".gemini").join("extensions");
         std::fs::create_dir_all(&ext_dir).unwrap();
 
-        set_gemini_extension_enabled(&ext_dir, "my-ext", false).unwrap();
+        set_gemini_extension_enabled(&ext_dir, "my-ext", false, home).unwrap();
 
         let content: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(ext_dir.join("extension-enablement.json")).unwrap(),
         ).unwrap();
         let overrides = content["my-ext"]["overrides"].as_array().unwrap();
         assert_eq!(overrides.len(), 1);
-        let rule = overrides[0].as_str().unwrap();
-        assert!(rule.starts_with('!'), "disable rule should start with !");
-        assert!(rule.ends_with("/*"));
+        let expected = format!("!{}/*", home.to_string_lossy());
+        assert_eq!(overrides[0].as_str().unwrap(), expected);
     }
 
     #[test]
     fn test_set_gemini_extension_enabled_enable() {
         let dir = TempDir::new().unwrap();
-        let ext_dir = dir.path().join("extensions");
+        let home = dir.path();
+        let ext_dir = home.join(".gemini").join("extensions");
         std::fs::create_dir_all(&ext_dir).unwrap();
 
-        // First disable, then enable
-        set_gemini_extension_enabled(&ext_dir, "my-ext", false).unwrap();
-        set_gemini_extension_enabled(&ext_dir, "my-ext", true).unwrap();
+        set_gemini_extension_enabled(&ext_dir, "my-ext", false, home).unwrap();
+        set_gemini_extension_enabled(&ext_dir, "my-ext", true, home).unwrap();
 
         let content: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(ext_dir.join("extension-enablement.json")).unwrap(),
         ).unwrap();
         let overrides = content["my-ext"]["overrides"].as_array().unwrap();
-        // Should have exactly one rule (old disable removed, new enable added)
         assert_eq!(overrides.len(), 1);
-        let rule = overrides[0].as_str().unwrap();
-        assert!(!rule.starts_with('!'), "enable rule should not start with !");
+        let expected = format!("{}/*", home.to_string_lossy());
+        assert_eq!(overrides[0].as_str().unwrap(), expected);
     }
 
     #[test]
     fn test_set_gemini_extension_enabled_preserves_other_extensions() {
         let dir = TempDir::new().unwrap();
-        let ext_dir = dir.path().join("extensions");
+        let home = dir.path();
+        let ext_dir = home.join(".gemini").join("extensions");
         std::fs::create_dir_all(&ext_dir).unwrap();
 
-        // Pre-populate with another extension's rules
         std::fs::write(
             ext_dir.join("extension-enablement.json"),
             r#"{"other-ext": {"overrides": ["!/some/workspace/*"]}}"#,
         ).unwrap();
 
-        set_gemini_extension_enabled(&ext_dir, "my-ext", false).unwrap();
+        set_gemini_extension_enabled(&ext_dir, "my-ext", false, home).unwrap();
 
         let content: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(ext_dir.join("extension-enablement.json")).unwrap(),
         ).unwrap();
-        // other-ext should be untouched
         assert!(content["other-ext"]["overrides"].as_array().unwrap().len() == 1);
         assert!(content["my-ext"]["overrides"].as_array().unwrap().len() == 1);
     }
@@ -1702,12 +1797,11 @@ mod tests {
     #[test]
     fn test_set_gemini_extension_enabled_preserves_workspace_rules() {
         let dir = TempDir::new().unwrap();
-        let ext_dir = dir.path().join("extensions");
+        let home = dir.path();
+        let ext_dir = home.join(".gemini").join("extensions");
         std::fs::create_dir_all(&ext_dir).unwrap();
 
-        let home = dirs::home_dir().unwrap();
         let home_str = home.to_string_lossy();
-        // Pre-populate with a workspace-scope rule
         let initial = serde_json::json!({
             "my-ext": { "overrides": [
                 format!("!/some/workspace/*"),
@@ -1718,16 +1812,89 @@ mod tests {
             initial.to_string(),
         ).unwrap();
 
-        // Disable at user scope
-        set_gemini_extension_enabled(&ext_dir, "my-ext", false).unwrap();
+        set_gemini_extension_enabled(&ext_dir, "my-ext", false, home).unwrap();
 
         let content: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(ext_dir.join("extension-enablement.json")).unwrap(),
         ).unwrap();
         let overrides = content["my-ext"]["overrides"].as_array().unwrap();
-        // Should have 2 rules: workspace rule preserved + new user disable rule
         assert_eq!(overrides.len(), 2);
         assert_eq!(overrides[0].as_str().unwrap(), "!/some/workspace/*");
         assert_eq!(overrides[1].as_str().unwrap(), format!("!{}/*", home_str));
+    }
+
+    #[test]
+    fn test_remove_gemini_extension_entry() {
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let ext_dir = home.join(".gemini").join("extensions");
+        std::fs::create_dir_all(&ext_dir).unwrap();
+
+        // Create enablement with two extensions
+        set_gemini_extension_enabled(&ext_dir, "ext-a", false, home).unwrap();
+        set_gemini_extension_enabled(&ext_dir, "ext-b", false, home).unwrap();
+
+        // Remove one
+        remove_gemini_extension_entry(&ext_dir, "ext-a").unwrap();
+
+        let content: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(ext_dir.join("extension-enablement.json")).unwrap(),
+        ).unwrap();
+        assert!(content.get("ext-a").is_none(), "ext-a should be removed");
+        assert!(content.get("ext-b").is_some(), "ext-b should remain");
+    }
+
+    #[test]
+    fn test_remove_codex_plugin_entry() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("config.toml");
+
+        // Set up two plugin entries
+        set_codex_plugin_enabled(&config, "pluginA@marketplace", false).unwrap();
+        set_codex_plugin_enabled(&config, "pluginB@marketplace", true).unwrap();
+
+        // Remove one
+        remove_codex_plugin_entry(&config, "pluginA@marketplace").unwrap();
+
+        let content: toml::Table = std::fs::read_to_string(&config)
+            .unwrap()
+            .parse()
+            .unwrap();
+        let plugins = content["plugins"].as_table().unwrap();
+        assert!(!plugins.contains_key("pluginA@marketplace"));
+        assert!(plugins.contains_key("pluginB@marketplace"));
+    }
+
+    #[test]
+    fn test_remove_vscode_plugin_entry() {
+        let dir = TempDir::new().unwrap();
+        let gs = dir.path().join("globalStorage");
+        std::fs::create_dir_all(&gs).unwrap();
+        let db_path = gs.join("state.vscdb");
+
+        // Set up state.vscdb
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ItemTable (key TEXT UNIQUE, value TEXT)",
+            [],
+        ).unwrap();
+
+        // Add two entries
+        set_vscode_plugin_enabled(dir.path(), "file:///plugin-a", false).unwrap();
+        set_vscode_plugin_enabled(dir.path(), "file:///plugin-b", true).unwrap();
+
+        // Remove one
+        remove_vscode_plugin_entry(dir.path(), "file:///plugin-a").unwrap();
+
+        let result: String = conn
+            .query_row(
+                "SELECT value FROM ItemTable WHERE key = 'agentPlugins.enablement'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let entries: Vec<(String, bool)> = serde_json::from_str(&result).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].0, "file:///plugin-b");
     }
 }

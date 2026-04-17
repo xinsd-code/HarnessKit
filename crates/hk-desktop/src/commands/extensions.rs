@@ -121,28 +121,28 @@ pub async fn delete_extension(state: State<'_, AppState>, id: String) -> Result<
                             &format!("{}:{}", plugin.name, plugin.source),
                             "plugin",
                             adapter.name(),
-                        ) == id
+                        ) != id
                         {
-                            if adapter.name() == "claude" {
-                                let config_path = adapter.mcp_config_path();
-                                let plugin_key = if plugin.source.is_empty() {
-                                    plugin.name.clone()
-                                } else {
-                                    format!("{}@{}", plugin.name, plugin.source)
-                                };
-                                deployer::remove_plugin_entry(&config_path, &plugin_key)?;
-                            } else if let Some(ref path) = plugin.path {
-                                let target = if adapter.name() == "codex" {
-                                    if let Some(parent) = path.parent() {
-                                        if parent
-                                            .file_name()
-                                            .map(|n| n != "cache" && n != "plugins")
-                                            .unwrap_or(false)
-                                        {
-                                            parent
-                                        } else {
-                                            path.as_path()
-                                        }
+                            continue;
+                        }
+                        let plugin_key = if plugin.source.is_empty() {
+                            plugin.name.clone()
+                        } else {
+                            format!("{}@{}", plugin.name, plugin.source)
+                        };
+                        if adapter.name() == "claude" {
+                            let config_path = adapter.plugin_config_path();
+                            deployer::remove_plugin_entry(&config_path, &plugin_key)?;
+                        } else if adapter.name() == "codex" {
+                            // Remove folder + config.toml entry
+                            if let Some(ref path) = plugin.path {
+                                let target = if let Some(parent) = path.parent() {
+                                    if parent
+                                        .file_name()
+                                        .map(|n| n != "cache" && n != "plugins")
+                                        .unwrap_or(false)
+                                    {
+                                        parent
                                     } else {
                                         path.as_path()
                                     }
@@ -153,6 +153,43 @@ pub async fn delete_extension(state: State<'_, AppState>, id: String) -> Result<
                                     std::fs::remove_dir_all(target)?;
                                 } else if target.is_file() {
                                     std::fs::remove_file(target)?;
+                                }
+                            }
+                            deployer::remove_codex_plugin_entry(
+                                &adapter.mcp_config_path(),
+                                &plugin_key,
+                            )?;
+                        } else if adapter.name() == "gemini" {
+                            // Remove folder + enablement entry
+                            if let Some(ref path) = plugin.path {
+                                if path.is_dir() {
+                                    std::fs::remove_dir_all(path)?;
+                                }
+                            }
+                            deployer::remove_gemini_extension_entry(
+                                &adapter.base_dir().join("extensions"),
+                                &plugin.name,
+                            )?;
+                        } else if adapter.name() == "copilot" {
+                            // Remove folder + state.vscdb entry (if VS Code plugin)
+                            if let Some(ref path) = plugin.path {
+                                if path.is_dir() {
+                                    std::fs::remove_dir_all(path)?;
+                                }
+                            }
+                            if let (Some(uri), Some(vscode_dir)) =
+                                (&plugin.uri, adapter.vscode_user_dir())
+                            {
+                                // Best-effort: VS Code may hold a lock on state.vscdb
+                                if let Err(e) = deployer::remove_vscode_plugin_entry(&vscode_dir, uri) {
+                                    eprintln!("Warning: failed to clean up VS Code plugin entry: {e}");
+                                }
+                            }
+                        } else {
+                            // Cursor, etc. — just remove folder
+                            if let Some(ref path) = plugin.path {
+                                if path.is_dir() {
+                                    std::fs::remove_dir_all(path)?;
                                 }
                             }
                         }

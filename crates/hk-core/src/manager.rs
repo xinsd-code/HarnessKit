@@ -267,7 +267,9 @@ fn toggle_plugin(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<
             store.set_disabled_config(&ext.id, None)?;
         } else if a.name() == "gemini" {
             let extensions_dir = a.base_dir().join("extensions");
-            deployer::set_gemini_extension_enabled(&extensions_dir, &ext.name, enabled)?;
+            let home = dirs::home_dir()
+                .ok_or_else(|| HkError::Internal("Cannot determine home directory".into()))?;
+            deployer::set_gemini_extension_enabled(&extensions_dir, &ext.name, enabled, &home)?;
             store.set_disabled_config(&ext.id, None)?;
         } else if a.name() == "copilot" {
             // Check if this is a VS Code agent plugin (has uri from read_plugins).
