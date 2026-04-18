@@ -1838,8 +1838,11 @@ dependencies = [
  "comfy-table",
  "dirs",
  "hk-core",
+ "hk-web",
+ "rand 0.9.4",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
