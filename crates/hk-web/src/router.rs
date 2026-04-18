@@ -85,7 +85,24 @@ pub fn build_router(state: WebState) -> Router {
         .route("/api/list_projects", post(handlers::projects::list_projects))
         .route("/api/add_project", post(handlers::projects::add_project))
         .route("/api/remove_project", post(handlers::projects::remove_project))
-        .route("/api/discover_projects", post(handlers::projects::discover_projects));
+        .route("/api/discover_projects", post(handlers::projects::discover_projects))
+        // Marketplace
+        .route("/api/search_marketplace", post(handlers::marketplace::search_marketplace))
+        .route("/api/trending_marketplace", post(handlers::marketplace::trending_marketplace))
+        .route("/api/list_cli_marketplace", post(handlers::marketplace::list_cli_marketplace))
+        .route("/api/fetch_skill_preview", post(handlers::marketplace::fetch_skill_preview))
+        .route("/api/fetch_cli_readme", post(handlers::marketplace::fetch_cli_readme))
+        .route("/api/fetch_skill_audit", post(handlers::marketplace::fetch_skill_audit))
+        // Install
+        .route("/api/install_from_git", post(handlers::install::install_from_git))
+        .route("/api/install_from_marketplace", post(handlers::install::install_from_marketplace))
+        .route("/api/install_from_local", post(handlers::install::install_from_local))
+        .route("/api/install_to_agent", post(handlers::install::install_to_agent))
+        .route("/api/update_extension", post(handlers::install::update_extension))
+        .route("/api/check_updates", post(handlers::install::check_updates))
+        .route("/api/get_cached_update_statuses", post(handlers::install::get_cached_update_statuses))
+        .route("/api/get_cli_with_children", post(handlers::install::get_cli_with_children))
+        .route("/api/get_skill_locations", post(handlers::install::get_skill_locations));
 
     Router::new()
         .merge(api)
