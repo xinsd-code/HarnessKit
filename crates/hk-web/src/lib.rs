@@ -1,6 +1,6 @@
 mod auth;
 mod handlers;
-mod router;
+pub mod router;
 pub mod state;
 
 use hk_core::{adapter, store::Store};

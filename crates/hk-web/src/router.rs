@@ -1,16 +1,22 @@
 use axum::{
     Router,
+    body::Body,
     middleware,
     routing::{get, post},
     response::{Html, IntoResponse},
-    http::StatusCode,
+    http::{StatusCode, Uri, header},
     Json,
 };
 use hk_core::HkError;
+use rust_embed::RustEmbed;
 
 use crate::auth::require_token;
 use crate::handlers;
 use crate::state::WebState;
+
+#[derive(RustEmbed)]
+#[folder = "../../dist/"]
+struct FrontendAssets;
 
 pub struct ApiError(StatusCode, HkError);
 
@@ -106,10 +112,35 @@ pub fn build_router(state: WebState) -> Router {
 
     Router::new()
         .merge(api)
+        .fallback(serve_frontend)
         .layer(middleware::from_fn_with_state(state.clone(), require_token))
         .with_state(state)
 }
 
 async fn health() -> Html<&'static str> {
     Html("ok")
+}
+
+async fn serve_frontend(uri: Uri) -> impl IntoResponse {
+    let path = uri.path().trim_start_matches('/');
+    // Try exact path first, then fall back to index.html (SPA routing)
+    let (file, mime_path) = match FrontendAssets::get(path) {
+        Some(f) => (Some(f), path),
+        None => (FrontendAssets::get("index.html"), "index.html"),
+    };
+
+    match file {
+        Some(content) => {
+            let mime = mime_guess::from_path(mime_path)
+                .first_or_octet_stream()
+                .to_string();
+            (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, mime)],
+                Body::from(content.data.to_vec()),
+            )
+                .into_response()
+        }
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
