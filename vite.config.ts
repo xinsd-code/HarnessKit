@@ -22,6 +22,12 @@ export default defineConfig({
     host: host || false,
     hmr: host ? { protocol: "ws", host, port: 1421 } : undefined,
     watch: { ignored: ["**/crates/**"] },
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:8022",
+        changeOrigin: true,
+      },
+    },
   },
   build: {
     rollupOptions: {
