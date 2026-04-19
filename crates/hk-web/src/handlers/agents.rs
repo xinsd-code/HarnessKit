@@ -10,7 +10,10 @@ use crate::state::WebState;
 type Result<T> = std::result::Result<Json<T>, ApiError>;
 
 /// Resolve `~` and validate custom config paths (mirrors desktop logic).
-fn resolve_and_validate_config_path(path: &str) -> std::result::Result<String, hk_core::HkError> {
+fn resolve_and_validate_config_path(
+    path: &str,
+    store: &hk_core::store::Store,
+) -> std::result::Result<String, hk_core::HkError> {
     let resolved = if path.starts_with("~/") {
         dirs::home_dir()
             .map(|h| h.join(&path[2..]).to_string_lossy().to_string())
@@ -24,13 +27,12 @@ fn resolve_and_validate_config_path(path: &str) -> std::result::Result<String, h
         ));
     }
     let resolved_path = std::path::Path::new(&resolved);
-    let home = dirs::home_dir()
-        .ok_or_else(|| hk_core::HkError::Internal("Cannot determine home directory".into()))?;
-    if !resolved_path.starts_with(&home) {
+    if !super::is_path_allowed(resolved_path, store) {
         return Err(hk_core::HkError::PathNotAllowed(
-            "Custom config paths must be within your home directory".into(),
+            "Custom config paths must be within your home directory or a registered project".into(),
         ));
     }
+    let home = dirs::home_dir().unwrap_or_default();
     if resolved_path == home {
         return Err(hk_core::HkError::Validation(
             "Cannot use home directory itself as a config path".into(),
@@ -224,8 +226,8 @@ pub async fn add_custom_config_path(
     Json(params): Json<AddCustomConfigPathParams>,
 ) -> Result<i64> {
     blocking(move || {
-        let resolved = resolve_and_validate_config_path(&params.path)?;
         let store = state.store.lock();
+        let resolved = resolve_and_validate_config_path(&params.path, &store)?;
         Ok(store.add_custom_config_path(&params.agent, &resolved, &params.label, &params.category)?)
     }).await
 }
@@ -243,8 +245,8 @@ pub async fn update_custom_config_path(
     Json(params): Json<UpdateCustomConfigPathParams>,
 ) -> Result<()> {
     blocking(move || {
-        let resolved = resolve_and_validate_config_path(&params.path)?;
         let store = state.store.lock();
+        let resolved = resolve_and_validate_config_path(&params.path, &store)?;
         store.update_custom_config_path(params.id, &resolved, &params.label, &params.category)?;
         Ok(())
     }).await

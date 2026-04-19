@@ -150,18 +150,18 @@ pub struct ReadConfigPreviewParams {
 }
 
 pub async fn read_config_file_preview(
-    State(_state): State<WebState>,
+    State(state): State<WebState>,
     Json(params): Json<ReadConfigPreviewParams>,
 ) -> Result<String> {
     blocking(move || {
-        let home = dirs::home_dir().unwrap_or_default();
         let file_path = std::path::Path::new(&params.path);
         if !file_path.exists() {
             return Err(hk_core::HkError::NotFound("File not found".into()));
         }
         let canonical = std::fs::canonicalize(file_path)
             .map_err(|_| hk_core::HkError::NotFound("File not found".into()))?;
-        if !canonical.starts_with(&home) {
+        let store = state.store.lock();
+        if !super::is_path_allowed(&canonical, &store) {
             return Err(hk_core::HkError::PermissionDenied("Path not allowed".into()));
         }
 

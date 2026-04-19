@@ -491,8 +491,8 @@ pub async fn list_skill_files(
                 || canonical.starts_with(a.base_dir())
         });
         if !allowed {
-            let home = dirs::home_dir().unwrap_or_default();
-            if !canonical.starts_with(&home) {
+            let store = state.store.lock();
+            if !super::is_path_allowed(&canonical, &store) {
                 return Err(hk_core::HkError::PathNotAllowed(
                     "Path is not within a known agent directory".into(),
                 ));
