@@ -278,8 +278,8 @@ If you prefer not to use the install script, or your machine doesn't have `curl`
 
    ```powershell
    # Windows (PowerShell)
-   New-Item -ItemType Directory -Force -Path "$env:LOCALAPPDATA\Programs\HarnessKit" | Out-Null
-   Move-Item <file> "$env:LOCALAPPDATA\Programs\HarnessKit\hk.exe"
+   New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.local\bin" | Out-Null
+   Move-Item <file> "$env:USERPROFILE\.local\bin\hk.exe"
    hk serve
    ```
 
