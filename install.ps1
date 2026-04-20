@@ -6,12 +6,16 @@
 
 $ErrorActionPreference = "Stop"
 
+# Ensure TLS 1.2 (required by GitHub, not default on PowerShell 5.1)
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 $Repo = "RealZST/HarnessKit"
 $Binary = "hk-windows-x64.exe"
 $InstallDir = Join-Path $env:USERPROFILE ".local\bin"
 
 # Get latest release tag
-$Release = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest"
+$Headers = @{ "User-Agent" = "HarnessKit-Installer" }
+$Release = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" -Headers $Headers
 $Tag = $Release.tag_name
 if (-not $Tag) {
     Write-Error "Failed to fetch latest release"
