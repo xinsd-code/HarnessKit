@@ -215,7 +215,7 @@ Already installed? Open **Settings → Check for Updates** to upgrade in-app.
    hk serve
    ```
 
-   Your browser will open automatically at `http://localhost:7070`.
+   Then open `http://localhost:7070` in your browser.
 
 #### Remote server
 
@@ -273,17 +273,15 @@ If you prefer not to use the install script, or your machine doesn't have `curl`
    chmod +x <file>
    mkdir -p ~/.local/bin
    mv <file> ~/.local/bin/hk
-   hk serve
    ```
 
    ```powershell
    # Windows (PowerShell)
    New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.local\bin" | Out-Null
    Move-Item <file> "$env:USERPROFILE\.local\bin\hk.exe"
-   hk serve
    ```
 
-   Your browser will open automatically at `http://localhost:7070`.
+   Then run `hk serve` and open `http://localhost:7070` in your browser.
 
    **If using on a remote server**, upload the binary, install it, and start HarnessKit:
 

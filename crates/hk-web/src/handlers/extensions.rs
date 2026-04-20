@@ -486,9 +486,10 @@ pub async fn list_skill_files(
         // Validate path is within an allowed agent directory
         let canonical = path.canonicalize()
             .map_err(|_| hk_core::HkError::NotFound("Cannot resolve path".into()))?;
+        let normalized = super::normalize(&canonical);
         let allowed = state.adapters.iter().any(|a| {
-            a.skill_dirs().iter().any(|d| canonical.starts_with(d))
-                || canonical.starts_with(a.base_dir())
+            a.skill_dirs().iter().any(|d| normalized.starts_with(d))
+                || normalized.starts_with(a.base_dir())
         });
         if !allowed {
             let store = state.store.lock();

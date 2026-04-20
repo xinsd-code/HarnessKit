@@ -146,13 +146,13 @@ pub async fn list_agent_configs(
             let existing_paths: std::collections::HashSet<String> = config_files
                 .iter()
                 .filter_map(|f| std::path::Path::new(&f.path).canonicalize().ok())
-                .map(|p| p.to_string_lossy().to_string())
+                .map(|p| super::normalize(&p).to_string_lossy().to_string())
                 .collect();
             if let Ok(custom_paths) = store.list_custom_config_paths(a.name()) {
                 for (id, path, label, category_str) in custom_paths {
                     let canonical = std::path::Path::new(&path)
                         .canonicalize()
-                        .map(|p| p.to_string_lossy().to_string())
+                        .map(|p| super::normalize(&p).to_string_lossy().to_string())
                         .unwrap_or_else(|_| path.clone());
                     if existing_paths.contains(&canonical) {
                         continue;
