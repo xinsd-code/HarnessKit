@@ -36,6 +36,7 @@ pub async fn add_project(
         let project_path = std::path::Path::new(&params.path)
             .canonicalize()
             .map_err(|e| hk_core::HkError::CommandFailed(format!("Invalid path: {}", e)))?;
+        let project_path = super::normalize(&project_path);
         let path = project_path.to_string_lossy().to_string();
 
         // Validate the path contains project markers for any supported agent
