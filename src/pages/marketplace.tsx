@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { InstallDialog } from "@/components/extensions/install-dialog";
+import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { Hint } from "@/components/shared/hint";
 import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
 import { humanizeError } from "@/lib/errors";
@@ -715,22 +716,21 @@ export default function MarketplacePage() {
                                 "disabled:opacity-50",
                             )}
                           >
+                            <div className={isInstalled ? "" : "opacity-90"}>
+                              <AgentMascot name={agent.name} size={14} />
+                            </div>
+                            <span className={isInstalled ? "install-success-text" : ""}>
+                              {agentDisplayName(agent.name)}
+                            </span>
                             {isInstalled ? (
                               <ShieldCheck
-                                size={12}
-                                className="animate-scale-in text-primary"
+                                size={14}
+                                className="animate-scale-in text-primary shrink-0"
                               />
                             ) : isInstallingThis ? (
-                              <Loader2 size={12} className="animate-spin" />
+                              <Loader2 size={12} className="animate-spin shrink-0 text-muted-foreground" />
                             ) : (
-                              <Download size={12} />
-                            )}
-                            {isInstalled ? (
-                              <span className="install-success-text">
-                                Installed
-                              </span>
-                            ) : (
-                              agentDisplayName(agent.name)
+                              <Download size={12} className="shrink-0 text-muted-foreground" />
                             )}
                           </button>
                         );
