@@ -542,6 +542,13 @@
   --toast-info-text: oklch(0.78 0.1 260);
 }
 
+/* Tiesen dark on web: sidebar↔background gap is only 0.025 in lightness,
+   which desktop masks via vibrancy lift but web cannot. Brighten
+   --background to restore visible separation against sidebar. */
+html.dark[data-theme="tiesen"][data-web="true"] {
+  --background: oklch(0.175 0.012 267);
+}
+
 /* ============================================================
    @theme inline — maps CSS vars to Tailwind utility tokens
    ============================================================ */
@@ -645,6 +652,21 @@
   body,
   #root {
     background: transparent;
+  }
+  /* Web mode: lock the browser's canvas color to our theme so the
+     translucent bg-sidebar/25 layer has a stable backdrop regardless of
+     OS prefers-color-scheme or Chrome's Force Dark Mode. `only` defeats
+     Force Dark. Scoped to [data-web] so Tauri vibrancy stays intact. */
+  html[data-web="true"]      { color-scheme: only light; }
+  html.dark[data-web="true"] { color-scheme: only dark; }
+
+  /* Web dark: UA's default dark canvas is a generic gray — paint our
+     actual sidebar color so the frosted layer composites correctly.
+     (Light mode intentionally bleeds to the white UA canvas — cleaner.) */
+  html.dark[data-web="true"],
+  html.dark[data-web="true"] body,
+  html.dark[data-web="true"] #root {
+    background: var(--sidebar);
   }
   body {
     @apply text-foreground;

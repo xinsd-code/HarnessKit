@@ -107,6 +107,9 @@ export default function App() {
     } else {
       root.classList.remove("dark");
     }
+    if (!isDesktop()) {
+      root.setAttribute("data-web", "true");
+    }
     // Force macOS vibrancy to match — "light" | "dark" | null (system)
     if (isDesktop()) {
       getCurrentWindow()
