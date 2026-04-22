@@ -30,6 +30,14 @@ echo "    Updated package.json"
 sed -i '' "s/\"version\": \".*\"/\"version\": \"${VERSION}\"/" "$ROOT/crates/hk-desktop/tauri.conf.json"
 echo "    Updated tauri.conf.json"
 
+# 4. Cargo.lock — run cargo check to sync workspace crate versions
+echo "    Syncing Cargo.lock via cargo check..."
+(cd "$ROOT" && cargo check --workspace --quiet)
+
+# 5. package-lock.json — sync top-level version
+echo "    Syncing package-lock.json..."
+(cd "$ROOT" && npm install --package-lock-only --silent)
+
 echo "==> All files updated to v${VERSION}"
 echo ""
 echo "Next steps:"
