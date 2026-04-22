@@ -303,6 +303,12 @@ If you prefer not to use the install script, or your machine doesn't have `curl`
    ssh -L 7070:localhost:7070 user@your-server
    ```
 
+#### Updating
+
+Re-run the install script from [Local machine](#local-machine) or [Remote server](#remote-server) above — both scripts overwrite the existing `hk` binary. After updating, restart `hk serve` to pick up the new version.
+
+If you installed via manual download, grab the latest binary from [releases](https://github.com/RealZST/HarnessKit/releases/latest) and replace your existing `hk` (or `hk.exe`).
+
 ### ⌨️ CLI (macOS / Linux / Windows)
 
 If you've already installed HarnessKit via the [Web Mode](#-web-mode-macos--linux--windows) steps above, the CLI is ready to use — it's the same `hk` binary.
@@ -316,6 +322,12 @@ See [CLI Support](#%EF%B8%8F-cli-support) above for the full list of commands.
 - 🤖 **More Agents** — Hermes-agent, OpenClaw, OpenCode, and more
 - 📦 **Extension Migration** — Export/import your extension setup between devices
 - ⌨️ **CLI Enhancements** — More commands and richer functionality for `hk`
+
+---
+
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, project structure, and PR guidelines.
 
 ---
 
