@@ -221,12 +221,50 @@ export default function MarketplacePage() {
     install,
   } = useMarketplaceStore();
   const { agents, fetch: fetchAgents, agentOrder } = useAgentStore();
+  const extensions = useExtensionStore((s) => s.extensions);
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [justInstalled, setJustInstalled] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [showInstall, setShowInstall] = useState(false);
   const [installMode, setInstallMode] = useState<"git" | "local">("git");
   const detailPanelRef = useRef<HTMLDivElement>(null);
+
+  const isItemInstalled = (item: MarketplaceItem, agentName: string) => {
+    const key = `${item.id}:${agentName}`;
+    if (installed.has(key)) return true;
+
+    return extensions.some((ext) => {
+      if (!ext.agents.includes(agentName)) return false;
+      
+      if (item.kind === "skill") {
+        if (!["skill", "plugin"].includes(ext.kind)) return false;
+      } else {
+        if (ext.kind !== item.kind) return false;
+      }
+
+      const extUrl = ext.install_meta?.url_resolved ?? ext.install_meta?.url ?? ext.source.url;
+      let extSource = "";
+      if (extUrl) {
+        const match = extUrl.match(/github\.com\/([^/]+\/[^/]+)/);
+        extSource = match ? match[1].replace(/\.git$/, "") : extUrl;
+      }
+      if (!extSource && ext.pack) extSource = ext.pack;
+
+      const matchSource = extSource === item.source || ext.pack === item.source;
+
+      if (item.kind === "skill") {
+        // If the extension was installed as a full plugin, it covers all skills in that repo
+        if (ext.kind === "plugin") {
+          return matchSource;
+        }
+
+        const targetName = item.skill_id && item.skill_id.length > 0 ? item.skill_id : item.name;
+        return ext.name === targetName && matchSource;
+      }
+      
+      return ext.name === item.name && matchSource;
+    });
+  };
 
   const prefersReducedMotion = () =>
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -653,7 +691,7 @@ export default function MarketplacePage() {
                     <div className="flex flex-wrap gap-1.5" aria-live="polite">
                       {detectedAgents.map((agent) => {
                         const key = `${selectedItem.id}:${agent.name}`;
-                        const isInstalled = installed.has(key);
+                        const isInstalled = isItemInstalled(selectedItem, agent.name);
                         const isFlashing = justInstalled.has(key);
                         const isInstallingThis = installing === key;
                         const isInstallingAny =
