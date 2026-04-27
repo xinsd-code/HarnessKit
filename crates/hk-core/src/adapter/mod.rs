@@ -5,6 +5,7 @@ pub mod copilot;
 pub mod cursor;
 pub mod gemini;
 pub mod hook_events;
+pub mod windsurf;
 
 use std::path::PathBuf;
 
@@ -50,6 +51,8 @@ pub enum HookFormat {
     Cursor,
     /// Copilot: {"version": 1, "hooks": {"event": [{"type": "command", "bash": "cmd"}]}}
     Copilot,
+    /// Windsurf: {"hooks": {"event": [{"command": "cmd"}]}}
+    Windsurf,
     /// Agent does not support hooks
     None,
 }
@@ -138,6 +141,18 @@ pub trait AgentAdapter: Send + Sync {
     fn project_ignore_patterns(&self) -> Vec<String> {
         vec![]
     }
+
+    /// Global workflow/command files (absolute paths). Workflows are user-invocable
+    /// reusable step sequences (e.g. Windsurf `/<name>` slash commands), distinct
+    /// from settings (mcp/hooks) and rules (passive context).
+    fn global_workflow_files(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+
+    /// Relative paths/globs for workflow/command files within a project dir.
+    fn project_workflow_patterns(&self) -> Vec<String> {
+        vec![]
+    }
 }
 
 /// Returns all agent adapters in canonical display order.
@@ -150,6 +165,7 @@ pub fn all_adapters() -> Vec<Box<dyn AgentAdapter>> {
         Box::new(cursor::CursorAdapter::new()),
         Box::new(antigravity::AntigravityAdapter::new()),
         Box::new(copilot::CopilotAdapter::new()),
+        Box::new(windsurf::WindsurfAdapter::new()),
     ]
 }
 
@@ -158,9 +174,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_all_adapters_returns_six() {
+    fn test_all_adapters_returns_seven() {
         let adapters = all_adapters();
-        assert_eq!(adapters.len(), 6);
+        assert_eq!(adapters.len(), 7);
         let names: Vec<&str> = adapters.iter().map(|a| a.name()).collect();
         assert!(names.contains(&"claude"));
         assert!(names.contains(&"cursor"));
@@ -168,6 +184,7 @@ mod tests {
         assert!(names.contains(&"gemini"));
         assert!(names.contains(&"antigravity"));
         assert!(names.contains(&"copilot"));
+        assert!(names.contains(&"windsurf"));
     }
 
     #[test]
@@ -181,6 +198,8 @@ mod tests {
             let _ = a.project_memory_patterns();
             let _ = a.project_settings_patterns();
             let _ = a.project_ignore_patterns();
+            let _ = a.global_workflow_files();
+            let _ = a.project_workflow_patterns();
         }
     }
 }
