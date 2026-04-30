@@ -27,6 +27,15 @@ pub struct Extension {
     pub cli_parent_id: Option<String>,
     pub cli_meta: Option<CliMeta>,
     pub install_meta: Option<InstallMeta>,
+    /// Whether this extension is installed globally (e.g. ~/.claude/skills) or
+    /// inside a specific project (e.g. <project>/.claude/skills). Defaults to
+    /// Global for backwards compatibility with rows scanned before scope tracking.
+    #[serde(default = "default_scope_global")]
+    pub scope: ConfigScope,
+}
+
+fn default_scope_global() -> ConfigScope {
+    ConfigScope::Global
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -397,6 +406,19 @@ impl ConfigCategory {
 pub enum ConfigScope {
     Global,
     Project { name: String, path: String },
+}
+
+impl ConfigScope {
+    /// Stable string identity for a scope. `Project` keys on `path` only —
+    /// renaming a project (changing `name`) shouldn't be treated as a
+    /// different scope. Mirrors the TS `scopeKey()` helper so the wire
+    /// representations agree.
+    pub fn scope_key(&self) -> String {
+        match self {
+            ConfigScope::Global => "global".into(),
+            ConfigScope::Project { path, .. } => format!("project:{path}"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

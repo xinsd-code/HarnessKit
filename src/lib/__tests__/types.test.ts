@@ -34,11 +34,12 @@ describe("extensionGroupKey", () => {
     cli_parent_id: null,
     cli_meta: null,
     install_meta: null,
+    scope: { type: "global" },
   };
 
-  it("produces a stable key from kind, name, origin, and developer", () => {
+  it("produces a stable key from kind, name, and developer", () => {
     const key = extensionGroupKey(baseExt);
-    expect(key).toBe("skill\0my-skill\0git\0alice/repo");
+    expect(key).toBe("skill\0my-skill\0alice/repo");
   });
 
   it("strips .git suffix from GitHub URLs", () => {
@@ -46,10 +47,171 @@ describe("extensionGroupKey", () => {
     expect(key).not.toContain(".git");
   });
 
-  it("handles null source URL", () => {
+  it("falls back to scope key when no URL is available", () => {
+    // Truly sourceless extensions (no source.url, no install_meta, no
+    // pack) use scopeKey as the developer slot so two unrelated same-
+    // named skills in different scopes don't accidentally merge.
     const ext = { ...baseExt, source: { ...baseExt.source, url: null } };
     const key = extensionGroupKey(ext);
-    expect(key).toBe("skill\0my-skill\0git\0");
+    expect(key).toBe("skill\0my-skill\0(global)");
+  });
+
+  it("merges same-name same-developer skills regardless of origin", () => {
+    // Same logical skill installed two ways: registry + local copy.
+    // They should fold into the same group so the UI shows one row.
+    const fromRegistry: Extension = {
+      ...baseExt,
+      source: { ...baseExt.source, origin: "registry" },
+    };
+    const fromLocal: Extension = {
+      ...baseExt,
+      source: { ...baseExt.source, origin: "local" },
+    };
+    expect(extensionGroupKey(fromRegistry)).toBe(extensionGroupKey(fromLocal));
+  });
+
+  it("keeps different developers' same-named skills separate", () => {
+    // Two different lints both named "lint": shouldn't silently collapse.
+    const aliceLint: Extension = {
+      ...baseExt,
+      name: "lint",
+      source: {
+        ...baseExt.source,
+        url: "https://github.com/alice/lint.git",
+      },
+    };
+    const bobLint: Extension = {
+      ...baseExt,
+      name: "lint",
+      source: {
+        ...baseExt.source,
+        url: "https://github.com/bob/lint.git",
+      },
+    };
+    expect(extensionGroupKey(aliceLint)).not.toBe(extensionGroupKey(bobLint));
+  });
+
+  it("falls back to install_meta.url when source.url is null", () => {
+    // Marketplace-installed skills end up with source.url=null (scanner
+    // re-discovers them as agent files), but install_meta.url carries the
+    // authoritative origin. The 6 copies of pbakaus/impeccable/audit
+    // deployed across agents should group together — and stay separate
+    // from a same-named hand-written project skill that has neither field.
+    const marketplaceCopy: Extension = {
+      ...baseExt,
+      name: "audit",
+      source: { ...baseExt.source, origin: "agent", url: null },
+      install_meta: {
+        install_type: "marketplace",
+        url: "https://github.com/pbakaus/impeccable/audit",
+        url_resolved: null,
+        branch: null,
+        subpath: null,
+        revision: null,
+        remote_revision: null,
+        checked_at: null,
+        check_error: null,
+      },
+    };
+    const handWrittenProject: Extension = {
+      ...baseExt,
+      name: "audit",
+      source: { ...baseExt.source, origin: "agent", url: null },
+      install_meta: null,
+      scope: { type: "project", name: "test", path: "/tmp/test" },
+    };
+    expect(extensionGroupKey(marketplaceCopy)).toBe(
+      "skill\0audit\0pbakaus/impeccable",
+    );
+    expect(extensionGroupKey(handWrittenProject)).toBe(
+      "skill\0audit\0(/tmp/test)",
+    );
+    expect(extensionGroupKey(marketplaceCopy)).not.toBe(
+      extensionGroupKey(handWrittenProject),
+    );
+  });
+
+  it("uses pack as a user-driven tiebreaker for unlinked rows", () => {
+    // Real-world case: arxiv-search was deployed to 4 agents but only the
+    // agent that received the original `hk install` carries install_meta.
+    // The other three rows had no source.url, no install_meta, no pack —
+    // so they grouped together separately from the codex row. Letting the
+    // user type "yorkeccak/scientific-skills" into the pack input on the
+    // 3-row group should merge them with the codex row.
+    const codexCopy: Extension = {
+      ...baseExt,
+      name: "arxiv-search",
+      source: { ...baseExt.source, origin: "agent", url: null },
+      install_meta: {
+        install_type: "marketplace",
+        url: "https://github.com/yorkeccak/scientific-skills",
+        url_resolved: null,
+        branch: null,
+        subpath: null,
+        revision: null,
+        remote_revision: null,
+        checked_at: null,
+        check_error: null,
+      },
+    };
+    const otherCopyAfterUserPack: Extension = {
+      ...baseExt,
+      name: "arxiv-search",
+      source: { ...baseExt.source, origin: "agent", url: null },
+      install_meta: null,
+      pack: "yorkeccak/scientific-skills",
+    };
+    expect(extensionGroupKey(codexCopy)).toBe(
+      extensionGroupKey(otherCopyAfterUserPack),
+    );
+  });
+
+  it("splits sourceless same-named skills across scopes", () => {
+    // Concrete reproducer from a real DB: a hand-written
+    // `code-review` skill in a project + an unrelated agent-bundled
+    // `code-review` skill at copilot's global skill dir. Both have no
+    // source.url, no install_meta, no pack — pre-fix they collapsed
+    // into a single group row even though they're independent skills.
+    // With scopeKey as the sourceless tiebreaker they stay separate.
+    const projectCodeReview: Extension = {
+      ...baseExt,
+      name: "code-review",
+      source: { ...baseExt.source, url: null },
+      install_meta: null,
+      pack: null,
+      scope: {
+        type: "project",
+        name: "hk-scope-test",
+        path: "/Users/zoe/Downloads/hk-scope-test",
+      },
+    };
+    const globalCodeReview: Extension = {
+      ...projectCodeReview,
+      agents: ["copilot"],
+      scope: { type: "global" },
+    };
+    expect(extensionGroupKey(projectCodeReview)).not.toBe(
+      extensionGroupKey(globalCodeReview),
+    );
+  });
+
+  it("splits sourceless same-named skills across different projects", () => {
+    // Two unrelated projects each with a hand-written `foo` skill —
+    // scopeKey includes the project path so they remain in separate
+    // groups (instead of merging just because both lack a URL).
+    const fooInAlpha: Extension = {
+      ...baseExt,
+      name: "foo",
+      source: { ...baseExt.source, url: null },
+      install_meta: null,
+      pack: null,
+      scope: { type: "project", name: "alpha", path: "/Users/me/alpha" },
+    };
+    const fooInBeta: Extension = {
+      ...fooInAlpha,
+      scope: { type: "project", name: "beta", path: "/Users/me/beta" },
+    };
+    expect(extensionGroupKey(fooInAlpha)).not.toBe(extensionGroupKey(fooInBeta));
   });
 });
 

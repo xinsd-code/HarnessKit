@@ -33,6 +33,9 @@ export interface Extension {
   cli_parent_id: string | null;
   cli_meta: CliMeta | null;
   install_meta: InstallMeta | null;
+  /** Whether this extension is installed globally or in a specific project.
+   *  Defaults to global on rows scanned before scope tracking (DB v3+). */
+  scope: ConfigScope;
 }
 
 export interface Source {
@@ -84,9 +87,22 @@ function extractDeveloper(url: string | null): string {
   return url;
 }
 
-/** Stable grouping key: same kind + name + origin + developer → same group.
+/** Stable grouping key: same kind + name + developer → same group.
+ *  Origin is intentionally excluded so the same logical skill installed in
+ *  different scopes (e.g. global registry copy + project-local copy) or via
+ *  different install methods (git clone vs. marketplace) folds into one row;
+ *  the merged row exposes both instances.
+ *
  *  For hooks, group by command only (ignore event name) so the same command
- *  deployed to agents with different event names merges into one row. */
+ *  deployed to agents with different event names merges into one row.
+ *
+ *  URL resolution: marketplace-installed skills end up with `source.url=null`
+ *  because the scanner re-discovers them as files in agent skill dirs and has
+ *  no way to know they came from a marketplace. The authoritative "where did
+ *  this come from" record lives in `install_meta.url` (written by HK at
+ *  install time). Fall back to it so the 6 marketplace copies of the same
+ *  skill group together and stay separate from a same-named hand-written
+ *  project skill (which has neither field set). */
 export function extensionGroupKey(ext: Extension): string {
   let name = ext.name;
   if (ext.kind === "hook") {
@@ -96,7 +112,25 @@ export function extensionGroupKey(ext: Extension): string {
       name = parts.slice(2).join(":");
     }
   }
-  return `${ext.kind}\0${name}\0${ext.source.origin}\0${extractDeveloper(ext.source.url)}`;
+  // Resolution order: source.url → install_meta.url → pack (synthesized to
+  // a github URL so extractDeveloper handles it uniformly). `pack` is a
+  // user-editable field on the detail panel; treating it as a tiebreaker
+  // means a user can merge two unlinked rows into one group by typing the
+  // owner/repo identifier (e.g. arxiv-search where only one of four
+  // copies carries install_meta from the original install).
+  const url =
+    ext.source.url ??
+    ext.install_meta?.url ??
+    (ext.pack ? `https://github.com/${ext.pack}` : null);
+  // When everything else is null (truly sourceless, e.g. a hand-written
+  // project skill or an agent-bundled global skill the user never linked),
+  // fall back to scopeKey so a project-level "code-review" doesn't
+  // accidentally merge with an unrelated global "code-review" of the same
+  // name. A future install-to-project of a marketplace skill will set
+  // install_meta and the URL branch above wins, so it correctly merges
+  // with same-source siblings in other scopes.
+  const developer = url ? extractDeveloper(url) : `(${scopeKey(ext.scope)})`;
+  return `${ext.kind}\0${name}\0${developer}`;
 }
 
 /** Sort agent name strings by canonical display order. */
@@ -159,6 +193,17 @@ export type ConfigCategory =
 export type ConfigScope =
   | { type: "global" }
   | { type: "project"; name: string; path: string };
+
+/** Stable identifier for a scope, suitable for use as a Map key or filter value.
+ *  "global" for the global scope; the project path for project scopes. */
+export function scopeKey(scope: ConfigScope): string {
+  return scope.type === "global" ? "global" : scope.path;
+}
+
+/** Human-readable label for a scope (e.g. "Global" or "myapp"). */
+export function scopeLabel(scope: ConfigScope): string {
+  return scope.type === "global" ? "Global" : scope.name;
+}
 
 export interface AgentConfigFile {
   path: string;

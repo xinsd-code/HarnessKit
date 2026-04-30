@@ -7,6 +7,7 @@ pub mod gemini;
 pub mod hook_events;
 pub mod windsurf;
 
+use crate::models::ConfigScope;
 use std::path::PathBuf;
 
 /// Represents an MCP server entry parsed from an agent's config
@@ -83,6 +84,16 @@ pub trait AgentAdapter: Send + Sync {
     }
     fn read_mcp_servers(&self) -> Vec<McpServerEntry>;
     fn read_hooks(&self) -> Vec<HookEntry>;
+    /// Parse MCP servers from a specific config file (e.g. a project's `.mcp.json`).
+    /// Default returns empty — only adapters that support project-level MCP override.
+    fn read_mcp_servers_from(&self, _path: &std::path::Path) -> Vec<McpServerEntry> {
+        vec![]
+    }
+    /// Parse hooks from a specific config file (e.g. a project's `.claude/settings.json`).
+    /// Default returns empty — only adapters that support project-level hooks override.
+    fn read_hooks_from(&self, _path: &std::path::Path) -> Vec<HookEntry> {
+        vec![]
+    }
     fn read_plugins(&self) -> Vec<PluginEntry> {
         vec![]
     }
@@ -162,6 +173,57 @@ pub trait AgentAdapter: Send + Sync {
     /// Relative paths/globs for workflow/command files within a project dir.
     fn project_workflow_patterns(&self) -> Vec<String> {
         vec![]
+    }
+
+    // --- Project-level extension scanning ---
+    // These describe where this agent looks for project-scoped extensions.
+    // Default empty/None means the agent has no project-level support and the
+    // scanner skips it.
+
+    /// Relative dir patterns within a project that contain skill subdirectories
+    /// (e.g. `.claude/skills` for Claude — each subdirectory inside is one skill).
+    fn project_skill_dirs(&self) -> Vec<String> {
+        vec![]
+    }
+
+    /// Relative path of the project-level MCP config file (e.g. `.mcp.json`).
+    fn project_mcp_config_relpath(&self) -> Option<String> {
+        None
+    }
+
+    /// Relative path of the project-level hook config file
+    /// (e.g. `.claude/settings.json` for Claude).
+    fn project_hook_config_relpath(&self) -> Option<String> {
+        None
+    }
+
+    /// Relative dir patterns within a project that contain plugins.
+    fn project_plugin_dirs(&self) -> Vec<String> {
+        vec![]
+    }
+
+    /// Resolve the MCP config file for a given scope.
+    /// - `Global` → adapter's user-scope path (`mcp_config_path()`).
+    /// - `Project` → `<project>/<project_mcp_config_relpath()>`, or `None`
+    ///   if the adapter has no project-level MCP support.
+    fn mcp_config_path_for(&self, scope: &ConfigScope) -> Option<PathBuf> {
+        match scope {
+            ConfigScope::Global => Some(self.mcp_config_path()),
+            ConfigScope::Project { path, .. } => self
+                .project_mcp_config_relpath()
+                .map(|rel| std::path::Path::new(path).join(rel)),
+        }
+    }
+
+    /// Resolve the hook config file for a given scope. Mirrors
+    /// `mcp_config_path_for`.
+    fn hook_config_path_for(&self, scope: &ConfigScope) -> Option<PathBuf> {
+        match scope {
+            ConfigScope::Global => Some(self.hook_config_path()),
+            ConfigScope::Project { path, .. } => self
+                .project_hook_config_relpath()
+                .map(|rel| std::path::Path::new(path).join(rel)),
+        }
     }
 }
 
