@@ -278,6 +278,29 @@ pub async fn install_to_agent(
 }
 
 #[derive(Deserialize)]
+pub struct InstallToProjectParams {
+    pub extension_id: String,
+    pub target_agent: String,
+    pub target_scope: ConfigScope,
+}
+
+pub async fn install_to_project(
+    State(state): State<WebState>,
+    Json(params): Json<InstallToProjectParams>,
+) -> Result<String> {
+    blocking(move || {
+        service::install_to_project(
+            &state.store,
+            &state.adapters,
+            &params.extension_id,
+            &params.target_agent,
+            &params.target_scope,
+        )
+    })
+    .await
+}
+
+#[derive(Deserialize)]
 pub struct UpdateExtensionParams {
     pub id: String,
 }

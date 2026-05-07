@@ -1,7 +1,7 @@
 import {
   Bot,
-  FilePenLine,
-  Lightbulb,
+  FolderKanban,
+  FolderOpen,
   Package,
   Puzzle,
   RefreshCw,
@@ -9,76 +9,32 @@ import {
   Shield,
   ShoppingBag,
   Terminal,
+  TriangleAlert,
   Webhook,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AgentCard } from "@/components/shared/agent-card";
-import { api } from "@/lib/invoke";
-import type { AgentDetail, DashboardStats } from "@/lib/types";
-import {
-  agentDisplayName,
-  extensionGroupKey,
-  formatRelativeTime,
-  sortAgents,
-} from "@/lib/types";
+import type { DashboardStats, Project } from "@/lib/types";
+import { sortAgents } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useAuditStore } from "@/stores/audit-store";
-import { buildGroups, useExtensionStore } from "@/stores/extension-store";
+import {
+  buildGroups,
+  filterSkillTabGroups,
+  useExtensionStore,
+} from "@/stores/extension-store";
+import { useProjectStore } from "@/stores/project-store";
 import { toast } from "@/stores/toast-store";
-
-// ---------------------------------------------------------------------------
-// Tip of the Day types & helpers
-// ---------------------------------------------------------------------------
-
-interface Tip {
-  agent: string;
-  tip: string;
-  source?: string;
-}
-
-const TIPS_URL =
-  "https://raw.githubusercontent.com/RealZST/harnesskit-resources/main/tips/tips.json";
-const TIPS_CACHE_KEY = "harnesskit-tips-cache";
-
-async function fetchTips(): Promise<Tip[]> {
-  try {
-    const res = await fetch(TIPS_URL);
-    if (!res.ok) throw new Error("fetch failed");
-    const tips: Tip[] = await res.json();
-    localStorage.setItem(TIPS_CACHE_KEY, JSON.stringify(tips));
-    return tips;
-  } catch {
-    const cached = localStorage.getItem(TIPS_CACHE_KEY);
-    if (cached) {
-      try {
-        return JSON.parse(cached) as Tip[];
-      } catch {
-        localStorage.removeItem(TIPS_CACHE_KEY);
-      }
-    }
-    return [];
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Recent Activity types
-// ---------------------------------------------------------------------------
-
-interface ActivityItem {
-  type: "extension" | "config";
-  kind?: string;
-  label: string;
-  sublabel: string;
-  timestamp: number;
-  /** Click handler that should setScope (so the destination page sees the
-   *  right scope) BEFORE navigating. Overview is scope-agnostic, so deep
-   *  links must carry their own scope context. */
-  onSelect: () => void;
-}
 
 function formatTerminalCount(value: number) {
   return value >= 100 ? String(value) : String(value).padStart(2, "0");
+}
+
+function shortPath(path: string) {
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length <= 3) return path;
+  return `.../${parts.slice(-3).join("/")}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +106,85 @@ function QuickAction({
   );
 }
 
+function ProjectMetric({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string;
+  value: number;
+  icon: React.ElementType;
+}) {
+  return (
+    <div className="rounded-lg border border-border/60 bg-card/50 px-4 py-3">
+      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+        <Icon size={14} strokeWidth={1.75} aria-hidden="true" />
+        {label}
+      </div>
+      <div className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function ProjectOverviewCard({
+  project,
+  extensionCount,
+  agentCount,
+  onClick,
+}: {
+  project: Project;
+  extensionCount: number;
+  agentCount: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="group flex min-w-0 items-center gap-3 rounded-lg border border-border/60 bg-card/40 px-4 py-3 text-left transition-colors hover:border-border hover:bg-card"
+      title={project.path}
+    >
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
+        {project.exists ? (
+          <FolderOpen size={17} strokeWidth={1.75} aria-hidden="true" />
+        ) : (
+          <TriangleAlert size={17} strokeWidth={1.75} aria-hidden="true" />
+        )}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium text-foreground">
+            {project.name}
+          </span>
+          {!project.exists && (
+            <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              Missing
+            </span>
+          )}
+        </div>
+        <div className="mt-1 truncate text-xs text-muted-foreground">
+          {shortPath(project.path)}
+        </div>
+      </div>
+      <div className="shrink-0 text-right text-xs text-muted-foreground">
+        <div>
+          <span className="font-medium text-foreground tabular-nums">
+            {extensionCount}
+          </span>{" "}
+          ext.
+        </div>
+        <div>
+          <span className="font-medium text-foreground tabular-nums">
+            {agentCount}
+          </span>{" "}
+          agents
+        </div>
+      </div>
+    </button>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Loading skeleton
 // ---------------------------------------------------------------------------
@@ -197,31 +232,27 @@ export default function OverviewPage() {
   const agents = useAgentStore((s) => s.agents);
   const fetchAgents = useAgentStore((s) => s.fetch);
   const agentOrder = useAgentStore((s) => s.agentOrder);
+  const projects = useProjectStore((s) => s.projects);
+  const projectsLoaded = useProjectStore((s) => s.loaded);
+  const projectsLoading = useProjectStore((s) => s.loading);
+  const loadProjects = useProjectStore((s) => s.loadProjects);
 
-  const [agentConfigs, setAgentConfigs] = useState<AgentDetail[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
   // updatesLoading now comes from store as checkingUpdates
-  const [tips, setTips] = useState<Tip[]>([]);
   const [localReady, setLocalReady] = useState(false);
 
   useEffect(() => {
     loadCached();
-    // Wait for agents and config files before showing content
-    Promise.all([
-      fetchAgents(),
-      api
-        .listAgentConfigs()
-        .then(setAgentConfigs)
-        .catch((e) => {
-          console.error("Failed to load data:", e);
-        }),
-    ]).then(() => setLocalReady(true));
-    fetchTips()
-      .then(setTips)
+    fetchAgents()
       .catch((e) => {
         console.error("Failed to load data:", e);
-      });
+      })
+      .finally(() => setLocalReady(true));
   }, [loadCached, fetchAgents]);
+
+  useEffect(() => {
+    if (!projectsLoaded && !projectsLoading) loadProjects();
+  }, [loadProjects, projectsLoaded, projectsLoading]);
 
   // Show skeleton until both extensions (fetched in App.tsx) and local data are ready.
   const initialLoaded = localReady && extHasFetched;
@@ -251,7 +282,9 @@ export default function OverviewPage() {
   const stats = useMemo<DashboardStats | null>(() => {
     if (!initialLoaded) return null;
 
-    const skill_count = visibleGroups.filter((g) => g.kind === "skill").length;
+    const skill_count = filterSkillTabGroups(visibleGroups).filter(
+      (g) => g.kind === "skill",
+    ).length;
     const mcp_count = visibleGroups.filter((g) => g.kind === "mcp").length;
     const plugin_count = visibleGroups.filter(
       (g) => g.kind === "plugin",
@@ -323,104 +356,32 @@ export default function OverviewPage() {
     [agents, agentExtCounts, agentOrder],
   );
 
-  // -----------------------------------------------------------------------
-  // Section A: Recent Activity (agent config changes)
-  // -----------------------------------------------------------------------
-  const agentActivityItems = useMemo<ActivityItem[]>(() => {
-    const items: ActivityItem[] = [];
+  const projectOverview = useMemo(() => {
+    const rows = projects.map((project) => {
+      const scopedExtensions = visibleExtensions.filter(
+        (ext) =>
+          ext.scope.type === "project" && ext.scope.path === project.path,
+      );
+      const projectAgents = new Set(scopedExtensions.flatMap((ext) => ext.agents));
+      return {
+        project,
+        extensionCount: buildGroups(scopedExtensions).length,
+        agentCount: projectAgents.size,
+      };
+    });
 
-    for (const agent of agentConfigs) {
-      for (const cfg of agent.config_files) {
-        if (!cfg.modified_at) continue;
-        items.push({
-          type: "config",
-          label: cfg.file_name,
-          sublabel: `${agentDisplayName(agent.name)} \u00B7 Modified ${formatRelativeTime(cfg.modified_at)}`,
-          timestamp: new Date(cfg.modified_at).getTime(),
-          // Pass the file's scope through the URL so Agents lands in the
-          // right scope (Agents reads ?scope= and applies it locally). Doing
-          // setScope + navigate in the same event handler races: React 18
-          // batches both updates and the router update gets dropped.
-          onSelect: () => {
-            const scopeParam =
-              cfg.scope.type === "global"
-                ? ""
-                : `&scope=${encodeURIComponent(cfg.scope.path)}`;
-            navigate(
-              `/agents?agent=${agent.name}&file=${encodeURIComponent(cfg.path)}${scopeParam}`,
-            );
-          },
-        });
-      }
-    }
-
-    items.sort((a, b) => b.timestamp - a.timestamp);
-    return items.slice(0, 20);
-  }, [agentConfigs, navigate]);
-
-  // -----------------------------------------------------------------------
-  // Section A-right: Recent Extensions (recently installed)
-  // -----------------------------------------------------------------------
-  const extensionActivityItems = useMemo<ActivityItem[]>(() => {
-    const items: ActivityItem[] = [];
-
-    // Only show types with accurate per-item install timestamps:
-    // - skill: file creation time of SKILL.md
-    // - plugin: plugin directory creation time
-    // - cli: binary file creation time
-    // MCP/Hook are excluded — their installed_at is the config FILE creation time,
-    // not the time each individual entry was added.
-    const accurateKinds = new Set(["skill", "plugin", "cli"]);
-    const seenExtNames = new Set<string>();
-    for (const ext of visibleExtensions) {
-      if (!accurateKinds.has(ext.kind)) continue;
-      if (seenExtNames.has(ext.name)) continue;
-      seenExtNames.add(ext.name);
-      items.push({
-        type: "extension",
-        kind: ext.kind,
-        label: ext.name,
-        sublabel: `${ext.kind.toUpperCase()} · Installed ${formatRelativeTime(ext.installed_at)}`,
-        timestamp: new Date(ext.installed_at).getTime(),
-        // Pass scope through the URL (see config-items comment above for why
-        // setScope + navigate in the same handler races and loses the nav).
-        onSelect: () => {
-          const scopeParam =
-            ext.scope.type === "global"
-              ? ""
-              : `&scope=${encodeURIComponent(ext.scope.path)}`;
-          navigate(
-            `/extensions?groupKey=${encodeURIComponent(extensionGroupKey(ext))}${scopeParam}`,
-          );
-        },
-      });
-    }
-
-    items.sort((a, b) => b.timestamp - a.timestamp);
-    return items.slice(0, 20);
-  }, [visibleExtensions, navigate]);
-
-  const hasActivity =
-    agentActivityItems.length > 0 || extensionActivityItems.length > 0;
-
-  // -----------------------------------------------------------------------
-  // Section C: Tip of the Day
-  // -----------------------------------------------------------------------
-  const tipOfTheDay = useMemo(() => {
-    if (tips.length === 0) return null;
-
-    const detectedAgentNames = new Set(
-      agents.filter((a) => a.detected).map((a) => a.name),
-    );
-
-    const relevant = tips.filter(
-      (t) => t.agent === "general" || detectedAgentNames.has(t.agent),
-    );
-    if (relevant.length === 0) return null;
-
-    const dayIndex = Math.floor(Date.now() / 86400000);
-    return relevant[dayIndex % relevant.length];
-  }, [tips, agents]);
+    return {
+      rows: rows.sort((a, b) => {
+        if (a.project.exists !== b.project.exists) {
+          return a.project.exists ? -1 : 1;
+        }
+        return b.extensionCount - a.extensionCount;
+      }),
+      availableCount: projects.filter((project) => project.exists).length,
+      missingCount: projects.filter((project) => !project.exists).length,
+      withExtensionsCount: rows.filter((row) => row.extensionCount > 0).length,
+    };
+  }, [projects, visibleExtensions]);
 
   if (!stats) {
     return <OverviewSkeleton />;
@@ -519,136 +480,62 @@ export default function OverviewPage() {
         )}
       </header>
 
-      {/* ----------------------------------------------------------------- */}
-      {/* Tip of the Day — full-width banner                                */}
-      {/* ----------------------------------------------------------------- */}
-      {tipOfTheDay && (
-        <section className="space-y-3">
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Tip of the day
+            Projects overview
           </h3>
-          <div className="flex items-center gap-3 rounded-xl border border-accent-foreground/10 bg-accent/60 px-4 py-3">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Lightbulb size={15} strokeWidth={1.75} aria-hidden="true" />
-            </span>
-            <p className="min-w-0 flex-1 text-sm text-foreground leading-relaxed">
-              {tipOfTheDay.tip}
-              {tipOfTheDay.source ? (
-                <a
-                  href={tipOfTheDay.source}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={tipOfTheDay.source}
-                  className="ml-2 inline-block translate-y-[-1px] cursor-pointer rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary transition-colors hover:bg-primary/20 hover:underline"
-                >
-                  {tipOfTheDay.agent === "general"
-                    ? "General"
-                    : agentDisplayName(tipOfTheDay.agent)}
-                </a>
-              ) : (
-                <span className="ml-2 inline-block translate-y-[-1px] rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                  {tipOfTheDay.agent === "general"
-                    ? "General"
-                    : agentDisplayName(tipOfTheDay.agent)}
-                </span>
-              )}
-            </p>
-          </div>
-        </section>
-      )}
-
-      {/* ----------------------------------------------------------------- */}
-      {/* 2-column grid: Agent Activity | Recently Installed                */}
-      {/* ----------------------------------------------------------------- */}
-      {hasActivity && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* Recent Activity (agent config changes) */}
-          <section className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Agent activity
-            </h3>
-            <div className="rounded-xl border border-border/60 bg-card/40 divide-y divide-border/40 max-h-[10.5rem] overflow-y-auto overscroll-contain">
-              {agentActivityItems.length > 0 ? (
-                agentActivityItems.map((item, i) => (
-                  <button
-                    key={`${item.type}-${item.label}-${i}`}
-                    onClick={item.onSelect}
-                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-muted/30"
-                  >
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                      <FilePenLine
-                        size={13}
-                        strokeWidth={1.75}
-                        aria-hidden="true"
-                      />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <span className="truncate text-sm font-medium text-foreground block">
-                        {item.label}
-                      </span>
-                      <span className="truncate text-xs text-muted-foreground block">
-                        {item.sublabel}
-                      </span>
-                    </div>
-                  </button>
-                ))
-              ) : (
-                <div className="flex items-center justify-center px-3 py-6 text-xs text-muted-foreground">
-                  No recent config changes
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* Recent Extensions */}
-          <section className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Recently installed
-            </h3>
-            <div className="rounded-xl border border-border/60 bg-card/40 divide-y divide-border/40 max-h-[10.5rem] overflow-y-auto overscroll-contain">
-              {extensionActivityItems.length > 0 ? (
-                extensionActivityItems.map((item, i) => (
-                  <button
-                    key={`${item.type}-${item.label}-${i}`}
-                    onClick={item.onSelect}
-                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-muted/30"
-                  >
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                      {(() => {
-                        const Icon =
-                          item.kind === "plugin"
-                            ? Puzzle
-                            : item.kind === "cli"
-                              ? Terminal
-                              : Package;
-                        return (
-                          <Icon
-                            size={13}
-                            strokeWidth={1.75}
-                            aria-hidden="true"
-                          />
-                        );
-                      })()}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <span className="truncate text-sm font-medium text-foreground block">
-                        {item.label}
-                      </span>
-                      <span className="truncate text-xs text-muted-foreground block">
-                        {item.sublabel}
-                      </span>
-                    </div>
-                  </button>
-                ))
-              ) : (
-                <div className="flex items-center justify-center px-3 py-6 text-xs text-muted-foreground">
-                  No recent installations
-                </div>
-              )}
-            </div>
-          </section>
+          <button
+            onClick={() => navigate("/projects?scope=all")}
+            className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            View all
+          </button>
         </div>
-      )}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <ProjectMetric
+            label="Projects"
+            value={projects.length}
+            icon={FolderKanban}
+          />
+          <ProjectMetric
+            label="Available"
+            value={projectOverview.availableCount}
+            icon={FolderOpen}
+          />
+          <ProjectMetric
+            label="With extensions"
+            value={projectOverview.withExtensionsCount}
+            icon={Package}
+          />
+          <ProjectMetric
+            label="Missing"
+            value={projectOverview.missingCount}
+            icon={TriangleAlert}
+          />
+        </div>
+        {projects.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-sm text-muted-foreground">
+            No projects added yet.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {projectOverview.rows.slice(0, 4).map((row) => (
+              <ProjectOverviewCard
+                key={row.project.id}
+                project={row.project}
+                extensionCount={row.extensionCount}
+                agentCount={row.agentCount}
+                onClick={() =>
+                  navigate(
+                    `/projects?scope=${encodeURIComponent(row.project.path)}`,
+                  )
+                }
+              />
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* ----------------------------------------------------------------- */}
       {/* First-run welcome — when no extensions and no audit               */}

@@ -17,7 +17,7 @@ import {
 import { useScopeStore } from "./scope-store";
 import { toast } from "./toast-store";
 
-export { buildGroups } from "./extension-helpers";
+export { buildGroups, filterSkillTabGroups } from "./extension-helpers";
 
 interface PendingDelete {
   ids: Set<string>;
@@ -62,6 +62,11 @@ interface ExtensionState {
   updatePack: (groupKey: string, pack: string | null) => Promise<void>;
   fetchPacks: () => Promise<void>;
   installToAgent: (id: string, targetAgent: string) => Promise<void>;
+  installToProject: (
+    id: string,
+    targetAgent: string,
+    targetScope: ConfigScope,
+  ) => Promise<void>;
   toggle: (groupKey: string, enabled: boolean) => Promise<boolean>;
   batchToggle: (enabled: boolean) => Promise<void>;
   undoDelete: () => void;
@@ -80,7 +85,7 @@ interface ExtensionState {
   ) => Promise<void>;
   deleteFromAgents: (groupKey: string, agents: string[]) => Promise<void>;
   grouped: () => GroupedExtension[];
-  filtered: () => GroupedExtension[];
+  filtered: (ignoreScope?: boolean) => GroupedExtension[];
 }
 
 // ---------------------------------------------------------------------------
@@ -168,7 +173,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   selectAll() {
     const keys = new Set(
       get()
-        .filtered()
+        .filtered(true)
         .map((g) => g.groupKey),
     );
     set({ selectedIds: keys });
@@ -237,6 +242,11 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
 
   async installToAgent(id, targetAgent) {
     await api.installToAgent(id, targetAgent);
+    await get().rescanAndFetch();
+  },
+
+  async installToProject(id, targetAgent, targetScope) {
+    await api.installToProject(id, targetAgent, targetScope);
     await get().rescanAndFetch();
   },
 
@@ -534,7 +544,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     return getCachedGroups(get().extensions);
   },
 
-  filtered() {
+  filtered(ignoreScope = false) {
     const { searchQuery, tagFilter, packFilter, agentFilter, kindFilter } =
       get();
     const scope = useScopeStore.getState().current;
@@ -546,6 +556,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       tagFilter,
       searchQuery,
       scope,
+      ignoreScope,
     );
   },
 }));

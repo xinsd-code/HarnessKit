@@ -63,14 +63,14 @@ const MOCK_EXTENSIONS = [
   },
   {
     kind: "mcp" as const,
-    agents: ["claude", "codex", "copilot"] as const,
+    agents: ["claude", "codex", "cursor"] as const,
     perms: ["network", "database"] as PermKey[],
     score: 82,
     enabled: true,
   },
   {
     kind: "plugin" as const,
-    agents: ["cursor", "copilot"] as const,
+    agents: ["cursor", "antigravity"] as const,
     perms: ["filesystem"] as PermKey[],
     score: 100,
     enabled: true,
@@ -84,7 +84,7 @@ const MOCK_EXTENSIONS = [
   },
   {
     kind: "cli" as const,
-    agents: ["gemini", "copilot"] as const,
+    agents: ["gemini", "cursor"] as const,
     perms: ["filesystem", "network", "shell"] as PermKey[],
     score: 67,
     enabled: true,
@@ -257,18 +257,14 @@ const AGENTS = [
   "gemini",
   "cursor",
   "antigravity",
-  "copilot",
-  "windsurf",
 ] as const;
-const FLOAT_DELAYS = [0, 0.4, 0.9, 1.3, 0.6, 1.1, 1.6];
+const FLOAT_DELAYS = [0, 0.4, 0.9, 1.3, 0.6];
 const SCATTER_POSITIONS = [
   { x: -140, y: -80, r: -15 },
   { x: 100, y: -90, r: 12 },
   { x: 160, y: 50, r: -8 },
   { x: -120, y: 70, r: 10 },
   { x: -180, y: 10, r: -20 },
-  { x: 150, y: 80, r: 15 },
-  { x: 0, y: 108, r: -6 },
 ];
 
 function HandAnnotation({
@@ -777,8 +773,6 @@ const MOCK_AGENT_SIDEBAR = [
   { id: "gemini", label: "Gemini CLI" },
   { id: "cursor", label: "Cursor" },
   { id: "antigravity", label: "Antigravity" },
-  { id: "copilot", label: "Copilot" },
-  { id: "windsurf", label: "Windsurf" },
 ] as const;
 
 const MOCK_FILES = [
@@ -1465,8 +1459,6 @@ function MockMarketplacePreview() {
                   ["gemini", "Gemini CLI"],
                   ["cursor", "Cursor"],
                   ["antigravity", "Antigravity"],
-                  ["copilot", "Copilot"],
-                  ["windsurf", "Windsurf"],
                 ] as const
               ).map(([id, label]) => (
                 <div

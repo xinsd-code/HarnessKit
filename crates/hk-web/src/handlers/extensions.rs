@@ -1,5 +1,6 @@
 use axum::extract::State;
 use axum::Json;
+use hk_core::adapter;
 use hk_core::models::{Extension, ExtensionKind};
 use hk_core::service::ExtensionContent;
 use hk_core::{manager, scanner, service};
@@ -96,7 +97,9 @@ pub async fn scan_and_sync(
     let (count, unlinked) = tokio::task::spawn_blocking(move || {
         let store = state.store.lock();
         let projects = store.list_project_tuples();
-        let extensions = scanner::scan_all(&state.adapters, &projects);
+        let settings = store.list_agent_settings().unwrap_or_default();
+        let adapters = adapter::runtime_adapters_for_settings(&settings);
+        let extensions = scanner::scan_all(&adapters, &projects);
         let count = extensions.len();
 
         let pre_ids: std::collections::HashSet<String> = store
@@ -172,11 +175,15 @@ pub async fn list_skill_files(
 ) -> Result<Vec<FileEntry>> {
     blocking(move || {
         let path = std::path::Path::new(&params.path);
-        if !path.exists() || !path.is_dir() {
+        let listing_root = if path.is_dir() {
+            path
+        } else if path.is_file() {
+            path.parent().unwrap_or(path)
+        } else {
             return Err(hk_core::HkError::NotFound("Directory not found".into()));
-        }
+        };
         // Validate path is within an allowed agent directory
-        let canonical = path.canonicalize()
+        let canonical = listing_root.canonicalize()
             .map_err(|_| hk_core::HkError::NotFound("Cannot resolve path".into()))?;
         let normalized = super::normalize(&canonical);
         let allowed = state.adapters.iter().any(|a| {
@@ -191,7 +198,7 @@ pub async fn list_skill_files(
                 ));
             }
         }
-        Ok(list_dir_entries(path, 0))
+        Ok(list_dir_entries(listing_root, 0))
     }).await
 }
 

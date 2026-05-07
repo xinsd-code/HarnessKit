@@ -27,7 +27,7 @@ export async function transport<T>(
 ): Promise<T> {
   if (tauriInvokePromise) {
     const invoke = await tauriInvokePromise;
-    return invoke(command, args) as Promise<T>;
+    return invoke(command, args ? toSnakeKeys(args) : undefined) as Promise<T>;
   }
   return httpInvoke<T>(command, args);
 }
@@ -46,7 +46,7 @@ export function getAuthToken(): string | null {
   return authToken;
 }
 
-/** Convert camelCase keys to snake_case (Tauri invoke does this automatically) */
+/** Convert camelCase keys to snake_case for Rust command/handler params. */
 function toSnakeKeys(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {

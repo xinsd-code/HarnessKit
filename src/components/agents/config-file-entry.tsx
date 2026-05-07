@@ -133,11 +133,11 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
           {file.custom_id == null &&
             (file.scope.type === "global" ? (
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-tag-global/10 text-tag-global shrink-0">
-                Global
+                Agent path
               </span>
             ) : (
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-tag-project/10 text-tag-project shrink-0">
-                Project
+                Project path
               </span>
             ))}
           <span className="text-[11px] text-muted-foreground truncate">

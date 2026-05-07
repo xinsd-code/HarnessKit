@@ -169,7 +169,7 @@ describe("extensionGroupKey", () => {
   it("splits sourceless same-named skills across scopes", () => {
     // Concrete reproducer from a real DB: a hand-written
     // `code-review` skill in a project + an unrelated agent-bundled
-    // `code-review` skill at copilot's global skill dir. Both have no
+    // `code-review` skill at another agent's global skill dir. Both have no
     // source.url, no install_meta, no pack — pre-fix they collapsed
     // into a single group row even though they're independent skills.
     // With scopeKey as the sourceless tiebreaker they stay separate.
@@ -187,7 +187,7 @@ describe("extensionGroupKey", () => {
     };
     const globalCodeReview: Extension = {
       ...projectCodeReview,
-      agents: ["copilot"],
+      agents: ["claude"],
       scope: { type: "global" },
     };
     expect(extensionGroupKey(projectCodeReview)).not.toBe(
@@ -219,8 +219,13 @@ describe("extensionGroupKey", () => {
 
 describe("sortAgentNames", () => {
   it("sorts agents in canonical order", () => {
-    const result = sortAgentNames(["windsurf", "cursor", "claude", "gemini"]);
-    expect(result).toEqual(["claude", "gemini", "cursor", "windsurf"]);
+    const result = sortAgentNames([
+      "antigravity",
+      "cursor",
+      "claude",
+      "gemini",
+    ]);
+    expect(result).toEqual(["claude", "gemini", "cursor", "antigravity"]);
   });
 
   it("puts unknown agents at the end", () => {
@@ -235,7 +240,7 @@ describe("agentDisplayName", () => {
     expect(agentDisplayName("claude")).toBe("Claude Code");
     expect(agentDisplayName("codex")).toBe("Codex");
     expect(agentDisplayName("cursor")).toBe("Cursor");
-    expect(agentDisplayName("windsurf")).toBe("Windsurf");
+    expect(agentDisplayName("antigravity")).toBe("Antigravity");
   });
 
   it("capitalizes first letter for unknown agents", () => {

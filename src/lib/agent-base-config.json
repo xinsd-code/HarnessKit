@@ -1,0 +1,155 @@
+[
+  {
+    "id": "antigravity",
+    "label": "Antigravity",
+    "iconPath": "/agent-logos/antigravity.png",
+    "globalSkillsPath": ".gemini/antigravity/skills",
+    "projectSkillsPath": ".agent/skills",
+    "mcpConfigPath": null,
+    "hooksConfigPath": null
+  },
+  {
+    "id": "claude",
+    "label": "Claude Code",
+    "iconPath": "/agent-logos/claude-code.svg",
+    "globalSkillsPath": ".claude/skills",
+    "projectSkillsPath": ".claude/skills",
+    "mcpConfigPath": ".claude.json",
+    "hooksConfigPath": ".claude/settings.json"
+  },
+  {
+    "id": "cursor",
+    "label": "Cursor",
+    "iconPath": "/agent-logos/cursor.svg",
+    "globalSkillsPath": ".cursor/skills",
+    "projectSkillsPath": ".cursor/skills",
+    "mcpConfigPath": ".cursor/mcp.json",
+    "hooksConfigPath": ".cursor/hooks.json"
+  },
+  {
+    "id": "openclaw",
+    "label": "OpenClaw",
+    "iconPath": "/agent-logos/openclaw.svg",
+    "globalSkillsPath": ".openclaw/skills",
+    "projectSkillsPath": ".openclaw/skills",
+    "mcpConfigPath": null,
+    "hooksConfigPath": null
+  },
+  {
+    "id": "codebuddy",
+    "label": "CodeBuddy",
+    "iconPath": "/agent-logos/codebuddy.svg",
+    "globalSkillsPath": ".codebuddy/skills",
+    "projectSkillsPath": ".codebuddy/skills",
+    "mcpConfigPath": null,
+    "hooksConfigPath": null
+  },
+  {
+    "id": "opencode",
+    "label": "OpenCode",
+    "iconPath": "/agent-logos/opencode.png",
+    "globalSkillsPath": ".config/opencode/skills",
+    "projectSkillsPath": ".opencode/skills",
+    "mcpConfigPath": ".config/opencode/opencode.json",
+    "hooksConfigPath": null
+  },
+  {
+    "id": "codex",
+    "label": "Codex",
+    "iconPath": "/agent-logos/codex.svg",
+    "globalSkillsPath": ".codex/skills",
+    "projectSkillsPath": ".codex/skills",
+    "mcpConfigPath": ".codex/config.toml",
+    "hooksConfigPath": ".codex/hooks.json"
+  },
+  {
+    "id": "kimi-code-cli",
+    "label": "Kimi Code CLI",
+    "iconPath": "/agent-logos/kimi-code-cli.ico",
+    "globalSkillsPath": ".config/agents/skills",
+    "projectSkillsPath": ".agents/skills",
+    "mcpConfigPath": null,
+    "hooksConfigPath": null
+  },
+  {
+    "id": "kilo-code",
+    "label": "Kilo Code",
+    "iconPath": "/agent-logos/kilo-code.svg",
+    "globalSkillsPath": ".kilocode/skills",
+    "projectSkillsPath": ".kilocode/skills",
+    "mcpConfigPath": null,
+    "hooksConfigPath": null
+  },
+  {
+    "id": "kiro-cli",
+    "label": "Kiro CLI",
+    "iconPath": "/agent-logos/kiro-cli.svg",
+    "globalSkillsPath": ".kiro/skills",
+    "projectSkillsPath": ".kiro/skills",
+    "mcpConfigPath": null,
+    "hooksConfigPath": null
+  },
+  {
+    "id": "gemini",
+    "label": "Gemini CLI",
+    "iconPath": "/agent-logos/gemini-cli.svg",
+    "globalSkillsPath": ".gemini/skills",
+    "projectSkillsPath": ".gemini/skills",
+    "mcpConfigPath": ".gemini/settings.json",
+    "hooksConfigPath": ".gemini/settings.json"
+  },
+  {
+    "id": "copilot",
+    "label": "GitHub Copilot",
+    "iconPath": "/agent-logos/copilot.svg",
+    "globalSkillsPath": ".copilot/skills",
+    "projectSkillsPath": ".github/skills",
+    "mcpConfigPath": "Library/Application Support/Code/User/mcp.json",
+    "hooksConfigPath": ".copilot/hooks"
+  },
+  {
+    "id": "windsurf",
+    "label": "Windsurf",
+    "iconPath": "/agent-logos/windsurf.svg",
+    "globalSkillsPath": ".codeium/windsurf/skills",
+    "projectSkillsPath": ".windsurf/skills",
+    "mcpConfigPath": ".codeium/windsurf/mcp_config.json",
+    "hooksConfigPath": ".codeium/windsurf/hooks.json"
+  },
+  {
+    "id": "trae",
+    "label": "Trae",
+    "iconPath": "/agent-logos/trae.png",
+    "globalSkillsPath": ".trae/skills",
+    "projectSkillsPath": ".trae/skills",
+    "mcpConfigPath": null,
+    "hooksConfigPath": null
+  },
+  {
+    "id": "trae-cn",
+    "label": "Trae CN",
+    "iconPath": "/agent-logos/trae.png",
+    "globalSkillsPath": ".trae-cn/skills",
+    "projectSkillsPath": ".trae/skills",
+    "mcpConfigPath": null,
+    "hooksConfigPath": null
+  },
+  {
+    "id": "qoder",
+    "label": "Qoder",
+    "iconPath": "/agent-logos/qoder.svg",
+    "globalSkillsPath": ".qoder/skills",
+    "projectSkillsPath": ".qoder/skills",
+    "mcpConfigPath": ".qoder/mcp.json",
+    "hooksConfigPath": null
+  },
+  {
+    "id": "qwen-code",
+    "label": "Qwen Code",
+    "iconPath": "/agent-logos/qwen-code.png",
+    "globalSkillsPath": ".qwen/skills",
+    "projectSkillsPath": ".qwen/skills",
+    "mcpConfigPath": ".qwen/mcp.json",
+    "hooksConfigPath": null
+  }
+]

@@ -312,6 +312,34 @@ fn find_skill_content(
             }
         }
     }
+    for agent_name in agent_filter {
+        if adapters.iter().any(|a| a.name() == agent_name) {
+            continue;
+        }
+        let Some(a) = crate::adapter::adapter_for_name(agent_name) else {
+            continue;
+        };
+        for skill_dir in a.skill_dirs() {
+            let Ok(entries) = std::fs::read_dir(&skill_dir) else { continue };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let skill_file = if path.is_dir() {
+                    let md = path.join("SKILL.md");
+                    if md.exists() { md } else { path.join("SKILL.md.disabled") }
+                } else if path.extension().is_some_and(|e| e == "md" || e == "disabled") {
+                    path.clone()
+                } else { continue };
+                if !skill_file.exists() { continue; }
+                let name = scanner::parse_skill_name(&skill_file).unwrap_or_else(||
+                    path.file_stem().unwrap_or_default().to_string_lossy().to_string()
+                );
+                if scanner::stable_id_for(&name, "skill", a.name()) == ext_id {
+                    let content = std::fs::read_to_string(&skill_file).unwrap_or_default();
+                    return (content, Some(skill_file.to_string_lossy().to_string()));
+                }
+            }
+        }
+    }
     (String::new(), None)
 }
 
@@ -533,14 +561,7 @@ pub fn get_extension_content(
     match ext.kind {
         ExtensionKind::Skill => {
             if let Some(loc) = scanner::find_skill_by_id(adapters, id, &ext.agents, &projects) {
-                let dir = if loc.entry_path.is_dir() {
-                    loc.entry_path.to_string_lossy().to_string()
-                } else {
-                    loc.skill_file
-                        .parent()
-                        .map(|p| p.to_string_lossy().to_string())
-                        .unwrap_or_default()
-                };
+                let display_path = loc.skill_file.to_string_lossy().to_string();
                 // Detect symlink: check entry itself, then parent skill_dir
                 let dir_symlink_target = if loc
                     .skill_dir
@@ -562,15 +583,19 @@ pub fn get_extension_content(
                         .ok()
                         .map(|t| t.to_string_lossy().to_string())
                 } else if let Some(ref resolved_dir) = dir_symlink_target {
-                    let entry_name = loc.entry_path.file_name().unwrap_or_default();
-                    Some(resolved_dir.join(entry_name).to_string_lossy().to_string())
+                    Some(
+                        resolved_dir
+                            .join(loc.skill_file.file_name().unwrap_or_default())
+                            .to_string_lossy()
+                            .to_string(),
+                    )
                 } else {
                     None
                 };
                 let content = std::fs::read_to_string(&loc.skill_file)?;
                 Ok(ExtensionContent {
                     content,
-                    path: Some(dir),
+                    path: Some(display_path),
                     symlink_target,
                 })
             } else {
@@ -741,11 +766,12 @@ pub fn get_extension_content(
 /// deployed (skill name, MCP server name, or `event:command` for hooks) so
 /// the UI can show the result. The wrapper is responsible for any post-deploy
 /// rescan/sync (web does this; desktop does not, matching prior behavior).
-pub fn install_to_agent(
+fn install_to_agent_scoped(
     store: &Mutex<Store>,
     adapters: &[Box<dyn AgentAdapter>],
     extension_id: &str,
     target_agent: &str,
+    target_scope: &ConfigScope,
 ) -> Result<String, HkError> {
     let (ext, projects) = {
         let store = store.lock();
@@ -769,16 +795,13 @@ pub fn install_to_agent(
                     .ok_or_else(|| {
                         HkError::Internal("Could not find source skill files".into())
                     })?;
-            let target_dir = target_adapter
-                .skill_dirs()
-                .into_iter()
-                .next()
-                .ok_or_else(|| {
-                    HkError::Internal(format!(
-                        "No skill directory for agent '{}'",
-                        target_agent
-                    ))
-                })?;
+            let target_dir = target_adapter.skill_dir_for(target_scope).ok_or_else(|| {
+                HkError::Internal(format!(
+                    "No skill directory for agent '{}' in scope {:?}",
+                    target_agent, target_scope
+                ))
+            })?;
+            std::fs::create_dir_all(&target_dir)?;
             let deployed_name = deployer::deploy_skill(&source_path, &target_dir)?;
 
             // Propagate install_meta from source to the new target row so
@@ -790,14 +813,30 @@ pub fn install_to_agent(
             //
             // We must scan-and-sync the target adapter first so the new row
             // exists in the DB before set_install_meta can update it.
-            // Cross-agent deploy targets are global-only today, so the
-            // target_id derives from the unscoped stable_id.
             if let Some(meta) = ext.install_meta.clone() {
-                let scanned = scanner::scan_adapter(target_adapter.as_ref());
-                let target_id =
-                    scanner::stable_id_for(&deployed_name, "skill", target_agent);
                 let store_guard = store.lock();
-                store_guard.sync_extensions_for_agent(target_agent, &scanned)?;
+                let target_id = scanner::stable_id_with_scope_for(
+                    &deployed_name,
+                    "skill",
+                    target_agent,
+                    target_scope,
+                );
+                match target_scope {
+                    ConfigScope::Global => {
+                        let scanned = scanner::scan_adapter(target_adapter.as_ref());
+                        store_guard.sync_extensions_for_agent(target_agent, &scanned)?;
+                    }
+                    ConfigScope::Project { name, path } => {
+                        let scanned = scanner::scan_project_extensions(
+                            target_adapter.as_ref(),
+                            name,
+                            std::path::Path::new(path),
+                        );
+                        for ext in &scanned {
+                            store_guard.insert_extension(ext)?;
+                        }
+                    }
+                }
                 let _ = store_guard.set_install_meta(&target_id, &meta);
             }
             Ok(deployed_name)
@@ -833,7 +872,12 @@ pub fn install_to_agent(
             if target_adapter.needs_path_injection() {
                 deployer::ensure_path_injection(&mut entry);
             }
-            let config_path = target_adapter.mcp_config_path();
+            let config_path = target_adapter.mcp_config_path_for(target_scope).ok_or_else(|| {
+                HkError::Internal(format!(
+                    "No MCP config path for agent '{}' in scope {:?}",
+                    target_agent, target_scope
+                ))
+            })?;
             deployer::deploy_mcp_server(&config_path, &entry, target_adapter.mcp_format())?;
             Ok(entry.name)
         }
@@ -913,16 +957,12 @@ pub fn install_to_agent(
                 .ok_or_else(|| {
                     HkError::Internal("Could not find source skill files for CLI".into())
                 })?;
-            let target_dir = target_adapter
-                .skill_dirs()
-                .into_iter()
-                .next()
-                .ok_or_else(|| {
-                    HkError::Internal(format!(
-                        "No skill directory for agent '{}'",
-                        target_agent
-                    ))
-                })?;
+            let target_dir = target_adapter.skill_dir_for(target_scope).ok_or_else(|| {
+                HkError::Internal(format!(
+                    "No skill directory for agent '{}' in scope {:?}",
+                    target_agent, target_scope
+                ))
+            })?;
             let deployed_name = deployer::deploy_skill(&source_path, &target_dir)?;
             Ok(deployed_name)
         }
@@ -931,6 +971,51 @@ pub fn install_to_agent(
             other.as_str()
         ))),
     }
+}
+
+pub fn install_to_agent(
+    store: &Mutex<Store>,
+    adapters: &[Box<dyn AgentAdapter>],
+    extension_id: &str,
+    target_agent: &str,
+) -> Result<String, HkError> {
+    install_to_agent_scoped(
+        store,
+        adapters,
+        extension_id,
+        target_agent,
+        &ConfigScope::Global,
+    )
+}
+
+pub fn install_to_project(
+    store: &Mutex<Store>,
+    adapters: &[Box<dyn AgentAdapter>],
+    extension_id: &str,
+    target_agent: &str,
+    target_scope: &ConfigScope,
+) -> Result<String, HkError> {
+    if !matches!(target_scope, ConfigScope::Project { .. }) {
+        return Err(HkError::Validation(
+            "Install to project requires a project scope".into(),
+        ));
+    }
+    let ext_kind = {
+        let store_guard = store.lock();
+        store_guard
+            .get_extension(extension_id)?
+            .ok_or_else(|| HkError::NotFound("Extension not found".into()))?
+            .kind
+    };
+    if !matches!(
+        ext_kind,
+        ExtensionKind::Skill | ExtensionKind::Mcp | ExtensionKind::Cli
+    ) {
+        return Err(HkError::Validation(
+            "Install to project currently supports skills, MCPs, and CLIs only".into(),
+        ));
+    }
+    install_to_agent_scoped(store, adapters, extension_id, target_agent, target_scope)
 }
 
 #[cfg(test)]

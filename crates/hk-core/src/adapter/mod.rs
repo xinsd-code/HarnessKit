@@ -5,6 +5,7 @@ pub mod copilot;
 pub mod cursor;
 pub mod gemini;
 pub mod hook_events;
+pub mod preset;
 pub mod windsurf;
 
 use crate::models::ConfigScope;
@@ -82,8 +83,12 @@ pub trait AgentAdapter: Send + Sync {
     fn plugin_config_path(&self) -> PathBuf {
         self.hook_config_path()
     }
-    fn read_mcp_servers(&self) -> Vec<McpServerEntry>;
-    fn read_hooks(&self) -> Vec<HookEntry>;
+    fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
+        vec![]
+    }
+    fn read_hooks(&self) -> Vec<HookEntry> {
+        vec![]
+    }
     /// Parse MCP servers from a specific config file (e.g. a project's `.mcp.json`).
     /// Default returns empty — only adapters that support project-level MCP override.
     fn read_mcp_servers_from(&self, _path: &std::path::Path) -> Vec<McpServerEntry> {
@@ -251,9 +256,52 @@ pub fn all_adapters() -> Vec<Box<dyn AgentAdapter>> {
         Box::new(gemini::GeminiAdapter::new()),
         Box::new(cursor::CursorAdapter::new()),
         Box::new(antigravity::AntigravityAdapter::new()),
-        Box::new(copilot::CopilotAdapter::new()),
-        Box::new(windsurf::WindsurfAdapter::new()),
     ]
+}
+
+/// Instantiate a supported non-builtin adapter by its persisted agent name.
+/// These adapters are used for preset agents added from Settings, without
+/// promoting them into the default built-in agent list.
+pub fn adapter_for_name(name: &str) -> Option<Box<dyn AgentAdapter>> {
+    match name {
+        "copilot" => Some(Box::new(copilot::CopilotAdapter::new())),
+        "windsurf" => Some(Box::new(windsurf::WindsurfAdapter::new())),
+        "openclaw" => Some(Box::new(preset::OpenClawAdapter::new())),
+        "codebuddy" => Some(Box::new(preset::CodeBuddyAdapter::new())),
+        "opencode" => Some(Box::new(preset::OpenCodeAdapter::new())),
+        "kimi-code-cli" => Some(Box::new(preset::KimiCodeCliAdapter::new())),
+        "kilo-code" => Some(Box::new(preset::KiloCodeAdapter::new())),
+        "kiro-cli" => Some(Box::new(preset::KiroCliAdapter::new())),
+        "trae" => Some(Box::new(preset::TraeAdapter::new())),
+        "trae-cn" => Some(Box::new(preset::TraeCnAdapter::new())),
+        "qoder" => Some(Box::new(preset::QoderAdapter::new())),
+        "qwen-code" => Some(Box::new(preset::QwenCodeAdapter::new())),
+        _ => None,
+    }
+}
+
+/// Runtime adapters = built-in adapters + supported preset agents that the
+/// user has explicitly added in Settings.
+pub fn runtime_adapters_for_settings(
+    settings: &[(String, Option<String>, bool, Option<i32>, Option<String>)],
+) -> Vec<Box<dyn AgentAdapter>> {
+    let mut adapters = all_adapters();
+    let builtin_names: std::collections::HashSet<String> =
+        adapters.iter().map(|a| a.name().to_string()).collect();
+
+    for (name, _, _, _, _) in settings {
+        if builtin_names.contains(name) {
+            continue;
+        }
+        if adapters.iter().any(|adapter| adapter.name() == name) {
+            continue;
+        }
+        if let Some(adapter) = adapter_for_name(name) {
+            adapters.push(adapter);
+        }
+    }
+
+    adapters
 }
 
 #[cfg(test)]
@@ -261,17 +309,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_all_adapters_returns_seven() {
+    fn test_all_adapters_returns_five() {
         let adapters = all_adapters();
-        assert_eq!(adapters.len(), 7);
+        assert_eq!(adapters.len(), 5);
         let names: Vec<&str> = adapters.iter().map(|a| a.name()).collect();
         assert!(names.contains(&"claude"));
         assert!(names.contains(&"cursor"));
         assert!(names.contains(&"codex"));
         assert!(names.contains(&"gemini"));
         assert!(names.contains(&"antigravity"));
-        assert!(names.contains(&"copilot"));
-        assert!(names.contains(&"windsurf"));
     }
 
     #[test]
@@ -284,14 +330,13 @@ mod tests {
         let by_name: std::collections::HashMap<_, _> =
             adapters.iter().map(|a| (a.name().to_string(), a)).collect();
         assert!(by_name["antigravity"].needs_path_injection());
-        assert!(by_name["windsurf"].needs_path_injection());
 
         // Everyone else inherits PATH correctly (CLI agents launched from a
         // shell, or VSCode-fork IDEs with working resolveShellEnv on most
         // setups). Adding an agent here without a confirmed PATH bug would
         // unnecessarily rewrite users' mcp_config.json with absolute paths,
         // hurting cross-machine portability.
-        for name in ["claude", "codex", "gemini", "cursor", "copilot"] {
+        for name in ["claude", "codex", "gemini", "cursor"] {
             assert!(
                 !by_name[name].needs_path_injection(),
                 "{name} should not need path injection"
@@ -376,12 +421,10 @@ mod tests {
         let adapters = all_adapters();
         let expected: std::collections::HashMap<&str, &str> = [
             ("claude", ".claude/skills"),
-            ("codex", ".agents/skills"), // Universal alias adopted by OpenAI
+            ("codex", ".codex/skills"), // Native Codex convention; .agents/skills is also scanned
             ("cursor", ".cursor/skills"),
-            ("windsurf", ".windsurf/skills"),
             ("gemini", ".gemini/skills"),
             ("antigravity", ".agent/skills"), // Singular — Antigravity convention
-            ("copilot", ".github/skills"),
         ]
         .into_iter()
         .collect();

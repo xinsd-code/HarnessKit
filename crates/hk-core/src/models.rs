@@ -325,6 +325,9 @@ pub struct AgentInfo {
     pub extension_count: usize,
     pub path: String,
     pub enabled: bool,
+    pub icon_path: Option<String>,
+    pub builtin: bool,
+    pub has_custom_path: bool,
 }
 
 // --- Dashboard Stats ---

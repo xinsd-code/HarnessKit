@@ -190,6 +190,9 @@ export interface AgentInfo {
   extension_count: number;
   path: string;
   enabled: boolean;
+  icon_path?: string | null;
+  builtin?: boolean;
+  has_custom_path?: boolean;
 }
 
 export type ConfigCategory =
@@ -267,6 +270,16 @@ export const AGENT_ORDER = [
   "antigravity",
   "copilot",
   "windsurf",
+  "opencode",
+  "openclaw",
+  "codebuddy",
+  "kimi-code-cli",
+  "kilo-code",
+  "kiro-cli",
+  "trae",
+  "trae-cn",
+  "qoder",
+  "qwen-code",
 ] as const;
 
 /** Sort an array of agents (or agent-like objects with a `name` field) by a given order. */
@@ -287,8 +300,18 @@ const AGENT_DISPLAY_NAMES: Record<string, string> = {
   gemini: "Gemini CLI",
   cursor: "Cursor",
   antigravity: "Antigravity",
-  copilot: "Copilot",
+  copilot: "GitHub Copilot",
   windsurf: "Windsurf",
+  opencode: "OpenCode",
+  openclaw: "OpenClaw",
+  codebuddy: "CodeBuddy",
+  "kimi-code-cli": "Kimi Code CLI",
+  "kilo-code": "Kilo Code",
+  "kiro-cli": "Kiro CLI",
+  trae: "Trae",
+  "trae-cn": "Trae CN",
+  qoder: "Qoder",
+  "qwen-code": "Qwen Code",
 };
 
 /** Get the display name for an agent (e.g. "claude" → "Claude Code"). */

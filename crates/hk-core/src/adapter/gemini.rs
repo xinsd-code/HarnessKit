@@ -166,6 +166,16 @@ impl AgentAdapter for GeminiAdapter {
         vec![".geminiignore".into()]
     }
 
+    fn project_mcp_config_relpath(&self) -> Option<String> {
+        // Gemini project MCP servers defined in .gemini/settings.json under mcpServers
+        Some(".gemini/settings.json".into())
+    }
+
+    fn project_hook_config_relpath(&self) -> Option<String> {
+        // Gemini project hooks defined in .gemini/settings.json under hooks
+        Some(".gemini/settings.json".into())
+    }
+
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
         self.read_mcp_servers_from(&self.mcp_config_path())
     }

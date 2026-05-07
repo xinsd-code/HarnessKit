@@ -194,6 +194,17 @@ impl AgentAdapter for CopilotAdapter {
         vec![".copilotignore".into()]
     }
 
+    fn project_mcp_config_relpath(&self) -> Option<String> {
+        // Copilot project MCP defined in copilot/mcp-config.json
+        Some("copilot/mcp-config.json".into())
+    }
+
+    fn project_hook_config_relpath(&self) -> Option<String> {
+        // Copilot project hooks are in .github/hooks/ directory
+        // The adapter scans all .json files in this directory.
+        Some(".github/hooks".into())
+    }
+
     fn read_plugins(&self) -> Vec<PluginEntry> {
         let mut entries = Vec::new();
 

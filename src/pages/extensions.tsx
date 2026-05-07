@@ -1,5 +1,5 @@
 import { ArrowDownCircle, Package, Plus, RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ExtensionDetail } from "@/components/extensions/extension-detail";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
@@ -8,13 +8,9 @@ import { NewSkillsDialog } from "@/components/extensions/new-skills-dialog";
 import { useScope } from "@/hooks/use-scope";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
-import { useProjectStore } from "@/stores/project-store";
-import {
-  resolveDeepLinkScope,
-  scopesEqual,
-  useScopeStore,
-} from "@/stores/scope-store";
+import { useScopeStore } from "@/stores/scope-store";
 import { toast } from "@/stores/toast-store";
+import type { ConfigScope } from "@/lib/types";
 
 export default function ExtensionsPage() {
   const hydrated = useScopeStore((s) => s.hydrated);
@@ -33,7 +29,9 @@ export default function ExtensionsPage() {
   const nameParam = searchParams.get("name");
   const isDeepLink = !!(groupKeyParam || nameParam);
   const { scope, setScope } = useScope();
-  const projects = useProjectStore((s) => s.projects);
+  const previousProjectScopeRef = useRef<ConfigScope | null>(null);
+  const [selectedProjectScope, setSelectedProjectScope] =
+    useState<ConfigScope | null>(null);
 
   // Apply filter overrides synchronously on first render to avoid an initial
   // filter-change flash. Scope + selection are handled by the deep-link
@@ -49,8 +47,22 @@ export default function ExtensionsPage() {
       setPackFilter(null);
       setSearchQuery("");
     }
-    didApplyFiltersRef.current = true;
+      didApplyFiltersRef.current = true;
   }
+
+  // Extensions should always show the full all-scopes list, regardless of the
+  // current sidebar/project selection. Keep the global scope pinned to `all`
+  // while this page is mounted so the store-level filters stay in sync.
+  useLayoutEffect(() => {
+    if (scope.type !== "all") {
+      previousProjectScopeRef.current =
+        scope.type === "project" ? scope : previousProjectScopeRef.current;
+      if (scope.type === "project") {
+        setSelectedProjectScope(scope);
+      }
+      setScope({ type: "all" });
+    }
+  }, [scope.type, setScope]);
 
   // Cleanup: when the user manually changes scope (e.g. via Sidebar
   // ScopeSwitcher), close the detail panel — the selected ext may not exist
@@ -65,33 +77,27 @@ export default function ExtensionsPage() {
     }
   }, [scope, setSelectedId]);
 
-  // Deep-link handler: applies ?scope= from URL, selects the target group,
-  // then clears the URL params. Clearing is critical — without it, every
-  // subsequent scope change (e.g. user clicking Sidebar ScopeSwitcher)
-  // would re-fire this effect (scope dep), see the still-present groupKey
-  // and "restore" the deep-link's scope/selection, fighting the user.
-  // Mirrors the pattern in agents.tsx.
+  // Deep-link handler: selects the target group, then clears the URL params.
+  // Extensions intentionally ignore scope deep links so the page always
+  // shows the full all-scopes view.
   const [scrollToId, setScrollToId] = useState<string | null>(null);
   useEffect(() => {
     if (!isDeepLink) return;
     if (extensions.length === 0) return;
-    const targetScope = resolveDeepLinkScope(
-      searchParams.get("scope"),
-      projects,
-    );
-    if (!scopesEqual(targetScope, scope)) {
-      setScope(targetScope);
-      prevScopeRef.current = targetScope;
+    if (scope.type !== "all") {
+      setScope({ type: "all" });
     }
     const groups = allGrouped();
     const match = groupKeyParam
       ? groups.find((g) => g.groupKey === groupKeyParam)
-      : groups.find(
-          (g) => g.name.toLowerCase() === nameParam!.toLowerCase(),
-        );
+      : groups.find((g) => g.name.toLowerCase() === nameParam?.toLowerCase());
     if (match) {
       setSelectedId(match.groupKey);
       setScrollToId(match.groupKey);
+    }
+    if (scope.type === "project") {
+      previousProjectScopeRef.current = scope;
+      setSelectedProjectScope(scope);
     }
     setSearchParams({}, { replace: true });
   }, [
@@ -100,7 +106,6 @@ export default function ExtensionsPage() {
     allGrouped,
     scope,
     setScope,
-    projects,
     searchParams,
     setSearchParams,
     groupKeyParam,
@@ -130,7 +135,7 @@ export default function ExtensionsPage() {
       ),
     ).length;
   }, [updateStatuses, grouped]);
-  const data = useExtensionStore((s) => s.filtered());
+  const data = useExtensionStore((s) => s.filtered(true));
   const batchMode = selectedIds.size > 0;
 
   // Close the detail panel when leaving the page so revisiting starts clean.
@@ -303,8 +308,21 @@ export default function ExtensionsPage() {
           )}
         </div>
         {selectedId && (
+          <button
+            type="button"
+            aria-label="Close extension details"
+            onClick={() => setSelectedId(null)}
+            className="absolute left-0 top-0 bottom-0 right-96 z-[5] cursor-default"
+          />
+        )}
+        {selectedId && (
           <div className="absolute right-0 top-0 bottom-0 w-96 z-10">
-            <ExtensionDetail />
+            <ExtensionDetail
+              installProjectScope={
+                selectedProjectScope ?? previousProjectScopeRef.current
+              }
+              onInstallProjectScopeChange={setSelectedProjectScope}
+            />
           </div>
         )}
       </div>

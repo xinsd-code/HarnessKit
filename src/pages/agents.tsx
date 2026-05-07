@@ -15,17 +15,27 @@ export default function AgentsPage() {
   const hydrated = useScopeStore((s) => s.hydrated);
   const fetch = useAgentConfigStore((s) => s.fetch);
   const loading = useAgentConfigStore((s) => s.loading);
+  const agentDetails = useAgentConfigStore((s) => s.agentDetails);
+  const selectedAgent = useAgentConfigStore((s) => s.selectedAgent);
   const selectAgent = useAgentConfigStore((s) => s.selectAgent);
   const expandFile = useAgentConfigStore((s) => s.expandFile);
   const setPendingFocusFile = useAgentConfigStore((s) => s.setPendingFocusFile);
   const { scope, setScope } = useScope();
   const projects = useProjectStore((s) => s.projects);
   const [searchParams, setSearchParams] = useSearchParams();
+  const visibleAgents = agentDetails.filter((agent) => agent.detected);
 
   useEffect(() => {
     if (!hydrated) return;
     fetch();
   }, [fetch, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    if (scope.type !== "global") {
+      setScope({ type: "global" });
+    }
+  }, [hydrated, scope.type, setScope]);
 
   // When the user switches scope (e.g., via the Sidebar ScopeSwitcher), collapse
   // all expanded file previews and drop any pending focus signal — the file
@@ -83,14 +93,38 @@ export default function AgentsPage() {
     setSearchParams,
   ]);
 
+  useEffect(() => {
+    if (loading) return;
+    if (visibleAgents.length === 0) {
+      if (selectedAgent !== null) selectAgent(null);
+      return;
+    }
+
+    if (
+      !selectedAgent ||
+      !visibleAgents.some((agent) => agent.name === selectedAgent)
+    ) {
+      selectAgent(visibleAgents[0].name);
+    }
+  }, [loading, selectedAgent, selectAgent, visibleAgents]);
+
   if (!hydrated) {
     return <div className="p-4 text-sm text-muted-foreground">Loading...</div>;
   }
 
   return (
     <div className="flex h-full">
-      <div className="w-[160px] shrink-0 border-r border-border overflow-y-auto overscroll-contain">
-        <AgentList />
+      <div className="w-[190px] shrink-0 overflow-y-auto overscroll-contain border-r border-border">
+        <div className="border-b border-border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+          Agents
+        </div>
+        <AgentList
+          agents={visibleAgents}
+          selectedAgent={selectedAgent}
+          onSelectAgent={selectAgent}
+          sortable
+          emptyMessage="No detected agent configs yet."
+        />
       </div>
       {loading ? (
         <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">

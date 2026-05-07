@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::models::*;
 
 /// Latest schema version supported by this binary.
-const LATEST_SCHEMA_VERSION: i64 = 4;
+const LATEST_SCHEMA_VERSION: i64 = 5;
 
 /// One row of `custom_config_paths`: (id, path, label, category, scope_json).
 /// `scope_json` is `None` for legacy rows that predate v4 schema migration.
@@ -141,6 +141,7 @@ impl Store {
         if current_version < 2 { self.migrate_v2()?; }
         if current_version < 3 { self.migrate_v3()?; }
         if current_version < 4 { self.migrate_v4()?; }
+        if current_version < 5 { self.migrate_v5()?; }
 
         // Update schema version to latest
         if current_version < LATEST_SCHEMA_VERSION {
@@ -229,6 +230,8 @@ impl Store {
         )?;
         // Migration: add sort_order to agent_settings
         self.migrate_add_column("ALTER TABLE agent_settings ADD COLUMN sort_order INTEGER");
+        // Migration: add icon_path to agent_settings for custom agent logos
+        self.migrate_add_column("ALTER TABLE agent_settings ADD COLUMN icon_path TEXT");
         // Migration: custom_config_paths table for user-defined config file/folder paths
         self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS custom_config_paths (
@@ -257,6 +260,12 @@ impl Store {
         self.migrate_add_column(
             "ALTER TABLE custom_config_paths ADD COLUMN scope_json TEXT",
         );
+        Ok(())
+    }
+
+    /// Schema v5: icon_path column on agent_settings for custom agent logos.
+    fn migrate_v5(&self) -> Result<(), HkError> {
+        self.migrate_add_column("ALTER TABLE agent_settings ADD COLUMN icon_path TEXT");
         Ok(())
     }
 
@@ -294,16 +303,20 @@ impl Store {
 
     // --- Agent settings ---
 
-    pub fn get_agent_setting(&self, name: &str) -> Result<(Option<String>, bool), HkError> {
+    pub fn get_agent_setting(&self, name: &str) -> Result<(Option<String>, bool, Option<String>), HkError> {
         let mut stmt = self
             .conn
-            .prepare("SELECT custom_path, enabled FROM agent_settings WHERE name = ?1")?;
+            .prepare("SELECT custom_path, enabled, icon_path FROM agent_settings WHERE name = ?1")?;
         let result = stmt.query_row(params![name], |row| {
-            Ok((row.get::<_, Option<String>>(0)?, row.get::<_, bool>(1)?))
+            Ok((
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, bool>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
         });
         match result {
             Ok(val) => Ok(val),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok((None, true)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok((None, true, None)),
             Err(e) => Err(e.into()),
         }
     }
@@ -326,6 +339,54 @@ impl Store {
             params![name, enabled],
         )?;
         Ok(())
+    }
+
+    pub fn set_agent_icon_path(&self, name: &str, icon_path: Option<&str>) -> Result<(), HkError> {
+        self.conn.execute(
+            "INSERT INTO agent_settings (name, custom_path, enabled, icon_path)
+             VALUES (?1, NULL, 1, ?2)
+             ON CONFLICT(name) DO UPDATE SET icon_path = excluded.icon_path",
+            params![name, icon_path],
+        )?;
+        Ok(())
+    }
+
+    pub fn create_agent(&self, name: &str, path: &str, icon_path: Option<&str>) -> Result<(), HkError> {
+        self.conn.execute(
+            "INSERT INTO agent_settings (name, custom_path, enabled, icon_path)
+             VALUES (?1, ?2, 1, ?3)",
+            params![name, path, icon_path],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_agent(&self, name: &str) -> Result<(), HkError> {
+        self.conn
+            .execute("DELETE FROM agent_settings WHERE name = ?1", params![name])?;
+        Ok(())
+    }
+
+    pub fn list_agent_settings(
+        &self,
+    ) -> Result<Vec<(String, Option<String>, bool, Option<i32>, Option<String>)>, HkError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT name, custom_path, enabled, sort_order, icon_path
+             FROM agent_settings
+             ORDER BY COALESCE(sort_order, 999), name"
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            })?
+            .filter_map(|r| r.map_err(|e| eprintln!("[hk] row error: {e}")).ok())
+            .collect();
+        Ok(rows)
     }
 
     /// Returns agent names in user-defined order. Agents without a sort_order

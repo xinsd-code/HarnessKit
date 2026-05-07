@@ -15,6 +15,7 @@ import AuditPage from "./pages/audit";
 import ExtensionsPage from "./pages/extensions";
 import MarketplacePage from "./pages/marketplace";
 import OverviewPage from "./pages/overview";
+import ProjectsPage from "./pages/projects";
 import SettingsPage from "./pages/settings";
 import { useAuditStore } from "./stores/audit-store";
 import { useExtensionStore } from "./stores/extension-store";
@@ -156,6 +157,7 @@ export default function App() {
             <Route element={<AppShell />}>
               <Route index element={<OverviewPage />} />
               <Route path="agents" element={<AgentsPage />} />
+              <Route path="projects" element={<ProjectsPage />} />
               <Route path="extensions" element={<ExtensionsPage />} />
               <Route path="marketplace" element={<MarketplacePage />} />
               <Route path="audit" element={<AuditPage />} />

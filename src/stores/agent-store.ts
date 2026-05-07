@@ -9,7 +9,14 @@ interface AgentState {
   /** Current agent order — derived from backend-returned agents array. */
   agentOrder: readonly string[];
   fetch: () => Promise<void>;
-  updatePath: (name: string, path: string) => Promise<void>;
+  updatePath: (name: string, path: string | null) => Promise<void>;
+  createAgent: (
+    name: string,
+    path: string,
+    iconPath?: string | null,
+  ) => Promise<boolean>;
+  removeAgent: (name: string) => Promise<void>;
+  updateIconPath: (name: string, iconPath: string | null) => Promise<void>;
   setEnabled: (name: string, enabled: boolean) => Promise<void>;
   reorderAgents: (orderedNames: string[]) => Promise<void>;
 }
@@ -33,15 +40,50 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       set({ loading: false });
     }
   },
-  async updatePath(name: string, path: string) {
+  async updatePath(name: string, path: string | null) {
     try {
       await api.updateAgentPath(name, path);
-      set({
-        agents: get().agents.map((a) => (a.name === name ? { ...a, path } : a)),
-      });
-      toast.success(`${agentDisplayName(name)} path updated`);
+      await get().fetch();
+      toast.success(
+        path
+          ? `${agentDisplayName(name)} path updated`
+          : `${agentDisplayName(name)} custom path removed`,
+      );
     } catch {
       toast.error(`Failed to update ${agentDisplayName(name)} path`);
+    }
+  },
+  async createAgent(name: string, path: string, iconPath?: string | null) {
+    try {
+      await api.createAgent(name, path, iconPath);
+      await get().fetch();
+      toast.success(`${agentDisplayName(name)} added`);
+      return true;
+    } catch {
+      toast.error(`Failed to add ${agentDisplayName(name)}`);
+      return false;
+    }
+  },
+  async removeAgent(name: string) {
+    try {
+      await api.removeAgent(name);
+      await get().fetch();
+      toast.success(`${agentDisplayName(name)} removed`);
+    } catch {
+      toast.error(`Failed to remove ${agentDisplayName(name)}`);
+    }
+  },
+  async updateIconPath(name: string, iconPath: string | null) {
+    try {
+      await api.setAgentIconPath(name, iconPath);
+      set({
+        agents: get().agents.map((a) =>
+          a.name === name ? { ...a, icon_path: iconPath } : a,
+        ),
+      });
+      toast.success(`${agentDisplayName(name)} icon updated`);
+    } catch {
+      toast.error(`Failed to update ${agentDisplayName(name)} icon`);
     }
   },
   async setEnabled(name: string, enabled: boolean) {

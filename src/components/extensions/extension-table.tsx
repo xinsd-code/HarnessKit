@@ -7,20 +7,254 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { PermissionTags } from "@/components/shared/permission-tags";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { useScope } from "@/hooks/use-scope";
-import type { ConfigScope, GroupedExtension } from "@/lib/types";
+import { api } from "@/lib/invoke";
+import type { ConfigScope, Extension, GroupedExtension } from "@/lib/types";
 import { agentDisplayName, scopeLabel, sortAgentNames } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
+import { findCliChildren } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
 
 const col = createColumnHelper<GroupedExtension>();
+const AGENTS_WITHOUT_HOOKS = new Set(["antigravity"]);
+const AGENT_ICON_TONES: Record<string, string> = {
+  claude: "border-agent-claude/25 bg-agent-claude/10",
+  codex: "border-agent-codex/20 bg-agent-codex/10",
+  gemini: "border-agent-gemini/20 bg-agent-gemini/12",
+  cursor: "border-agent-cursor/20 bg-agent-cursor/10",
+  antigravity: "border-agent-antigravity/20 bg-agent-antigravity/10",
+  copilot: "border-agent-copilot/20 bg-agent-copilot/10",
+  windsurf: "border-agent-windsurf/20 bg-agent-windsurf/10",
+};
+
+function scopeMatches(
+  extensionScope: Extension["scope"],
+  currentScope: { type: "all" } | ConfigScope,
+): boolean {
+  if (currentScope.type === "all") return true;
+  if (currentScope.type === "global") return extensionScope.type === "global";
+  return (
+    extensionScope.type === "project" &&
+    extensionScope.path === currentScope.path
+  );
+}
+
+function agentHasAssetInScope(
+  group: GroupedExtension,
+  agentName: string,
+  currentScope: { type: "all" } | ConfigScope,
+): boolean {
+  return group.instances.some(
+    (instance) =>
+      instance.agents.includes(agentName) &&
+      scopeMatches(instance.scope, currentScope),
+  );
+}
+
+function getScopedAgentInstances(
+  group: GroupedExtension,
+  agentName: string,
+  currentScope: { type: "all" } | ConfigScope,
+): Extension[] {
+  return group.instances.filter(
+    (instance) =>
+      instance.agents.includes(agentName) &&
+      scopeMatches(instance.scope, currentScope),
+  );
+}
+
+function toastNameForGroup(group: GroupedExtension): string {
+  if (group.kind !== "hook" || !group.name.includes(":")) return group.name;
+  return group.name
+    .split(":")
+    .slice(2)
+    .join(":")
+    .split(" ")
+    .map((token) => token.split("/").pop() || token)
+    .join(" ");
+}
+
+function AgentMembershipCell({
+  ext,
+  scope,
+  agentOrder,
+}: {
+  ext: GroupedExtension;
+  scope: { type: "all" } | ConfigScope;
+  agentOrder: readonly string[];
+}) {
+  const agents = useAgentStore((s) => s.agents);
+  const installToAgent = useExtensionStore((s) => s.installToAgent);
+  const deleteFromAgents = useExtensionStore((s) => s.deleteFromAgents);
+  const rescanAndFetch = useExtensionStore((s) => s.rescanAndFetch);
+  const extensions = useExtensionStore((s) => s.extensions);
+  const [pendingAgent, setPendingAgent] = useState<string | null>(null);
+
+  const visibleAgents = useMemo(
+    () =>
+      sortAgentNames(
+        agents.filter((agent) => agent.detected).map((agent) => agent.name),
+        agentOrder,
+      ),
+    [agents, agentOrder],
+  );
+
+  const handleToggle = async (
+    event: React.MouseEvent<HTMLButtonElement>,
+    agentName: string,
+  ) => {
+    event.stopPropagation();
+
+    const isInstalled = agentHasAssetInScope(ext, agentName, scope);
+    const name = toastNameForGroup(ext);
+    const inProjectScope = scope.type === "project";
+
+    if (!isInstalled && inProjectScope) {
+      toast.info("Project scope 暂不支持跨 agent 安装");
+      return;
+    }
+    if (
+      !isInstalled &&
+      ext.kind === "hook" &&
+      AGENTS_WITHOUT_HOOKS.has(agentName)
+    ) {
+      toast.info(`${agentDisplayName(agentName)} 暂不支持 hooks`);
+      return;
+    }
+    if (!isInstalled && ext.kind === "plugin") {
+      toast.info("Plugins 暂不支持在此处跨 agent 安装");
+      return;
+    }
+
+    setPendingAgent(agentName);
+    try {
+      if (isInstalled) {
+        if (ext.kind === "cli") {
+          const childExtensions = findCliChildren(
+            extensions,
+            ext.instances[0]?.id,
+            ext.pack,
+          );
+          const relevantChildren = childExtensions.filter(
+            (instance) =>
+              instance.agents.includes(agentName) &&
+              scopeMatches(instance.scope, scope),
+          );
+          const ids = new Set(relevantChildren.map((instance) => instance.id));
+          await Promise.all([...ids].map((id) => api.deleteExtension(id)));
+          const remainingChildren = childExtensions.filter(
+            (instance) => !ids.has(instance.id),
+          );
+          const binaryPath = ext.instances[0]?.cli_meta?.binary_path;
+          if (remainingChildren.length === 0 && binaryPath) {
+            await api.uninstallCliBinary(binaryPath);
+          }
+          await rescanAndFetch();
+        } else {
+          const scopedInstances = getScopedAgentInstances(
+            ext,
+            agentName,
+            scope,
+          );
+          if (scopedInstances.length === 0) return;
+          await deleteFromAgents(ext.groupKey, [agentName]);
+        }
+        toast.success(
+          `${agentDisplayName(agentName)} 已移除 ${name}${
+            scope.type === "project" ? ` (${scope.name})` : ""
+          }`,
+        );
+        return;
+      }
+
+      if (ext.kind === "cli") {
+        const children = findCliChildren(
+          extensions,
+          ext.instances[0]?.id,
+          ext.pack,
+        );
+        const seen = new Set<string>();
+        for (const child of children) {
+          const dedupeKey = `${child.kind}:${child.name}`;
+          if (seen.has(dedupeKey)) continue;
+          seen.add(dedupeKey);
+          await installToAgent(child.id, agentName);
+        }
+      } else {
+        const sourceInstance =
+          ext.instances.find((instance) => instance.scope.type === "global") ??
+          ext.instances[0];
+        await installToAgent(sourceInstance.id, agentName);
+      }
+      toast.success(`${agentDisplayName(agentName)} 已添加 ${name}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(`操作失败: ${message}`);
+    } finally {
+      setPendingAgent(null);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {visibleAgents.map((agentName) => {
+        const isInstalled = agentHasAssetInScope(ext, agentName, scope);
+        const isPending = pendingAgent === agentName;
+        const isUnsupportedAdd =
+          !isInstalled &&
+          ((ext.kind === "hook" && AGENTS_WITHOUT_HOOKS.has(agentName)) ||
+            ext.kind === "plugin" ||
+            scope.type === "project");
+
+        return (
+          <button
+            key={`${ext.groupKey}:${agentName}`}
+            type="button"
+            title={`${agentDisplayName(agentName)}${
+              isInstalled
+                ? " · 点击移除"
+                : isUnsupportedAdd
+                  ? " · 当前不可添加"
+                  : " · 点击添加"
+            }`}
+            onClick={(event) => {
+              void handleToggle(event, agentName);
+            }}
+            disabled={isPending || isUnsupportedAdd}
+            className={`flex h-9 w-9 items-center justify-center rounded-full border transition-all ${
+              isInstalled
+                ? `${AGENT_ICON_TONES[agentName] ?? "border-border bg-muted/40"} shadow-sm`
+                : "border-transparent bg-transparent"
+            } ${
+              isInstalled || !isUnsupportedAdd
+                ? "hover:scale-[1.03] hover:border-border/60"
+                : "cursor-not-allowed"
+            } ${isPending ? "opacity-70" : ""}`}
+          >
+            <div
+              className={`flex h-6 w-6 items-center justify-center ${
+                isInstalled ? "" : "grayscale opacity-40"
+              }`}
+            >
+              {isPending ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent text-muted-foreground" />
+              ) : (
+                <AgentMascot name={agentName} size={20} />
+              )}
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export function ExtensionTable({
   data,
@@ -46,7 +280,7 @@ export function ExtensionTable({
         id: "select",
         header: () => {
           const ids = useExtensionStore.getState().selectedIds;
-          const all = useExtensionStore.getState().filtered();
+          const all = useExtensionStore.getState().filtered(true);
           const allSelected = all.length > 0 && ids.size === all.length;
           return (
             <input
@@ -122,18 +356,11 @@ export function ExtensionTable({
       col.accessor("agents", {
         header: "Agent",
         cell: (info) => (
-          <div className="flex items-end gap-1">
-            {sortAgentNames(info.getValue(), agentOrder).map((name) => (
-              <div
-                key={name}
-                title={agentDisplayName(name)}
-                className="flex items-end justify-center"
-                style={{ width: 20, height: 20 }}
-              >
-                <AgentMascot name={name} size={18} />
-              </div>
-            ))}
-          </div>
+          <AgentMembershipCell
+            ext={info.row.original}
+            scope={scope}
+            agentOrder={agentOrder}
+          />
         ),
       }),
       col.accessor("permissions", {

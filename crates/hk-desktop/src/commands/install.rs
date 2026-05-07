@@ -577,6 +577,28 @@ pub async fn install_to_agent(
     .map_err(|e| HkError::Internal(e.to_string()))?
 }
 
+#[tauri::command]
+pub async fn install_to_project(
+    state: State<'_, AppState>,
+    extension_id: String,
+    target_agent: String,
+    target_scope: ConfigScope,
+) -> Result<String, HkError> {
+    let store = state.store.clone();
+    let adapters = state.adapters.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        service::install_to_project(
+            &store,
+            &adapters,
+            &extension_id,
+            &target_agent,
+            &target_scope,
+        )
+    })
+    .await
+    .map_err(|e| HkError::Internal(e.to_string()))?
+}
+
 // --- CLI commands ---
 
 #[tauri::command]
@@ -596,4 +618,3 @@ pub fn get_cli_with_children(
 pub fn list_cli_marketplace() -> Result<Vec<marketplace::MarketplaceItem>, HkError> {
     Ok(marketplace::list_cli_registry())
 }
-

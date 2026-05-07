@@ -94,17 +94,36 @@ impl AgentAdapter for CodexAdapter {
     }
 
     fn project_rules_patterns(&self) -> Vec<String> {
-        vec!["AGENTS.md".into(), "AGENTS.override.md".into()]
+        vec![
+            "AGENTS.md".into(),
+            "AGENTS.override.md".into(),
+            ".codex/AGENTS.md".into(),
+        ]
     }
 
     fn project_settings_patterns(&self) -> Vec<String> {
-        vec![".codex/config.toml".into()]
+        vec![
+            ".codex/config.toml".into(),
+            ".codex/hooks.json".into(),
+        ]
     }
 
     fn project_skill_dirs(&self) -> Vec<String> {
-        // Codex CLI scans .agents/skills from cwd up to the repo root.
+        // Codex CLI scans both .codex/skills and .agents/skills from cwd up
+        // to the repo root. `.codex/skills` is the native Codex convention;
+        // `.agents/skills` is the cross-agent Universal Agent Skills alias.
         // Source: https://developers.openai.com/codex/skills
-        vec![".agents/skills".into()]
+        vec![".codex/skills".into(), ".agents/skills".into()]
+    }
+
+    fn project_mcp_config_relpath(&self) -> Option<String> {
+        // Codex project MCP servers defined in .codex/config.toml under [mcp_servers]
+        Some(".codex/config.toml".into())
+    }
+
+    fn project_hook_config_relpath(&self) -> Option<String> {
+        // Codex project hooks defined in .codex/hooks.json
+        Some(".codex/hooks.json".into())
     }
 
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {

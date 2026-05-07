@@ -135,6 +135,22 @@ fn cli_stable_id(binary_name: &str) -> String {
     format!("{:016x}", fnv1a(key.as_bytes()))
 }
 
+fn is_lark_shared_skill(ext: &Extension) -> bool {
+    if ext.kind != ExtensionKind::Skill {
+        return false;
+    }
+    let name = ext.name.to_lowercase();
+    if name.contains("lark shared") {
+        return true;
+    }
+    matches!(ext.pack.as_deref(), Some("larksuite/cli"))
+        || ext
+            .source
+            .url
+            .as_deref()
+            .is_some_and(|url| url.contains("larksuite/cli"))
+}
+
 /// Scan a skill directory and return Extension entries.
 pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
     let mut extensions = Vec::new();
@@ -436,6 +452,120 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
         .collect()
 }
 
+fn plugin_extension_from_entry(
+    plugin: crate::adapter::PluginEntry,
+    adapter_name: &str,
+    scope: ConfigScope,
+) -> Extension {
+    let description = if plugin.source.is_empty() {
+        format!("Plugin for {}", adapter_name)
+    } else {
+        format!("Plugin from {}", plugin.source)
+    };
+    let permissions = plugin
+        .path
+        .as_ref()
+        .map(|p| infer_plugin_permissions(p))
+        .unwrap_or_else(|| {
+            vec![
+                Permission::Shell { commands: vec![] },
+                Permission::FileSystem { paths: vec![] },
+            ]
+        });
+
+    let (installed_at, updated_at) = match (plugin.installed_at, plugin.updated_at) {
+        (Some(i), Some(u)) => (i, u),
+        _ => plugin
+            .path
+            .as_ref()
+            .map(|p| (file_created_time(p), file_modified_time(p)))
+            .unwrap_or_else(|| (Utc::now(), Utc::now())),
+    };
+    let source = plugin.path.as_ref().map(|p| detect_source(p, true)).unwrap_or(
+        Source {
+            origin: SourceOrigin::Agent,
+            url: None,
+            version: None,
+            commit_hash: None,
+        },
+    );
+    let pack = source.url.as_deref().and_then(extract_pack_from_url);
+    let logical_name = format!("{}:{}", plugin.name, plugin.source);
+    let id = stable_id_with_scope(&logical_name, "plugin", adapter_name, &scope);
+    let source_path = plugin.path.as_ref().map(|p| p.to_string_lossy().to_string());
+
+    Extension {
+        id,
+        kind: ExtensionKind::Plugin,
+        name: plugin.name,
+        description,
+        source,
+        agents: vec![adapter_name.to_string()],
+        tags: vec![],
+        pack,
+        permissions,
+        enabled: plugin.enabled,
+        trust_score: None,
+        installed_at,
+        updated_at,
+        source_path,
+        cli_parent_id: None,
+        cli_meta: None,
+        install_meta: None,
+        scope,
+    }
+}
+
+fn scan_project_plugin_dir(
+    dir: &Path,
+    adapter_name: &str,
+    scope: &ConfigScope,
+) -> Vec<Extension> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+
+    entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .map(|path| {
+            let name = plugin_name_from_manifest(&path)
+                .or_else(|| path.file_name().map(|n| n.to_string_lossy().to_string()))
+                .unwrap_or_else(|| "plugin".to_string());
+            let plugin = crate::adapter::PluginEntry {
+                name,
+                source: "project".to_string(),
+                enabled: true,
+                path: Some(path),
+                uri: None,
+                installed_at: None,
+                updated_at: None,
+            };
+            plugin_extension_from_entry(plugin, adapter_name, scope.clone())
+        })
+        .collect()
+}
+
+fn plugin_name_from_manifest(path: &Path) -> Option<String> {
+    let manifests = [
+        path.join("plugin.json"),
+        path.join(".plugin").join("plugin.json"),
+        path.join(".codex-plugin").join("plugin.json"),
+        path.join(".cursor-plugin").join("plugin.json"),
+        path.join(".github").join("plugin").join("plugin.json"),
+        path.join("gemini-extension.json"),
+    ];
+
+    manifests.iter().find_map(|manifest| {
+        let content = std::fs::read_to_string(manifest).ok()?;
+        let json = serde_json::from_str::<serde_json::Value>(&content).ok()?;
+        json.get("name")
+            .and_then(|name| name.as_str())
+            .map(String::from)
+    })
+}
+
 /// Run `which` (Unix) or `where` (Windows) to resolve a binary name to its absolute path.
 pub(crate) fn run_which(name: &str) -> Option<String> {
     if crate::sanitize::validate_binary_name(name).is_err() {
@@ -652,7 +782,9 @@ fn scan_cli_binaries(
             continue;
         }
         for known in KNOWN_CLIS {
-            if ext.name == known.binary_name {
+            if ext.name == known.binary_name
+                || (known.binary_name == "lark-cli" && is_lark_shared_skill(ext))
+            {
                 bin_to_skills
                     .entry(known.binary_name.to_string())
                     .or_default()
@@ -987,6 +1119,12 @@ pub fn scan_project_extensions(
         }
     }
 
+    // --- Project-scoped plugins ---
+    for rel_dir in adapter.project_plugin_dirs() {
+        let dir = project_path.join(&rel_dir);
+        all.extend(scan_project_plugin_dir(&dir, adapter.name(), &scope));
+    }
+
     all
 }
 
@@ -1094,6 +1232,74 @@ pub fn find_skill_by_id(
 
         // Build candidates: global skill_dirs first, then project skill_dirs
         // joined with each known project.
+        let mut candidates: Vec<(std::path::PathBuf, ConfigScope)> = a
+            .skill_dirs()
+            .into_iter()
+            .map(|d| (d, ConfigScope::Global))
+            .collect();
+        for (project_name, project_path) in projects {
+            let project_root = std::path::Path::new(project_path);
+            if !project_root.is_dir() {
+                continue;
+            }
+            for rel in a.project_skill_dirs() {
+                candidates.push((
+                    project_root.join(&rel),
+                    ConfigScope::Project {
+                        name: project_name.clone(),
+                        path: project_path.clone(),
+                    },
+                ));
+            }
+        }
+
+        for (skill_dir, scope) in candidates {
+            let Ok(entries) = std::fs::read_dir(&skill_dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let skill_file = if path.is_dir() {
+                    let md = path.join("SKILL.md");
+                    if md.exists() {
+                        md
+                    } else {
+                        path.join("SKILL.md.disabled")
+                    }
+                } else if path
+                    .extension()
+                    .is_some_and(|e| e == "md" || e == "disabled")
+                {
+                    path.clone()
+                } else {
+                    continue;
+                };
+                if !skill_file.exists() {
+                    continue;
+                }
+                let name = parse_skill_name(&skill_file).unwrap_or_else(|| {
+                    path.file_stem()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string()
+                });
+                if stable_id_with_scope(&name, "skill", a.name(), &scope) == ext_id {
+                    return Some(SkillLocation {
+                        entry_path: path,
+                        skill_file,
+                        skill_dir: skill_dir.clone(),
+                    });
+                }
+            }
+        }
+    }
+    for agent_name in agent_filter {
+        if adapters.iter().any(|a| a.name() == agent_name) {
+            continue;
+        }
+        let Some(a) = crate::adapter::adapter_for_name(agent_name) else {
+            continue;
+        };
         let mut candidates: Vec<(std::path::PathBuf, ConfigScope)> = a
             .skill_dirs()
             .into_iter()
@@ -1802,7 +2008,7 @@ pub fn scan_agent_configs(
 
     for (category, paths) in &global_groups {
         for path in paths {
-            if let Some(cf) = stat_config_file(path, adapter.name(), *category, ConfigScope::Global)
+            if let Some(cf) = stat_config_entry(path, adapter.name(), *category, ConfigScope::Global)
             {
                 configs.push(cf);
             }
@@ -1840,11 +2046,58 @@ pub fn scan_agent_configs(
                 let resolved = resolve_pattern(project_root, pattern);
                 for path in resolved {
                     if let Some(cf) =
-                        stat_config_file(&path, adapter.name(), *category, scope.clone())
+                        stat_config_entry(&path, adapter.name(), *category, scope.clone())
                     {
+                        if cf.is_dir {
+                            continue;
+                        }
                         configs.push(cf);
                     }
                 }
+            }
+        }
+
+        let mut seen_project_config_paths: HashSet<String> = configs
+            .iter()
+            .filter(|c| c.agent == adapter.name() && c.scope.scope_key() == scope.scope_key())
+            .map(|c| c.path.clone())
+            .collect();
+
+        for skill_dir in adapter.project_skill_dirs() {
+            for path in resolve_pattern(project_root, &skill_dir) {
+                let path_str = path.to_string_lossy().to_string();
+                if seen_project_config_paths.contains(&path_str) {
+                    continue;
+                }
+                if let Some(cf) =
+                    stat_config_entry(&path, adapter.name(), ConfigCategory::Workflow, scope.clone())
+                {
+                    configs.push(cf);
+                    seen_project_config_paths.insert(path_str);
+                }
+            }
+        }
+
+        for path in [
+            adapter
+                .project_mcp_config_relpath()
+                .map(|rel| project_root.join(rel)),
+            adapter
+                .project_hook_config_relpath()
+                .map(|rel| project_root.join(rel)),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            let path_str = path.to_string_lossy().to_string();
+            if seen_project_config_paths.contains(&path_str) {
+                continue;
+            }
+            if let Some(cf) =
+                stat_config_entry(&path, adapter.name(), ConfigCategory::Settings, scope.clone())
+            {
+                configs.push(cf);
+                seen_project_config_paths.insert(path_str);
             }
         }
     }
@@ -1865,15 +2118,15 @@ pub fn scan_agent_configs(
     configs
 }
 
-/// Stat a file and build an AgentConfigFile if it exists.
-fn stat_config_file(
+/// Stat a file or configuration directory and build an AgentConfigFile if it exists.
+fn stat_config_entry(
     path: &std::path::Path,
     agent: &str,
     category: ConfigCategory,
     scope: ConfigScope,
 ) -> Option<AgentConfigFile> {
     let metadata = std::fs::metadata(path).ok()?;
-    if !metadata.is_file() {
+    if !(metadata.is_file() || metadata.is_dir()) {
         return None;
     }
 
@@ -2490,6 +2743,79 @@ mod config_tests {
     }
 
     #[test]
+    fn test_scan_agent_configs_includes_project_skill_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let project = tmp.path().join("myproject");
+        let skill_dir = project.join(".claude").join("skills");
+        fs::create_dir_all(home.join(".claude")).unwrap();
+        fs::create_dir_all(&skill_dir).unwrap();
+
+        let adapter = ClaudeAdapter::with_home(home.to_path_buf());
+        let projects = vec![(
+            "myproject".to_string(),
+            project.to_string_lossy().to_string(),
+        )];
+        let configs = scan_agent_configs(&adapter, &projects);
+
+        let skill_dirs: Vec<_> = configs
+            .iter()
+            .filter(|c| {
+                c.category == ConfigCategory::Workflow
+                    && c.is_dir
+                    && c.path == skill_dir.to_string_lossy()
+                    && matches!(&c.scope, ConfigScope::Project { .. })
+            })
+            .collect();
+        assert_eq!(skill_dirs.len(), 1);
+    }
+
+    #[test]
+    fn test_scan_agent_configs_ignores_marker_directories() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("myproject");
+        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        std::fs::create_dir_all(project.join(".codex")).unwrap();
+        std::fs::create_dir_all(project.join(".cursor")).unwrap();
+
+        let projects = vec![(
+            "myproject".to_string(),
+            project.to_string_lossy().to_string(),
+        )];
+
+        let claude =
+            crate::adapter::claude::ClaudeAdapter::with_home(tmp.path().to_path_buf());
+        let codex = crate::adapter::codex::CodexAdapter::with_home(tmp.path().to_path_buf());
+        let cursor =
+            crate::adapter::cursor::CursorAdapter::with_home(tmp.path().to_path_buf());
+
+        let claude_configs = scan_agent_configs(&claude, &projects);
+        assert!(claude_configs.is_empty());
+
+        let codex_configs = scan_agent_configs(&codex, &projects);
+        assert!(codex_configs.is_empty());
+
+        let cursor_configs = scan_agent_configs(&cursor, &projects);
+        assert!(cursor_configs.is_empty());
+    }
+
+    #[test]
+    fn test_scan_agent_configs_does_not_treat_agents_root_as_antigravity() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("myproject");
+        std::fs::create_dir_all(project.join(".agents")).unwrap();
+        let projects = vec![(
+            "myproject".to_string(),
+            project.to_string_lossy().to_string(),
+        )];
+        let adapter =
+            crate::adapter::antigravity::AntigravityAdapter::with_home(tmp.path().to_path_buf());
+
+        let configs = scan_agent_configs(&adapter, &projects);
+        assert!(configs.is_empty());
+    }
+
+    #[test]
     fn test_scan_agent_configs_skips_missing_files() {
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
@@ -2573,6 +2899,36 @@ mod config_tests {
         let content = "---\nname: plain-skill\ndescription: No CLI\n---\nBody";
         let (_, _, bins) = parse_skill_frontmatter(content).unwrap();
         assert!(bins.is_empty());
+    }
+
+    #[test]
+    fn test_lark_shared_skill_alias_matches_lark_cli() {
+        let skill = Extension {
+            id: "skill-1".into(),
+            kind: ExtensionKind::Skill,
+            name: "Lark Shared".into(),
+            description: "".into(),
+            source: Source {
+                origin: SourceOrigin::Agent,
+                url: None,
+                version: None,
+                commit_hash: None,
+            },
+            agents: vec!["codex".into()],
+            tags: vec![],
+            pack: None,
+            permissions: vec![],
+            enabled: true,
+            trust_score: None,
+            installed_at: Utc::now(),
+            updated_at: Utc::now(),
+            source_path: None,
+            cli_parent_id: None,
+            cli_meta: None,
+            install_meta: None,
+            scope: ConfigScope::Global,
+        };
+        assert!(is_lark_shared_skill(&skill));
     }
 
     #[test]

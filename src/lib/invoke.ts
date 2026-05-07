@@ -29,7 +29,7 @@ function validateGitUrl(url: string): void {
 }
 
 function validateNonEmpty(value: string, label: string): void {
-  if (!value || !value.trim()) {
+  if (!value?.trim()) {
     throw new Error(`${label} cannot be empty`);
   }
 }
@@ -236,6 +236,18 @@ export const api = {
     return transport("install_to_agent", { extensionId, targetAgent });
   },
 
+  installToProject(
+    extensionId: string,
+    targetAgent: string,
+    targetScope: ConfigScope,
+  ): Promise<string> {
+    return transport("install_to_project", {
+      extensionId,
+      targetAgent,
+      targetScope,
+    });
+  },
+
   listProjects(): Promise<Project[]> {
     return transport("list_projects");
   },
@@ -254,6 +266,30 @@ export const api = {
 
   updateAgentPath(name: string, path: string | null): Promise<void> {
     return transport("update_agent_path", { name, path });
+  },
+
+  createAgent(
+    name: string,
+    path: string,
+    iconPath?: string | null,
+  ): Promise<void> {
+    validateNonEmpty(name, "Agent name");
+    validateNonEmpty(path, "Agent path");
+    return transport("create_agent", {
+      name,
+      path,
+      iconPath: iconPath ?? null,
+    });
+  },
+
+  removeAgent(name: string): Promise<void> {
+    validateNonEmpty(name, "Agent name");
+    return transport("remove_agent", { name });
+  },
+
+  setAgentIconPath(name: string, iconPath: string | null): Promise<void> {
+    validateNonEmpty(name, "Agent name");
+    return transport("set_agent_icon_path", { name, iconPath });
   },
 
   setAgentEnabled(name: string, enabled: boolean): Promise<void> {

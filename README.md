@@ -55,12 +55,23 @@ HarnessKit manages **all five extension types** from a unified interface — **S
 | **Gemini CLI** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Cursor** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Antigravity** | ✓ | ✓ | — | — | ✓ |
-| **Copilot** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **GitHub Copilot** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Windsurf** | ✓ | ✓ | — | ✓ | ✓ |
+| **OpenCode** | ✓ | ✓ | ✓ | — | — |
+| **Qoder** | ✓ | ✓ | ✓ | — | — |
+| **Qwen Code** | ✓ | ✓ | ✓ | — | — |
+| **Kiro CLI** | ✓ | — | ✓ | — | — |
+| **OpenClaw** | ✓ | — | — | — | — |
+| **CodeBuddy** | ✓ | — | — | — | — |
+| **Kimi Code CLI** | ✓ | — | — | — | — |
+| **Kilo Code** | ✓ | — | — | — | — |
+| **Trae** | ✓ | — | ✓ | — | — |
 
 <small><i>* "—" indicates the agent currently does not support this extension type.</i></small>
 
 </div>
+
+> **Note:** GitHub Copilot, Windsurf, and agents below the divider are **preset agents** — they are not auto-detected by default. You can add them manually from **Settings → Agents** to enable full management.
 
 - **Smart organization** — Filter by *type*, *agent*, or *source*, and search by name. Extensions from the same repo are automatically grouped into *packs* for batch management.
 - **Full visibility** — Every extension shows its *agents*, *permissions*, *trust score*, and *status* at a glance. Open the detail panel for per-agent *file paths*, *directory structure*, and *audit findings*.
@@ -76,7 +87,7 @@ HarnessKit manages **all five extension types** from a unified interface — **S
 
 ### 🤖 Agent Configs, Memory & Rules
 
-HarnessKit manages every agent's **Configs**, **Memory**, **Rules**, and **Ignore** files from one place. Currently supporting **7 agents**: **Claude Code**, **Codex**, **Gemini CLI**, **Cursor**, **Antigravity**, **Copilot**, and **Windsurf**.
+HarnessKit manages every agent's **Configs**, **Memory**, **Rules**, and **Ignore** files from one place. **17 agents supported** — **5 built-in** (auto-detected) plus **12 preset agents** (add from Settings): Claude Code, Codex, Gemini CLI, Cursor, Antigravity, GitHub Copilot, Windsurf, OpenCode, OpenClaw, CodeBuddy, Kimi Code CLI, Kilo Code, Kiro CLI, Trae, Qoder, Qwen Code, and Trae CN.
 
 - **Config file tracking** — Automatically discovers every agent's config files — both global and per-project. Add your project directories or custom paths and HarnessKit picks them up alongside the global ones.
 - **Per-agent dashboard** — Each agent gets its own page with all files organized by category, showing scope, path, file size, and a summary of installed extensions. Expand any file to preview its content right in the app.
@@ -325,7 +336,7 @@ See [CLI Support](#%EF%B8%8F-cli-support) above for the full list of commands.
 
 ## Roadmap
 
-- 🤖 **More Agents** — Hermes-agent, OpenClaw, OpenCode, and more
+- 🤖 **More Agents** — Additional preset adapters for emerging AI coding tools
 - 📦 **Extension Migration** — Export/import your extension setup between devices
 - ⌨️ **CLI Enhancements** — More commands and richer functionality for `hk`
 

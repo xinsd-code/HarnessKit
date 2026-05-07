@@ -6,10 +6,19 @@ import type {
   MarketplaceItem,
   SkillAuditInfo,
 } from "@/lib/types";
+import { scopeKey } from "@/lib/types";
 
 type TabKind = "skill" | "mcp" | "cli";
 
 const TRENDING_TTL = 5 * 60 * 1000; // 5 minutes
+
+function installProgressKey(
+  item: MarketplaceItem,
+  targetAgent: string | undefined,
+  targetScope: ConfigScope,
+): string {
+  return `${item.id}:${targetAgent ?? ""}:${scopeKey(targetScope)}`;
+}
 
 interface MarketplaceState {
   tab: TabKind;
@@ -427,7 +436,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     });
   },
   async install(item, targetAgent, targetScope) {
-    set({ installing: `${item.id}:${targetAgent ?? ""}` });
+    set({ installing: installProgressKey(item, targetAgent, targetScope) });
     try {
       let { source, skill_id } = item;
       // If skill_id is empty (trending items), resolve via skills.sh first

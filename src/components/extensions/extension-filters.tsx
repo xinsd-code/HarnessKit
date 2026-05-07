@@ -5,7 +5,6 @@ import { agentDisplayName, type ExtensionKind, sortAgents } from "@/lib/types";
 import { isWeb as web, webSelectStyle } from "@/lib/web-select";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
-import { useScopeStore } from "@/stores/scope-store";
 
 const TAG_COLORS = [
   "bg-primary/10 text-primary",
@@ -59,33 +58,21 @@ export function ExtensionFilters() {
   const setSearchQuery = useExtensionStore((s) => s.setSearchQuery);
   const packFilter = useExtensionStore((s) => s.packFilter);
   const setPackFilter = useExtensionStore((s) => s.setPackFilter);
-  const extensions = useExtensionStore((s) => s.extensions);
   const grouped = useExtensionStore((s) => s.grouped);
   const filtered = useExtensionStore((s) => s.filtered);
-  const scope = useScopeStore((s) => s.current);
-  // Source dropdown options + counts are scoped: a project shouldn't show
-  // packs that only exist globally (and vice versa). We deliberately don't
-  // narrow by kind/agent/tag/search — those filter the rows further; the
-  // dropdown options should stay stable as the user toggles them.
+  // Extension page always shows all assets, so source options should be
+  // derived from the full grouped dataset instead of the active sidebar scope.
   const { scopedPacks, packCounts } = useMemo(() => {
     const counts = new Map<string, number>();
     for (const g of grouped()) {
       if (!g.pack) continue;
-      if (scope.type !== "all") {
-        const targetKey = scope.type === "global" ? "global" : scope.path;
-        const matches = g.instances.some((i) => {
-          const k = i.scope.type === "global" ? "global" : i.scope.path;
-          return k === targetKey;
-        });
-        if (!matches) continue;
-      }
       counts.set(g.pack, (counts.get(g.pack) ?? 0) + 1);
     }
     return {
       scopedPacks: [...counts.keys()].sort(),
       packCounts: counts,
     };
-  }, [grouped, extensions, scope]);
+  }, [grouped]);
   const agents = useAgentStore((s) => s.agents);
   const agentOrder = useAgentStore((s) => s.agentOrder);
   const enabledAgents = useMemo(
@@ -96,7 +83,7 @@ export function ExtensionFilters() {
       ),
     [agents, agentOrder],
   );
-  const resultCount = filtered().length;
+  const resultCount = filtered(true).length;
 
   // Clear packFilter when the selected pack no longer exists in the current
   // scope — otherwise the dropdown shows a stale value not in options and

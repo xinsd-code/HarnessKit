@@ -3,8 +3,10 @@ import type { Extension } from "@/lib/types";
 import {
   buildGroups,
   expandGroupKeys,
+  filterSkillTabGroups,
   getCachedFiltered,
   getCachedGroups,
+  isCliChildSkillGroup,
 } from "../extension-helpers";
 
 const baseExt: Extension = {
@@ -69,6 +71,74 @@ describe("buildGroups", () => {
     expect(groups[0].instances).toHaveLength(3);
   });
 
+  it("merges a sourceless project row into a unique URL-based sibling across scopes", () => {
+    const shared: Extension = {
+      ...baseExt,
+      source: { origin: "agent", url: null, version: null, commit_hash: null },
+      install_meta: null,
+    };
+    const global = {
+      ...shared,
+      id: "global",
+      agents: ["claude"],
+      name: "frontend-design",
+      pack: "owner/frontend-design",
+      scope: { type: "global" as const },
+    };
+    const project = {
+      ...shared,
+      id: "project",
+      agents: ["claude"],
+      name: "frontend-design",
+      pack: null,
+      scope: {
+        type: "project" as const,
+        name: "skills-hub",
+        path: "/tmp/skills-hub",
+      },
+    };
+
+    const groups = buildGroups([global, project]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].instances).toHaveLength(2);
+    expect(groups[0].instances.map((item) => item.id).sort()).toEqual([
+      "global",
+      "project",
+    ]);
+  });
+
+  it("merges sourceless global and project rows with the same logical name", () => {
+    const sourceless: Extension = {
+      ...baseExt,
+      name: "frontend-design",
+      source: { origin: "agent", url: null, version: null, commit_hash: null },
+      install_meta: null,
+      pack: null,
+    };
+    const global = {
+      ...sourceless,
+      id: "global",
+      agents: ["claude"],
+      scope: { type: "global" as const },
+    };
+    const project = {
+      ...sourceless,
+      id: "project",
+      agents: ["claude"],
+      scope: {
+        type: "project" as const,
+        name: "skills-hub",
+        path: "/tmp/skills-hub",
+      },
+    };
+
+    const groups = buildGroups([global, project]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].instances).toHaveLength(2);
+  });
+
   it("does NOT merge a sourceless row when there are multiple URL-based siblings (ambiguous)", () => {
     const shared: Extension = {
       ...baseExt,
@@ -112,6 +182,44 @@ describe("buildGroups", () => {
 
     expect(groups).toHaveLength(2);
     expect(groups.map((g) => g.name).sort()).toEqual(["my-cli", "my-skill"]);
+  });
+
+  it("marks cli child skills as hidden from the Skills tab", () => {
+    const parent = {
+      ...baseExt,
+      id: "parent",
+      name: "my-cli",
+      kind: "cli" as const,
+      pack: "owner/my-cli",
+    };
+    const child = {
+      ...baseExt,
+      id: "child",
+      name: "my-skill",
+      cli_parent_id: "parent",
+      pack: "owner/my-cli",
+    };
+    const standalone = {
+      ...baseExt,
+      id: "standalone",
+      name: "standalone-skill",
+    };
+    const groups = buildGroups([parent, child, standalone]);
+    const childGroup = groups.find((g) => g.name === "my-skill");
+    const standaloneGroup = groups.find((g) => g.name === "standalone-skill");
+
+    expect(childGroup).toBeDefined();
+    expect(standaloneGroup).toBeDefined();
+    if (!childGroup || !standaloneGroup) {
+      throw new Error("expected skill groups to exist");
+    }
+    expect(isCliChildSkillGroup(childGroup, groups)).toBe(true);
+    expect(isCliChildSkillGroup(standaloneGroup, groups)).toBe(false);
+    expect(
+      filterSkillTabGroups(groups)
+        .map((g) => g.name)
+        .sort(),
+    ).toEqual(["my-cli", "standalone-skill"]);
   });
 
   it("merges tags from all instances (deduped)", () => {
@@ -245,7 +353,11 @@ describe("expandGroupKeys", () => {
     const a = { ...baseExt, id: "ext-1", name: "skill-a" };
     const b = { ...baseExt, id: "ext-2", name: "skill-b" };
     const groups = buildGroups([a, b]);
-    const keyA = groups.find((g) => g.name === "skill-a")!.groupKey;
+    const keyA = groups.find((g) => g.name === "skill-a")?.groupKey;
+
+    if (!keyA) {
+      throw new Error("expected skill-a group key");
+    }
 
     const ids = expandGroupKeys(groups, new Set([keyA]));
     expect(ids).toEqual(["ext-1"]);
@@ -369,5 +481,40 @@ describe("getCachedFiltered with scope", () => {
       type: "all",
     });
     expect(result.length).toBe(2);
+  });
+
+  it("excludes CLI child skills from the skill filter", () => {
+    const cli: Extension = {
+      ...baseExt,
+      id: "cli",
+      name: "tool-cli",
+      kind: "cli",
+      pack: "owner/tool-cli",
+    };
+    const cliChild: Extension = {
+      ...baseExt,
+      id: "cli-child",
+      name: "tool-skill",
+      pack: "owner/tool-cli",
+      cli_parent_id: "cli",
+    };
+    const standalone: Extension = {
+      ...baseExt,
+      id: "standalone",
+      name: "other-skill",
+    };
+    const mixedGroups = buildGroups([cli, cliChild, standalone]);
+
+    const result = getCachedFiltered(
+      mixedGroups,
+      "skill",
+      null,
+      null,
+      null,
+      "",
+      { type: "all" },
+    );
+
+    expect(result.map((g) => g.name)).toEqual(["other-skill"]);
   });
 });

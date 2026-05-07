@@ -3,7 +3,6 @@ import {
   deriveExtensionUrl,
   extensionGroupKey,
   logicalExtensionName,
-  scopeKey,
   sortAgentNames,
 } from "@/lib/types";
 import type { ScopeValue } from "@/stores/scope-store";
@@ -58,16 +57,16 @@ function deduplicatePermissions(
 }
 
 export function buildGroups(extensions: Extension[]): GroupedExtension[] {
-  // Pre-pass: index URL-keyed groups by (kind, logical name, scope) so a
-  // sourceless instance (e.g. an agent-discovered copy that lacks pack
-  // metadata) can attach to its marketplace-installed sibling instead of
-  // forming a separate row. Only redirect when there is exactly one such
-  // sibling — multiple distinct developers in the same scope means we can't
-  // tell which one a sourceless row belongs to.
+  // Pre-pass: index URL-keyed groups by (kind, logical name) so a sourceless
+  // instance (e.g. a project copy rediscovered from disk without install
+  // metadata) can attach to its marketplace-installed/global sibling instead
+  // of forming a separate row. Only redirect when there is exactly one such
+  // sibling — multiple distinct developers for the same logical asset means
+  // we can't safely decide which one a sourceless row belongs to.
   const urlSiblings = new Map<string, Set<string>>();
   for (const ext of extensions) {
     if (deriveExtensionUrl(ext) == null) continue;
-    const sk = `${ext.kind}\0${logicalExtensionName(ext)}\0${scopeKey(ext.scope)}`;
+    const sk = `${ext.kind}\0${logicalExtensionName(ext)}`;
     const keys = urlSiblings.get(sk) ?? new Set<string>();
     keys.add(extensionGroupKey(ext));
     urlSiblings.set(sk, keys);
@@ -77,10 +76,12 @@ export function buildGroups(extensions: Extension[]): GroupedExtension[] {
   for (const ext of extensions) {
     let key = extensionGroupKey(ext);
     if (deriveExtensionUrl(ext) == null) {
-      const sk = `${ext.kind}\0${logicalExtensionName(ext)}\0${scopeKey(ext.scope)}`;
+      const sk = `${ext.kind}\0${logicalExtensionName(ext)}`;
       const siblings = urlSiblings.get(sk);
       if (siblings?.size === 1) {
         key = siblings.values().next().value as string;
+      } else {
+        key = `${ext.kind}\0${logicalExtensionName(ext)}\0(sourceless)`;
       }
     }
     const list = map.get(key);
@@ -124,7 +125,82 @@ export function buildGroups(extensions: Extension[]): GroupedExtension[] {
       instances,
     });
   }
-  return groups;
+  const merged = new Map<string, GroupedExtension>();
+  for (const group of groups) {
+    // Merge by the logical asset identity only. A single extension can exist
+    // globally and in one or more projects, or across multiple agents, but it
+    // should still render as one row in Extensions with aggregated agents and
+    // instances.
+    const mergeKey = group.groupKey;
+    const existing = merged.get(mergeKey);
+    if (!existing) {
+      merged.set(mergeKey, group);
+      continue;
+    }
+    merged.set(mergeKey, {
+      ...existing,
+      agents: sortAgentNames(
+        [...new Set([...existing.agents, ...group.agents])],
+      ),
+      tags: [...new Set([...existing.tags, ...group.tags])],
+      permissions: deduplicatePermissions([
+        ...existing.permissions,
+        ...group.permissions,
+      ]),
+      enabled: existing.enabled || group.enabled,
+      trust_score:
+        existing.trust_score != null || group.trust_score != null
+          ? [existing.trust_score, group.trust_score]
+              .filter((v): v is number => v != null)
+              .reduce((min, v) => Math.min(min, v), 100)
+          : null,
+      installed_at:
+        existing.installed_at < group.installed_at
+          ? existing.installed_at
+          : group.installed_at,
+      updated_at:
+        existing.updated_at > group.updated_at
+          ? existing.updated_at
+          : group.updated_at,
+      instances: [...existing.instances, ...group.instances],
+    });
+  }
+  return [...merged.values()];
+}
+
+function buildCliLookup(groups: GroupedExtension[]): {
+  cliIds: Set<string>;
+  cliPacks: Set<string>;
+} {
+  const cliIds = new Set<string>();
+  const cliPacks = new Set<string>();
+  for (const group of groups) {
+    if (group.kind !== "cli") continue;
+    for (const instance of group.instances) {
+      cliIds.add(instance.id);
+    }
+    if (group.pack) cliPacks.add(group.pack);
+  }
+  return { cliIds, cliPacks };
+}
+
+export function isCliChildSkillGroup(
+  group: GroupedExtension,
+  groups: GroupedExtension[],
+): boolean {
+  if (group.kind !== "skill") return false;
+  const { cliIds, cliPacks } = buildCliLookup(groups);
+  return group.instances.some(
+    (instance) =>
+      (instance.cli_parent_id != null && cliIds.has(instance.cli_parent_id)) ||
+      (instance.pack != null && cliPacks.has(instance.pack)),
+  );
+}
+
+export function filterSkillTabGroups(
+  groups: GroupedExtension[],
+): GroupedExtension[] {
+  return groups.filter((group) => !isCliChildSkillGroup(group, groups));
 }
 
 /** Find all child extensions of a CLI group (by cli_parent_id or matching pack).
@@ -192,14 +268,17 @@ export function getCachedFiltered(
   tagFilter: string | null,
   searchQuery: string,
   scope: ScopeValue,
+  ignoreScope = false,
 ): GroupedExtension[] {
   // Memoize: skip recomputation if inputs haven't changed
   const scopeKeyForCache =
-    scope.type === "all"
+    ignoreScope
       ? "all"
-      : scope.type === "global"
-        ? "global"
-        : `project:${scope.path}`;
+      : scope.type === "all"
+        ? "all"
+        : scope.type === "global"
+          ? "global"
+          : `project:${scope.path}`;
   const key = `${groups.length}|${kindFilter}|${agentFilter}|${packFilter}|${tagFilter}|${searchQuery}|${scopeKeyForCache}`;
   if (key === _cachedFilterKey && groups === _cachedFilterGroupsRef) {
     return _cachedFiltered;
@@ -207,6 +286,9 @@ export function getCachedFiltered(
   let result = groups;
   if (kindFilter) {
     result = result.filter((g) => g.kind === kindFilter);
+    if (kindFilter === "skill") {
+      result = result.filter((group) => !isCliChildSkillGroup(group, groups));
+    }
   }
   if (agentFilter) {
     result = result.filter((g) => g.agents.includes(agentFilter));
@@ -217,7 +299,7 @@ export function getCachedFiltered(
   if (tagFilter) {
     result = result.filter((g) => g.tags.includes(tagFilter));
   }
-  if (scope.type !== "all") {
+  if (!ignoreScope && scope.type !== "all") {
     // Match if any instance is in the requested scope. After Phase C dedup,
     // a single group can span multiple scopes, so we look across instances.
     const targetKey = scope.type === "global" ? "global" : scope.path;

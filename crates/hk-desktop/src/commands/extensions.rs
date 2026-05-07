@@ -1,5 +1,6 @@
 use super::AppState;
 use super::helpers::{FileEntry, is_path_within_allowed_dirs, list_dir_entries};
+use hk_core::adapter;
 use hk_core::service::ExtensionContent;
 use hk_core::{HkError, manager, models::*, scanner, service};
 use tauri::{Emitter, State};
@@ -53,15 +54,19 @@ pub fn uninstall_cli_binary(binary_path: String) -> Result<(), HkError> {
 #[tauri::command]
 pub fn list_skill_files(state: State<AppState>, path: String) -> Result<Vec<FileEntry>, HkError> {
     let root = std::path::Path::new(&path);
-    if !root.is_dir() {
-        return Err(HkError::Validation("Path is not a directory".into()));
-    }
-    if !is_path_within_allowed_dirs(root, &state)? {
+    let listing_root = if root.is_dir() {
+        root
+    } else if root.is_file() {
+        root.parent().unwrap_or(root)
+    } else {
+        return Err(HkError::Validation("Path does not exist".into()));
+    };
+    if !is_path_within_allowed_dirs(listing_root, &state)? {
         return Err(HkError::PathNotAllowed(
             "Path is not within a known agent or project directory".into(),
         ));
     }
-    list_dir_entries(root, 0)
+    list_dir_entries(listing_root, 0)
 }
 
 /// Open a file or directory in the system's default application.
@@ -161,17 +166,25 @@ pub fn get_skill_locations(state: State<AppState>, name: String) -> Vec<(String,
     scanner::skill_locations(&name, adapters, &projects, None)
         .into_iter()
         .map(|(agent, path)| {
+            let display_path = if path.join("SKILL.md").exists() {
+                path.join("SKILL.md")
+            } else if path.join("SKILL.md.disabled").exists() {
+                path.join("SKILL.md.disabled")
+            } else {
+                path.clone()
+            };
             // Check if the path itself or its parent skill_dir is a symlink
-            let symlink_target = if path
+            let symlink_target = if display_path
                 .symlink_metadata()
                 .map(|m| m.is_symlink())
                 .unwrap_or(false)
             {
-                std::fs::read_link(&path)
+                std::fs::read_link(&display_path)
                     .ok()
                     .map(|t| t.to_string_lossy().to_string())
             } else {
-                path.parent()
+                display_path
+                    .parent()
                     .filter(|p| {
                         p.symlink_metadata()
                             .map(|m| m.is_symlink())
@@ -179,12 +192,16 @@ pub fn get_skill_locations(state: State<AppState>, name: String) -> Vec<(String,
                     })
                     .and_then(|p| std::fs::read_link(p).ok())
                     .map(|t| {
-                        t.join(path.file_name().unwrap_or_default())
+                        t.join(display_path.file_name().unwrap_or_default())
                             .to_string_lossy()
                             .to_string()
                     })
             };
-            (agent, path.to_string_lossy().to_string(), symlink_target)
+            (
+                agent,
+                display_path.to_string_lossy().to_string(),
+                symlink_target,
+            )
         })
         .collect()
 }
@@ -200,12 +217,13 @@ pub fn get_extension_content(
 #[tauri::command]
 pub async fn scan_and_sync(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<usize, HkError> {
     let store = state.store.clone();
-    let adapters = state.adapters.clone();
 
     // Phase 1+2: Scan filesystem and sync to DB.
     let (count, unlinked) = tauri::async_runtime::spawn_blocking(move || {
         let store = store.lock();
         let projects = store.list_project_tuples();
+        let settings = store.list_agent_settings().unwrap_or_default();
+        let adapters = adapter::runtime_adapters_for_settings(&settings);
         let extensions = scanner::scan_all(&adapters, &projects);
         let count = extensions.len();
 
