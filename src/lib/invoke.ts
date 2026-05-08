@@ -365,4 +365,68 @@ export const api = {
   setAppIcon(name: string): Promise<void> {
     return transport("set_app_icon", { name });
   },
+
+  // Local Hub API
+  listHubExtensions(): Promise<Extension[]> {
+    return transport("list_hub_extensions");
+  },
+
+  backupToHub(extensionId: string): Promise<void> {
+    validateNonEmpty(extensionId, "Extension ID");
+    return transport("backup_to_hub", { extensionId });
+  },
+
+  installFromHub(
+    extensionId: string,
+    targetAgent: string,
+    scope: ConfigScope,
+    force: boolean,
+  ): Promise<Extension[]> {
+    validateNonEmpty(extensionId, "Extension ID");
+    validateNonEmpty(targetAgent, "Target agent");
+    return transport("install_from_hub", {
+      extensionId,
+      targetAgent,
+      scope,
+      force,
+    });
+  },
+
+  deleteFromHub(extensionId: string): Promise<void> {
+    validateNonEmpty(extensionId, "Extension ID");
+    return transport("delete_from_hub", { extensionId });
+  },
+
+  importToHub(sourcePath: string, kind: string): Promise<Extension> {
+    validateNonEmpty(sourcePath, "Source path");
+    validateNonEmpty(kind, "Kind");
+    return transport("import_to_hub", { sourcePath, kind });
+  },
+
+  checkHubInstallConflict(
+    extensionId: string,
+    targetAgent: string,
+  ): Promise<Extension | null> {
+    return transport("check_hub_install_conflict", {
+      extensionId,
+      targetAgent,
+    });
+  },
+
+  getHubPath(): Promise<string> {
+    return transport("get_hub_path");
+  },
+
+  getHubExtensionContent(id: string): Promise<ExtensionContent> {
+    validateNonEmpty(id, "Extension ID");
+    return transport("get_hub_extension_content", { id });
+  },
+
+  previewSyncToHub(): Promise<{ to_sync: Extension[]; conflicts: Extension[] }> {
+    return transport("preview_sync_to_hub");
+  },
+
+  syncExtensionsToHub(extensionIds: string[]): Promise<string[]> {
+    return transport("sync_extensions_to_hub", { extensionIds });
+  },
 };

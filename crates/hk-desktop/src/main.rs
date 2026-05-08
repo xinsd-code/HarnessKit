@@ -87,6 +87,17 @@ fn main() {
             commands::add_custom_config_path,
             commands::update_custom_config_path,
             commands::remove_custom_config_path,
+            // Local Hub commands
+            commands::list_hub_extensions,
+            commands::backup_to_hub,
+            commands::install_from_hub,
+            commands::delete_from_hub,
+            commands::import_to_hub,
+            commands::check_hub_install_conflict,
+            commands::get_hub_path,
+            commands::get_hub_extension_content,
+            commands::preview_sync_to_hub,
+            commands::sync_extensions_to_hub,
             icon::set_app_icon,
         ])
         .on_window_event(|window, event| {

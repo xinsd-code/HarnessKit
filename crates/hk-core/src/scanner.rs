@@ -2163,6 +2163,359 @@ fn resolve_pattern(root: &std::path::Path, pattern: &str) -> Vec<std::path::Path
     }
 }
 
+// ---------------------------------------------------------------------------
+// Local Hub Scanner
+// ---------------------------------------------------------------------------
+
+/// Get the Local Hub directory path (~/.harnesskit)
+pub fn get_hub_path() -> PathBuf {
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let new_path = home.join(".harnesskit");
+
+    // Migration: if old path exists but new path doesn't, migrate
+    let old_path = home.join(".harness_kit");
+    if old_path.exists() && !new_path.exists() {
+        // Try to rename old directory to new
+        if let Err(e) = std::fs::rename(&old_path, &new_path) {
+            eprintln!("[hk] warning: failed to migrate ~/.harness_kit to ~/.harnesskit: {:?}", e);
+        }
+    }
+
+    new_path
+}
+
+/// Generate a deterministic ID for Local Hub extensions
+/// Format: hub:{kind}:{name}
+fn hub_stable_id(name: &str, kind: &str) -> String {
+    let key = format!("hub:{}:{}", kind, name);
+    format!("{:016x}", fnv1a(key.as_bytes()))
+}
+
+/// Scan all assets from the Local Hub directory (~/.harnesskit/)
+pub fn scan_local_hub() -> Vec<Extension> {
+    let hub_path = get_hub_path();
+    if !hub_path.exists() {
+        return Vec::new();
+    }
+
+    let mut extensions = Vec::new();
+    extensions.extend(scan_hub_skills(&hub_path));
+    extensions.extend(scan_hub_mcp(&hub_path));
+    extensions.extend(scan_hub_plugins(&hub_path));
+    extensions.extend(scan_hub_clis(&hub_path));
+    extensions
+}
+
+/// Scan skills from ~/.harnesskit/skills/
+fn scan_hub_skills(hub_path: &Path) -> Vec<Extension> {
+    let skills_dir = hub_path.join("skills");
+    if !skills_dir.exists() {
+        return Vec::new();
+    }
+
+    let mut extensions = Vec::new();
+    let Ok(entries) = std::fs::read_dir(&skills_dir) else {
+        return extensions;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        // Support both the current flat layout:
+        //   skills/<name>/SKILL.md
+        // and the legacy nested layout:
+        //   skills/<name>/<name>/SKILL.md
+        let scan_root = {
+            let nested = path.join(
+                path.file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string(),
+            );
+            if !path.join("SKILL.md").exists()
+                && !path.join("SKILL.md.disabled").exists()
+                && nested.is_dir()
+            {
+                nested
+            } else {
+                path.clone()
+            }
+        };
+
+        // Check for SKILL.md or SKILL.md.disabled
+        let (skill_file, is_disabled) = {
+            let enabled = scan_root.join("SKILL.md");
+            let disabled = scan_root.join("SKILL.md.disabled");
+            if enabled.exists() {
+                (enabled, false)
+            } else if disabled.exists() {
+                (disabled, true)
+            } else {
+                continue;
+            }
+        };
+
+        let Ok(content) = std::fs::read_to_string(&skill_file) else {
+            continue;
+        };
+
+        let (name, description, _requires_bins) =
+            parse_skill_frontmatter(&content).unwrap_or_else(|| {
+                let name = path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                (name, String::new(), vec![])
+            });
+
+        let source = detect_source(&path, true);
+        let pack = source.url.as_deref().and_then(extract_pack_from_url);
+
+        extensions.push(Extension {
+            id: hub_stable_id(&name, "skill"),
+            kind: ExtensionKind::Skill,
+            name,
+            description,
+            source,
+            agents: vec!["hub".to_string()],
+            tags: vec![],
+            pack,
+            permissions: infer_skill_permissions(&content),
+            enabled: !is_disabled,
+            trust_score: None,
+            installed_at: file_created_time(&scan_root),
+            updated_at: file_modified_time(&scan_root),
+            source_path: Some(scan_root.to_string_lossy().to_string()),
+            cli_parent_id: None,
+            cli_meta: None,
+            install_meta: None,
+            scope: ConfigScope::Global,
+        });
+    }
+
+    extensions
+}
+
+/// Scan MCP servers from ~/.harnesskit/mcp/
+fn scan_hub_mcp(hub_path: &Path) -> Vec<Extension> {
+    let mcp_dir = hub_path.join("mcp");
+    if !mcp_dir.exists() {
+        return Vec::new();
+    }
+
+    let mut extensions = Vec::new();
+    let Ok(entries) = std::fs::read_dir(&mcp_dir) else {
+        return extensions;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let (config_path, display_path) = if path.is_dir() {
+            let config = path.join("mcp.json");
+            if !config.exists() {
+                continue;
+            }
+            (config, path.clone())
+        } else if path.file_name().is_some_and(|name| name == "mcp.json") {
+            // Legacy aggregate file at mcp/mcp.json
+            (path.clone(), path.clone())
+        } else {
+            continue;
+        };
+
+        let Ok(content) = std::fs::read_to_string(&config_path) else {
+            continue;
+        };
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
+            continue;
+        };
+        let Some(servers_obj) = json.get("mcpServers").and_then(|v| v.as_object()) else {
+            continue;
+        };
+
+        let config_created = file_created_time(&config_path);
+        let config_modified = file_modified_time(&config_path);
+
+        for (name, _value) in servers_obj {
+            extensions.push(Extension {
+                id: hub_stable_id(name, "mcp"),
+                kind: ExtensionKind::Mcp,
+                name: name.clone(),
+                description: format!("MCP server: {}", name),
+                source: Source {
+                    origin: SourceOrigin::Agent,
+                    url: None,
+                    version: None,
+                    commit_hash: None,
+                },
+                agents: vec!["hub".to_string()],
+                tags: vec![],
+                pack: None,
+                permissions: vec![],
+                enabled: true,
+                trust_score: None,
+                installed_at: config_created,
+                updated_at: config_modified,
+                source_path: Some(display_path.to_string_lossy().to_string()),
+                cli_parent_id: None,
+                cli_meta: None,
+                install_meta: None,
+                scope: ConfigScope::Global,
+            });
+        }
+    }
+
+    extensions
+}
+
+/// Scan plugins from ~/.harnesskit/plugins/
+fn scan_hub_plugins(hub_path: &Path) -> Vec<Extension> {
+    let plugins_dir = hub_path.join("plugins");
+    if !plugins_dir.exists() {
+        return Vec::new();
+    }
+
+    let mut extensions = Vec::new();
+    let Ok(entries) = std::fs::read_dir(&plugins_dir) else {
+        return extensions;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+
+        let description = format!("Plugin: {}", name);
+
+        extensions.push(Extension {
+            id: hub_stable_id(&name, "plugin"),
+            kind: ExtensionKind::Plugin,
+            name,
+            description,
+            source: Source {
+                origin: SourceOrigin::Agent,
+                url: None,
+                version: None,
+                commit_hash: None,
+            },
+            agents: vec!["hub".to_string()],
+            tags: vec![],
+            pack: None,
+            permissions: vec![],
+            enabled: true,
+            trust_score: None,
+            installed_at: file_created_time(&path),
+            updated_at: file_modified_time(&path),
+            source_path: Some(path.to_string_lossy().to_string()),
+            cli_parent_id: None,
+            cli_meta: None,
+            install_meta: None,
+            scope: ConfigScope::Global,
+        });
+    }
+
+    extensions
+}
+
+/// Scan CLIs from ~/.harnesskit/clis/
+fn scan_hub_clis(hub_path: &Path) -> Vec<Extension> {
+    let clis_dir = hub_path.join("clis");
+    if !clis_dir.exists() {
+        return Vec::new();
+    }
+
+    let mut extensions = Vec::new();
+    let Ok(entries) = std::fs::read_dir(&clis_dir) else {
+        return extensions;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+
+        // Check for cli_meta.json
+        let meta_path = path.join("cli_meta.json");
+        let cli_meta = if meta_path.exists() {
+            std::fs::read_to_string(&meta_path)
+                .ok()
+                .and_then(|content| serde_json::from_str(&content).ok())
+        } else {
+            None
+        };
+
+        extensions.push(Extension {
+            id: hub_stable_id(&name, "cli"),
+            kind: ExtensionKind::Cli,
+            name: name.clone(),
+            description: format!("CLI: {}", name),
+            source: Source {
+                origin: SourceOrigin::Agent,
+                url: None,
+                version: None,
+                commit_hash: None,
+            },
+            agents: vec!["hub".to_string()],
+            tags: vec![],
+            pack: None,
+            permissions: vec![],
+            enabled: true,
+            trust_score: None,
+            installed_at: file_created_time(&path),
+            updated_at: file_modified_time(&path),
+            source_path: Some(path.to_string_lossy().to_string()),
+            cli_parent_id: None,
+            cli_meta,
+            install_meta: None,
+            scope: ConfigScope::Global,
+        });
+    }
+
+    extensions
+}
+
+/// Find a skill in the Local Hub by name
+pub fn find_hub_skill_by_name(name: &str) -> Option<PathBuf> {
+    let hub_path = get_hub_path();
+    let skill_dir = hub_path.join("skills").join(name);
+    if skill_dir.join("SKILL.md").exists() || skill_dir.join("SKILL.md.disabled").exists() {
+        return Some(skill_dir);
+    }
+    None
+}
+
+/// Check if an extension exists in the Local Hub (by name and kind)
+pub fn hub_extension_exists(name: &str, kind: ExtensionKind) -> bool {
+    let hub_path = get_hub_path();
+    let subdir = match kind {
+        ExtensionKind::Skill => "skills",
+        ExtensionKind::Mcp => "mcp",
+        ExtensionKind::Plugin => "plugins",
+        ExtensionKind::Cli => "clis",
+        ExtensionKind::Hook => return false, // Hooks are not backed up to hub
+    };
+    let ext_path = hub_path.join(subdir).join(name);
+    ext_path.exists()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -3,6 +3,7 @@ import {
   Blocks,
   Bot,
   FolderKanban,
+  HardDrive,
   LayoutDashboard,
   Settings,
   Shield,
@@ -15,6 +16,7 @@ import { WebUpdateCard } from "./web-update-card";
 
 const mainNavItems = [
   { to: "/", icon: LayoutDashboard, label: "Overview" },
+  { to: "/local-hub", icon: HardDrive, label: "Local Hub" },
   { to: "/extensions", icon: Blocks, label: "Extensions" },
   { to: "/agents", icon: Bot, label: "Agents" },
   { to: "/projects", icon: FolderKanban, label: "Projects" },

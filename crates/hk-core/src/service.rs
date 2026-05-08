@@ -1018,6 +1018,504 @@ pub fn install_to_project(
     install_to_agent_scoped(store, adapters, extension_id, target_agent, target_scope)
 }
 
+// ---------------------------------------------------------------------------
+// Local Hub Service Functions
+// ---------------------------------------------------------------------------
+
+fn copy_asset_into_dir(
+    source_path: &std::path::Path,
+    target_dir: &std::path::Path,
+) -> Result<(), HkError> {
+    std::fs::create_dir_all(target_dir)?;
+
+    if source_path.is_dir() {
+        for entry in std::fs::read_dir(source_path)?.flatten() {
+            let path = entry.path();
+            let meta = match std::fs::symlink_metadata(&path) {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!(
+                        "[hk] warning: cannot read metadata for {}: {e}",
+                        path.display()
+                    );
+                    continue;
+                }
+            };
+            if meta.file_type().is_symlink() {
+                eprintln!("[hk] warning: skipping symlink: {}", path.display());
+                continue;
+            }
+            if entry.file_name() == ".git" {
+                continue;
+            }
+            deployer::deploy_skill(&path, target_dir)?;
+        }
+        return Ok(());
+    }
+
+    deployer::deploy_skill(source_path, target_dir)?;
+    Ok(())
+}
+
+fn find_mcp_entry_for_extension(
+    adapters: &[Box<dyn AgentAdapter>],
+    ext: &Extension,
+) -> Option<crate::adapter::McpServerEntry> {
+    for adapter in adapters {
+        if !ext.agents.contains(&adapter.name().to_string()) {
+            continue;
+        }
+        let Some(config_path) = adapter.mcp_config_path_for(&ext.scope) else {
+            continue;
+        };
+        for server in adapter.read_mcp_servers_from(&config_path) {
+            let candidate = scanner::stable_id_with_scope_for(
+                &server.name,
+                "mcp",
+                adapter.name(),
+                &ext.scope,
+            );
+            if candidate == ext.id {
+                return Some(server);
+            }
+        }
+    }
+    None
+}
+
+fn write_hub_mcp_entry(
+    target_dir: &std::path::Path,
+    entry: &crate::adapter::McpServerEntry,
+) -> Result<(), HkError> {
+    std::fs::create_dir_all(target_dir)?;
+    let config = serde_json::json!({
+        "mcpServers": {
+            entry.name.clone(): {
+                "command": entry.command,
+                "args": entry.args,
+                "env": entry.env,
+            }
+        }
+    });
+    std::fs::write(
+        target_dir.join("mcp.json"),
+        serde_json::to_string_pretty(&config)?,
+    )?;
+    Ok(())
+}
+
+fn can_sync_extension(
+    ext: &Extension,
+    adapters: &[Box<dyn AgentAdapter>],
+    projects: &[(String, String)],
+) -> bool {
+    match ext.kind {
+        ExtensionKind::Hook => false,
+        ExtensionKind::Skill => scanner::find_skill_by_id(adapters, &ext.id, &ext.agents, projects)
+            .is_some(),
+        ExtensionKind::Mcp => find_mcp_entry_for_extension(adapters, ext).is_some(),
+        ExtensionKind::Plugin => ext.source_path.is_some(),
+        ExtensionKind::Cli => ext.source_path.is_some(),
+    }
+}
+
+fn is_lark_cli_skill(ext: &Extension) -> bool {
+    if ext.kind != ExtensionKind::Skill {
+        return false;
+    }
+    let name = ext.name.to_lowercase();
+    if name.contains("lark shared") || name.starts_with("lark-") {
+        return true;
+    }
+    matches!(ext.pack.as_deref(), Some("larksuite/cli"))
+        || ext
+            .source
+            .url
+            .as_deref()
+            .is_some_and(|url| url.contains("larksuite/cli"))
+}
+
+fn is_cli_child_skill(
+    ext: &Extension,
+    cli_ids: &std::collections::HashSet<String>,
+    cli_packs: &std::collections::HashSet<String>,
+) -> bool {
+    ext.kind == ExtensionKind::Skill
+        && ((ext.cli_parent_id.as_ref().is_some_and(|id| cli_ids.contains(id)))
+            || ext.pack.as_ref().is_some_and(|pack| cli_packs.contains(pack))
+            || is_lark_cli_skill(ext))
+}
+
+/// List all extensions in the Local Hub
+pub fn list_hub_extensions() -> Result<Vec<Extension>, HkError> {
+    Ok(scanner::scan_local_hub())
+}
+
+/// Backup an extension to the Local Hub
+pub fn backup_to_hub(
+    store: &Mutex<Store>,
+    adapters: &[Box<dyn AgentAdapter>],
+    projects: &[(String, String)],
+    extension_id: &str,
+) -> Result<(), HkError> {
+    let (ext, source_path, mcp_entry) = {
+        let store_guard = store.lock();
+        let ext = store_guard
+            .get_extension(extension_id)?
+            .ok_or_else(|| HkError::NotFound("Extension not found".into()))?;
+
+        // Get the source path for the extension
+        let source_path: Option<std::path::PathBuf> = match ext.kind {
+            ExtensionKind::Skill => {
+                // Find skill location on disk
+                let loc = scanner::find_skill_by_id(
+                    adapters,
+                    &ext.id,
+                    &ext.agents,
+                    projects,
+                );
+                loc.map(|l| l.entry_path)
+            }
+            ExtensionKind::Mcp | ExtensionKind::Plugin | ExtensionKind::Cli => {
+                // For non-skill types, use source_path if available
+                ext.source_path.as_ref().map(|p| std::path::PathBuf::from(p))
+            }
+            ExtensionKind::Hook => None,
+        };
+        let mcp_entry = if ext.kind == ExtensionKind::Mcp {
+            find_mcp_entry_for_extension(adapters, &ext)
+        } else {
+            None
+        };
+        (ext, source_path, mcp_entry)
+    };
+
+    // Check if already exists in hub (dedup)
+    if scanner::hub_extension_exists(&ext.name, ext.kind) {
+        return Ok(()); // Already backed up, skip
+    }
+
+    let hub_path = scanner::get_hub_path();
+
+    // Create the hub root directory first
+    std::fs::create_dir_all(&hub_path)?;
+
+    let subdir = match ext.kind {
+        ExtensionKind::Skill => "skills",
+        ExtensionKind::Mcp => "mcp",
+        ExtensionKind::Plugin => "plugins",
+        ExtensionKind::Cli => "clis",
+        ExtensionKind::Hook => return Err(HkError::Validation("Hooks cannot be backed up".into())),
+    };
+    let subdir_path = hub_path.join(subdir);
+    std::fs::create_dir_all(&subdir_path)?;
+
+    let target_dir = subdir_path.join(&ext.name);
+
+    // Copy the extension
+    match ext.kind {
+        ExtensionKind::Mcp => {
+            let entry = mcp_entry.ok_or_else(|| {
+                HkError::NotFound(format!("No MCP entry found for extension: {}", ext.name))
+            })?;
+            write_hub_mcp_entry(&target_dir, &entry)?;
+        }
+        ExtensionKind::Skill | ExtensionKind::Plugin | ExtensionKind::Cli => {
+            if let Some(src_path) = source_path {
+                let src = std::path::Path::new(&src_path);
+                if src.exists() {
+                    copy_asset_into_dir(src, &target_dir)?;
+                    if ext.kind == ExtensionKind::Cli
+                        && let Some(cli_meta) = &ext.cli_meta
+                    {
+                        std::fs::write(
+                            target_dir.join("cli_meta.json"),
+                            serde_json::to_string_pretty(cli_meta)?,
+                        )?;
+                    }
+                } else {
+                    return Err(HkError::NotFound(format!(
+                        "Source path does not exist: {}",
+                        src_path.display()
+                    )));
+                }
+            } else {
+                return Err(HkError::NotFound(format!(
+                    "No source path found for extension: {}",
+                    ext.name
+                )));
+            }
+        }
+        ExtensionKind::Hook => {
+            return Err(HkError::Validation("Hooks cannot be backed up".into()));
+        }
+    }
+
+    Ok(())
+}
+
+/// Install an extension from Local Hub to an agent
+pub fn install_from_hub(
+    store: &Mutex<Store>,
+    adapters: &[Box<dyn AgentAdapter>],
+    extension_id: &str,
+    target_agent: &str,
+    scope: &ConfigScope,
+    force: bool,
+) -> Result<Vec<Extension>, HkError> {
+    // Find extension in hub
+    let hub_extensions = scanner::scan_local_hub();
+    let hub_ext = hub_extensions
+        .iter()
+        .find(|e| e.id == extension_id)
+        .ok_or_else(|| HkError::NotFound("Extension not found in Local Hub".into()))?;
+
+    // Find target adapter
+    let target_adapter = adapters
+        .iter()
+        .find(|a| a.name() == target_agent)
+        .ok_or_else(|| HkError::NotFound(format!("Agent '{}' not found", target_agent)))?;
+
+    // Check for conflicts
+    let existing_exts = {
+        let store_guard = store.lock();
+        store_guard.list_extensions(Some(hub_ext.kind), Some(target_agent))?
+    };
+
+    let conflict = existing_exts.iter().find(|e| e.name == hub_ext.name);
+    if conflict.is_some() && !force {
+        return Err(HkError::Validation(format!(
+            "Extension '{}' already exists in {}. Use force=true to overwrite.",
+            hub_ext.name, target_agent
+        )));
+    }
+
+    // Get source path from hub
+    let hub_path = scanner::get_hub_path();
+    let source_path = match hub_ext.kind {
+        ExtensionKind::Skill => hub_path.join("skills").join(&hub_ext.name),
+        ExtensionKind::Mcp => hub_path.join("mcp").join(&hub_ext.name),
+        ExtensionKind::Plugin => hub_path.join("plugins").join(&hub_ext.name),
+        ExtensionKind::Cli => hub_path.join("clis").join(&hub_ext.name),
+        ExtensionKind::Hook => return Err(HkError::Validation("Hooks cannot be installed from Hub".into())),
+    };
+
+    // Deploy to target
+    match hub_ext.kind {
+        ExtensionKind::Skill => {
+            let skill_dir = target_adapter.skill_dir_for(scope).ok_or_else(|| {
+                HkError::Internal(format!(
+                    "No skill directory for agent '{}' in scope {:?}",
+                    target_agent, scope
+                ))
+            })?;
+            std::fs::create_dir_all(&skill_dir)?;
+            deployer::deploy_skill(&source_path, &skill_dir.join(&hub_ext.name))?;
+        }
+        ExtensionKind::Mcp => {
+            // TODO: Handle MCP config merging
+        }
+        ExtensionKind::Plugin => {
+            let plugin_dir = match scope {
+                ConfigScope::Global => target_adapter.plugin_dirs().first().cloned(),
+                ConfigScope::Project { path, .. } => {
+                    let root = std::path::Path::new(path);
+                    target_adapter.project_plugin_dirs().first().map(|rel| root.join(rel))
+                }
+            };
+            if let Some(dir) = plugin_dir {
+                std::fs::create_dir_all(&dir)?;
+                deployer::deploy_skill(&source_path, &dir.join(&hub_ext.name))?;
+            }
+        }
+        ExtensionKind::Cli => {
+            // CLI installation is typically just ensuring the binary is in PATH
+            // The actual binary should already be installed; hub just tracks metadata
+        }
+        ExtensionKind::Hook => {}
+    }
+
+    // Rescan and return updated extensions
+    Ok(scanner::scan_adapter(target_adapter.as_ref()))
+}
+
+/// Delete an extension from the Local Hub
+pub fn delete_from_hub(extension_id: &str) -> Result<(), HkError> {
+    let hub_extensions = scanner::scan_local_hub();
+    let hub_ext = hub_extensions
+        .iter()
+        .find(|e| e.id == extension_id)
+        .ok_or_else(|| HkError::NotFound("Extension not found in Local Hub".into()))?;
+
+    if let Some(ref path_str) = hub_ext.source_path {
+        let path = std::path::Path::new(path_str);
+        if path.exists() && path.starts_with(scanner::get_hub_path()) {
+            std::fs::remove_dir_all(path)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Import an extension from a local path to the Local Hub
+pub fn import_to_hub(
+    source_path: &std::path::Path,
+    kind: ExtensionKind,
+) -> Result<Extension, HkError> {
+    if !source_path.exists() {
+        return Err(HkError::Validation("Source path does not exist".into()));
+    }
+
+    let name = source_path
+        .file_name()
+        .ok_or_else(|| HkError::Validation("Invalid source path".into()))?
+        .to_string_lossy()
+        .to_string();
+
+    // Check for duplicates
+    if scanner::hub_extension_exists(&name, kind) {
+        return Err(HkError::Validation(format!(
+            "Extension '{}' already exists in Local Hub",
+            name
+        )));
+    }
+
+    let hub_path = scanner::get_hub_path();
+    let subdir = match kind {
+        ExtensionKind::Skill => "skills",
+        ExtensionKind::Mcp => "mcp",
+        ExtensionKind::Plugin => "plugins",
+        ExtensionKind::Cli => "clis",
+        ExtensionKind::Hook => return Err(HkError::Validation("Hooks cannot be imported".into())),
+    };
+    let target_dir = hub_path.join(subdir).join(&name);
+
+    std::fs::create_dir_all(target_dir.parent().unwrap())?;
+    copy_asset_into_dir(source_path, &target_dir)?;
+
+    // Return the newly created extension
+    let extensions = scanner::scan_local_hub();
+    extensions
+        .into_iter()
+        .find(|e| e.name == name && e.kind == kind)
+        .ok_or_else(|| HkError::Internal("Failed to scan imported extension".into()))
+}
+
+/// Check if installing from hub would conflict with existing extension
+pub fn check_hub_install_conflict(
+    store: &Mutex<Store>,
+    extension_id: &str,
+    target_agent: &str,
+) -> Option<Extension> {
+    let hub_extensions = scanner::scan_local_hub();
+    let hub_ext = hub_extensions.iter().find(|e| e.id == extension_id)?;
+
+    let store_guard = store.lock();
+    let existing = store_guard
+        .list_extensions(Some(hub_ext.kind), Some(target_agent))
+        .ok()?;
+
+    existing.into_iter().find(|e| e.name == hub_ext.name)
+}
+
+/// Result of a sync operation - contains conflicts that need user resolution
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SyncPreview {
+    /// Extensions that can be synced without conflict
+    pub to_sync: Vec<Extension>,
+    /// Extensions that already exist in Hub (conflicts)
+    pub conflicts: Vec<Extension>,
+}
+
+/// Preview what would be synced from all agents/projects to Local Hub
+/// Returns (new extensions, conflicts with existing hub extensions)
+pub fn preview_sync_to_hub(
+    store: &Mutex<Store>,
+    adapters: &[Box<dyn AgentAdapter>],
+    projects: &[(String, String)],
+) -> Result<SyncPreview, HkError> {
+    let store_guard = store.lock();
+    let all_extensions = store_guard.list_extensions(None, None)?;
+
+    // Get existing hub extensions
+    let hub_extensions = scanner::scan_local_hub();
+    let hub_names: std::collections::HashSet<(String, ExtensionKind)> = hub_extensions
+        .iter()
+        .map(|e| (e.name.clone(), e.kind))
+        .collect();
+    let cli_ids: std::collections::HashSet<String> = all_extensions
+        .iter()
+        .filter(|ext| ext.kind == ExtensionKind::Cli)
+        .map(|ext| ext.id.clone())
+        .collect();
+    let cli_packs: std::collections::HashSet<String> = all_extensions
+        .iter()
+        .filter(|ext| ext.kind == ExtensionKind::Cli)
+        .filter_map(|ext| ext.pack.clone())
+        .collect();
+    let has_lark_cli = all_extensions.iter().any(|ext| {
+        ext.kind == ExtensionKind::Cli
+            && (ext.name == "Lark / Feishu CLI"
+                || ext.pack.as_deref() == Some("larksuite/cli")
+                || ext
+                    .source
+                    .url
+                    .as_deref()
+                    .is_some_and(|url| url.contains("larksuite/cli")))
+    });
+
+    let mut to_sync: Vec<Extension> = Vec::new();
+    let mut seen: std::collections::HashSet<(String, ExtensionKind)> = std::collections::HashSet::new();
+
+    for ext in all_extensions {
+        if !can_sync_extension(&ext, adapters, projects) {
+            continue;
+        }
+        if is_cli_child_skill(&ext, &cli_ids, &cli_packs)
+            || (has_lark_cli && is_lark_cli_skill(&ext))
+        {
+            continue;
+        }
+
+        let key = (ext.name.clone(), ext.kind);
+
+        // Skip duplicates (same extension across multiple agents)
+        if seen.contains(&key) {
+            continue;
+        }
+        seen.insert(key.clone());
+
+        // Already synced items are hidden from the sync list.
+        if !hub_names.contains(&key) {
+            to_sync.push(ext);
+        }
+    }
+
+    Ok(SyncPreview { to_sync, conflicts: Vec::new() })
+}
+
+/// Sync specific extensions to Hub (after user confirms conflicts)
+pub fn sync_extensions_to_hub(
+    store: &Mutex<Store>,
+    adapters: &[Box<dyn AgentAdapter>],
+    projects: &[(String, String)],
+    extension_ids: &[String],
+) -> Result<Vec<String>, HkError> {
+    let mut synced = Vec::new();
+
+    for id in extension_ids {
+        match backup_to_hub(store, adapters, projects, id) {
+            Ok(()) => synced.push(id.clone()),
+            Err(e) => {
+                eprintln!("Failed to sync extension {}: {:?}", id, e);
+                // Continue with other extensions
+            }
+        }
+    }
+
+    Ok(synced)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

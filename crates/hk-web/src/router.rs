@@ -131,7 +131,18 @@ pub fn build_router(state: WebState) -> Router {
         .route("/api/check_updates", post(handlers::install::check_updates))
         .route("/api/get_cached_update_statuses", post(handlers::install::get_cached_update_statuses))
         .route("/api/get_cli_with_children", post(handlers::install::get_cli_with_children))
-        .route("/api/get_skill_locations", post(handlers::install::get_skill_locations));
+        .route("/api/get_skill_locations", post(handlers::install::get_skill_locations))
+        // Local Hub
+        .route("/api/list_hub_extensions", post(handlers::hub::list_hub_extensions))
+        .route("/api/backup_to_hub", post(handlers::hub::backup_to_hub))
+        .route("/api/install_from_hub", post(handlers::hub::install_from_hub))
+        .route("/api/delete_from_hub", post(handlers::hub::delete_from_hub))
+        .route("/api/import_to_hub", post(handlers::hub::import_to_hub))
+        .route("/api/check_hub_install_conflict", post(handlers::hub::check_hub_install_conflict))
+        .route("/api/get_hub_path", post(handlers::hub::get_hub_path))
+        .route("/api/get_hub_extension_content", post(handlers::hub::get_hub_extension_content))
+        .route("/api/preview_sync_to_hub", post(handlers::hub::preview_sync_to_hub))
+        .route("/api/sync_extensions_to_hub", post(handlers::hub::sync_extensions_to_hub));
 
     let cors = CorsLayer::new()
         .allow_origin(Any)

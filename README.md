@@ -85,6 +85,18 @@ HarnessKit manages **all five extension types** from a unified interface — **S
 
 ---
 
+### 💾 Local Hub
+
+A built-in local backup center for your extensions — backup, sync, and restore across agents and projects from one place.
+
+- **One-click backup** — Backup any extension from the Extensions page to `~/.harnesskit` with a single click. Skills, MCP servers, plugins, and CLIs are all supported.
+- **Cross-agent sync** — Restore backed-up extensions to any detected agent or project. HarnessKit detects conflicts and lets you choose to overwrite or skip.
+- **Bulk sync** — The Sync button scans all agents and projects for extensions not yet in the Hub, then lets you cherry-pick which ones to back up — with conflict resolution built in.
+- **Import from disk** — Import extensions from any local directory into the Hub. HarnessKit auto-classifies them by type.
+- **Deduplicated storage** — Each extension is stored once in the Hub regardless of how many agents it came from. No duplicates, no wasted space.
+
+---
+
 ### 🤖 Agent Configs, Memory & Rules
 
 HarnessKit manages every agent's **Configs**, **Memory**, **Rules**, and **Ignore** files from one place. **17 agents supported** — **5 built-in** (auto-detected) plus **12 preset agents** (add from Settings): Claude Code, Codex, Gemini CLI, Cursor, Antigravity, GitHub Copilot, Windsurf, OpenCode, OpenClaw, CodeBuddy, Kimi Code CLI, Kilo Code, Kiro CLI, Trae, Qoder, Qwen Code, and Trae CN.

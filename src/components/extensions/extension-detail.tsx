@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  Archive,
   Calendar,
   Folder,
   FolderOpen,
@@ -31,6 +32,7 @@ import {
 import { useAgentStore } from "@/stores/agent-store";
 import { findCliChildren } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
+import { useHubStore } from "@/stores/hub-store";
 import { useProjectStore } from "@/stores/project-store";
 import { toast } from "@/stores/toast-store";
 
@@ -279,6 +281,21 @@ export function ExtensionDetail({
           >
             {group.enabled ? "Enabled" : "Disabled"}
           </button>
+          {/* Backup to Hub button */}
+          {(group.kind === "skill" || group.kind === "mcp" || group.kind === "plugin") && (
+            <button
+              onClick={() => {
+                useHubStore.getState().backupToHub(group.instances[0]?.id ?? "")
+                  .then(() => {})
+                  .catch(() => {});
+              }}
+              className="shrink-0 rounded-full bg-muted/50 px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors flex items-center gap-1"
+              title="Backup to Local Hub (~/.harnesskit)"
+            >
+              <Archive size={12} />
+              Backup
+            </button>
+          )}
           {group.source.origin === "git" && group.pack ? (
             <a
               href={`https://github.com/${group.pack}`}

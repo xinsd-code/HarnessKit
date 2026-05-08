@@ -171,17 +171,41 @@ export function buildGroups(extensions: Extension[]): GroupedExtension[] {
 function buildCliLookup(groups: GroupedExtension[]): {
   cliIds: Set<string>;
   cliPacks: Set<string>;
+  hasLarkCli: boolean;
 } {
   const cliIds = new Set<string>();
   const cliPacks = new Set<string>();
+  let hasLarkCli = false;
   for (const group of groups) {
     if (group.kind !== "cli") continue;
     for (const instance of group.instances) {
       cliIds.add(instance.id);
     }
     if (group.pack) cliPacks.add(group.pack);
+    if (
+      group.name === "Lark / Feishu CLI" ||
+      group.pack === "larksuite/cli" ||
+      group.instances.some((instance) =>
+        instance.source.url?.includes("larksuite/cli"),
+      )
+    ) {
+      hasLarkCli = true;
+    }
   }
-  return { cliIds, cliPacks };
+  return { cliIds, cliPacks, hasLarkCli };
+}
+
+function isLarkCliSkillGroup(group: GroupedExtension): boolean {
+  if (group.kind !== "skill") return false;
+  const groupName = group.name.toLowerCase();
+  if (groupName.includes("lark shared") || groupName.startsWith("lark-")) {
+    return true;
+  }
+  return group.instances.some(
+    (instance) =>
+      instance.pack === "larksuite/cli" ||
+      instance.source.url?.includes("larksuite/cli"),
+  );
 }
 
 export function isCliChildSkillGroup(
@@ -189,12 +213,12 @@ export function isCliChildSkillGroup(
   groups: GroupedExtension[],
 ): boolean {
   if (group.kind !== "skill") return false;
-  const { cliIds, cliPacks } = buildCliLookup(groups);
+  const { cliIds, cliPacks, hasLarkCli } = buildCliLookup(groups);
   return group.instances.some(
     (instance) =>
       (instance.cli_parent_id != null && cliIds.has(instance.cli_parent_id)) ||
       (instance.pack != null && cliPacks.has(instance.pack)),
-  );
+  ) || (hasLarkCli && isLarkCliSkillGroup(group));
 }
 
 export function filterSkillTabGroups(

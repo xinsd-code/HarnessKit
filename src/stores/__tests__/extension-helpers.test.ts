@@ -222,6 +222,39 @@ describe("buildGroups", () => {
     ).toEqual(["my-cli", "standalone-skill"]);
   });
 
+  it("hides lark cli companion skills when lark cli is installed", () => {
+    const larkCli = {
+      ...baseExt,
+      id: "lark-cli",
+      name: "Lark / Feishu CLI",
+      kind: "cli" as const,
+      pack: "larksuite/cli",
+    };
+    const larkShared = {
+      ...baseExt,
+      id: "lark-shared",
+      name: "lark-shared",
+    };
+    const standalone = {
+      ...baseExt,
+      id: "standalone",
+      name: "frontend-design",
+    };
+    const groups = buildGroups([larkCli, larkShared, standalone]);
+    const larkSharedGroup = groups.find((g) => g.name === "lark-shared");
+
+    expect(larkSharedGroup).toBeDefined();
+    if (!larkSharedGroup) {
+      throw new Error("expected lark-shared group to exist");
+    }
+    expect(isCliChildSkillGroup(larkSharedGroup, groups)).toBe(true);
+    expect(
+      filterSkillTabGroups(groups)
+        .map((g) => g.name)
+        .sort(),
+    ).toEqual(["Lark / Feishu CLI", "frontend-design"]);
+  });
+
   it("merges tags from all instances (deduped)", () => {
     const a = { ...baseExt, id: "a", tags: ["utils", "git"] };
     const b = { ...baseExt, id: "b", tags: ["git", "deploy"] };
