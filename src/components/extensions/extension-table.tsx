@@ -165,7 +165,7 @@ function AgentMembershipCell({
 
           return {
             name: agentName,
-            installed: state.installed,
+            installed: state.globalInstalled,
             pending: isPending,
             disabled: isUnsupportedAdd,
             title:
