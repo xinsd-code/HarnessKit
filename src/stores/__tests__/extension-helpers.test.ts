@@ -167,19 +167,6 @@ describe("buildGroups", () => {
       installedInstances: [
         {
           ...baseExt,
-          id: "beta-instance",
-          kind: "mcp",
-          name: "chrome-devtools",
-          source: {
-            origin: "registry",
-            url: null,
-            version: null,
-            commit_hash: null,
-          },
-          scope: betaScope,
-        },
-        {
-          ...baseExt,
           id: "alpha-instance",
           kind: "mcp",
           name: "chrome-devtools",
@@ -190,6 +177,19 @@ describe("buildGroups", () => {
             commit_hash: null,
           },
           scope: alphaScope,
+        },
+        {
+          ...baseExt,
+          id: "beta-instance",
+          kind: "mcp",
+          name: "chrome-devtools",
+          source: {
+            origin: "registry",
+            url: null,
+            version: null,
+            commit_hash: null,
+          },
+          scope: betaScope,
         },
       ],
       projects: [

@@ -46,6 +46,7 @@ function AgentMembershipCell({
 }) {
   const agents = useAgentStore((s) => s.agents);
   const installToAgent = useExtensionStore((s) => s.installToAgent);
+  const deleteFromAgents = useExtensionStore((s) => s.deleteFromAgents);
   const rescanAndFetch = useExtensionStore((s) => s.rescanAndFetch);
   const extensions = useExtensionStore((s) => s.extensions);
   const setSelectedId = useExtensionStore((s) => s.setSelectedId);
@@ -108,16 +109,7 @@ function AgentMembershipCell({
           }
           await rescanAndFetch();
         } else {
-          const globalInstances = ext.instances.filter(
-            (instance) =>
-              instance.scope.type === "global" &&
-              instance.agents.includes(agentName),
-          );
-          if (globalInstances.length === 0) return;
-          await Promise.all(
-            globalInstances.map((instance) => api.deleteExtension(instance.id)),
-          );
-          await rescanAndFetch();
+          await deleteFromAgents(ext.groupKey, [agentName]);
         }
         toast.success(
           `${agentDisplayName(agentName)} 已移除 ${name}`,

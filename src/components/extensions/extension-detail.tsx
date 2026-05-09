@@ -142,8 +142,14 @@ export function ExtensionDetail({
       group.kind === "cli"
         ? findCliChildren(extensions, group.instances[0]?.id, group.pack)
         : group.instances;
+    const currentProjectValid =
+      installProjectScope?.type === "project"
+        ? projects.some(
+            (project) => project.path === installProjectScope.path,
+          )
+        : false;
     const selectedProject = resolveProjectSelection({
-      contextScope: installProjectScope,
+      contextScope: currentProjectValid ? installProjectScope : null,
       installedInstances,
       projects,
     });

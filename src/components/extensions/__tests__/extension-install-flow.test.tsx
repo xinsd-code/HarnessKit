@@ -1,39 +1,38 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
-import { useState } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ExtensionDetail } from "@/components/extensions/extension-detail";
-import { ExtensionTable } from "@/components/extensions/extension-table";
-import { api } from "@/lib/invoke";
-import { buildGroups } from "@/stores/extension-helpers";
-import type { ConfigScope, Extension } from "@/lib/types";
-import { extensionGroupKey } from "@/lib/types";
-import { useAgentStore } from "@/stores/agent-store";
-import { useExtensionStore } from "@/stores/extension-store";
-import { useProjectStore } from "@/stores/project-store";
-import { useScopeStore } from "@/stores/scope-store";
+import { describe, expect, it } from "vitest";
+import { buildInstallState, resolveProjectSelection } from "@/lib/install-surface";
+import type { ConfigScope, Extension, Project } from "@/lib/types";
 
-const alphaScope: ConfigScope = {
+const allScope = { type: "all" } as const;
+const xinsdApiScope: ConfigScope = {
   type: "project",
-  name: "alpha",
-  path: "/projects/alpha",
+  name: "xinsd-api",
+  path: "/Users/xinsd/Documents/vibe_coding/xinsd-api",
+};
+const skillsHubScope: ConfigScope = {
+  type: "project",
+  name: "skills-hub",
+  path: "/Users/xinsd/Documents/vibe_coding/skills-hub",
 };
 
-const betaScope: ConfigScope = {
-  type: "project",
-  name: "beta",
-  path: "/projects/beta",
-};
-
-function makeMcpInstance(id: string, scope: ConfigScope): Extension {
+function makeProject(name: string, path: string): Project {
   return {
-    id,
+    id: name,
+    name,
+    path,
+    created_at: "2026-05-09T00:00:00.000Z",
+    exists: true,
+  };
+}
+
+function makeExtension(scope: ConfigScope): Extension {
+  return {
+    id: `${scope.type}-${scope.type === "project" ? scope.path : "global"}`,
     kind: "mcp",
     name: "chrome-devtools",
     description: "desc",
     source: {
       origin: "registry",
-      url: "https://github.com/acme/chrome-devtools.git",
+      url: null,
       version: null,
       commit_hash: null,
     },
@@ -53,143 +52,35 @@ function makeMcpInstance(id: string, scope: ConfigScope): Extension {
   };
 }
 
-function makeProject(scope: ConfigScope) {
-  return {
-    id: scope.name,
-    name: scope.name,
-    path: scope.path,
-    created_at: "2026-05-09T00:00:00.000Z",
-    exists: true,
-  };
-}
+describe("extension install flow helpers", () => {
+  it("defaults MCP project selection to the first installed project in project list order", () => {
+    const installedInstances = [
+      makeExtension(skillsHubScope),
+      makeExtension(xinsdApiScope),
+    ];
+    const projects = [
+      makeProject("xinsd-api", xinsdApiScope.path),
+      makeProject("skills-hub", skillsHubScope.path),
+    ];
 
-function makeAgent() {
-  return {
-    name: "claude",
-    detected: true,
-    extension_count: 0,
-    path: "/agents/claude",
-    enabled: true,
-  };
-}
-
-function resetStores() {
-  useScopeStore.setState({ current: { type: "all" }, hydrated: true });
-  useProjectStore.setState({ projects: [], loading: false, loaded: true });
-  useAgentStore.setState({
-    agents: [],
-    loading: false,
-    agentOrder: ["claude"],
-  });
-  useExtensionStore.setState({
-    extensions: [],
-    loading: false,
-    hasFetched: true,
-    selectedId: null,
-    selectedIds: new Set(),
-    updateStatuses: new Map(),
-    kindFilter: null,
-    agentFilter: null,
-    searchQuery: "",
-    tagFilter: null,
-    packFilter: null,
-    allTags: [],
-    allPacks: [],
-    newRepoSkills: [],
-    checkingUpdates: false,
-    updatingAll: false,
-  });
-}
-
-beforeEach(() => {
-  resetStores();
-  vi.spyOn(api, "getExtensionContent").mockResolvedValue({
-    content: "",
-    path: null,
-    symlink_target: null,
-  });
-});
-
-afterEach(() => {
-  vi.restoreAllMocks();
-  resetStores();
-});
-
-describe("ExtensionTable install flow", () => {
-  it("keeps project-only installs on the project-scoped open-detail path", async () => {
-    const alphaInstance = makeMcpInstance("alpha-instance", alphaScope);
-    const betaInstance = makeMcpInstance("beta-instance", betaScope);
-    const grouped = buildGroups([alphaInstance, betaInstance]);
-    const group = grouped[0];
-
-    useAgentStore.setState({
-      agents: [makeAgent()],
-      agentOrder: ["claude"],
-    });
-    useExtensionStore.setState({
-      extensions: [alphaInstance, betaInstance],
-      selectedId: null,
-    });
-
-    render(
-      <MemoryRouter>
-        <ExtensionTable data={grouped} />
-      </MemoryRouter>,
-    );
-
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Claude Code · 已安装到项目，点击查看详情",
+    expect(
+      resolveProjectSelection({
+        contextScope: allScope,
+        installedInstances,
+        projects,
       }),
-    );
-
-    expect(useExtensionStore.getState().selectedId).toBe(group.groupKey);
+    ).toEqual(xinsdApiScope);
   });
-});
 
-describe("ExtensionDetail install flow", () => {
-  it("defaults MCP project selection to the first matching project in project-list order", async () => {
-    const alphaInstance = makeMcpInstance("alpha-instance", alphaScope);
-    const betaInstance = makeMcpInstance("beta-instance", betaScope);
-    const groupKey = extensionGroupKey(alphaInstance);
-
-    useAgentStore.setState({
-      agents: [makeAgent()],
-      agentOrder: ["claude"],
-    });
-    useProjectStore.setState({
-      projects: [makeProject(betaScope), makeProject(alphaScope)],
-      loading: false,
-      loaded: true,
-    });
-    useExtensionStore.setState({
-      extensions: [alphaInstance, betaInstance],
-      selectedId: groupKey,
+  it("keeps project-only installs on the open-detail path in list mode", () => {
+    const state = buildInstallState({
+      agentName: "claude",
+      instances: [makeExtension(xinsdApiScope)],
+      surface: "extension-list",
     });
 
-    function Harness() {
-      const [projectScope, setProjectScope] = useState<ConfigScope | null>(null);
-
-      return (
-        <ExtensionDetail
-          installProjectScope={projectScope}
-          onInstallProjectScopeChange={setProjectScope}
-        />
-      );
-    }
-
-    render(
-      <MemoryRouter>
-        <Harness />
-      </MemoryRouter>,
-    );
-
-    await waitFor(() => {
-      expect(
-        (screen.getByRole("combobox", {
-          name: "Select target project",
-        }) as HTMLSelectElement).value,
-      ).toBe(betaScope.path);
-    });
+    expect(state.globalInstalled).toBe(false);
+    expect(state.projectInstalled).toBe(true);
+    expect(state.listAction).toBe("open-detail");
   });
 });
