@@ -33,7 +33,15 @@ export function ProjectInstallPanel({
   emptyProjectText = "Select a project first",
   emptyAgentsText = "No project-capable agents detected",
 }: ProjectInstallPanelProps) {
-  if (projects.length === 0) {
+  const availableProjects = projects.filter((project) => project.exists);
+  const selectedProjectExists = availableProjects.some(
+    (project) => project.path === selectedProjectPath,
+  );
+  const visibleSelectedProjectPath = selectedProjectExists
+    ? selectedProjectPath
+    : "";
+
+  if (availableProjects.length === 0) {
     return emptyProjectText ? (
       <div className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
         {emptyProjectText}
@@ -59,7 +67,7 @@ export function ProjectInstallPanel({
             Target Project
           </span>
           <span className="rounded-full bg-card px-2 py-0.5 text-[10px] text-muted-foreground">
-            {projects.length} saved
+            {availableProjects.length} saved
           </span>
         </div>
         <label className="group relative block">
@@ -68,13 +76,13 @@ export function ProjectInstallPanel({
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors group-focus-within:text-foreground"
           />
           <select
-            value={selectedProjectPath}
+            value={visibleSelectedProjectPath}
             onChange={(e) => onProjectChange(e.target.value)}
             aria-label={selectAriaLabel}
             className="min-w-0 w-full appearance-none rounded-xl border border-border bg-card py-2 pl-9 pr-9 text-sm text-foreground shadow-sm transition-colors focus:border-ring focus:bg-background focus:outline-none"
           >
             <option value="">{placeholder}</option>
-            {projects.map((project) => (
+            {availableProjects.map((project) => (
               <option key={project.path} value={project.path}>
                 {project.name}
               </option>
@@ -86,7 +94,7 @@ export function ProjectInstallPanel({
           />
         </label>
         <div className="mt-3 border-t border-border/60 pt-3">
-          {!selectedProjectPath ? (
+          {!visibleSelectedProjectPath ? (
             <div className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
               {emptyProjectText}
             </div>

@@ -1,11 +1,15 @@
 import { clsx } from "clsx";
 import { HardDrive } from "lucide-react";
-import { useState } from "react";
-import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
+import { useEffect, useState } from "react";
+import {
+  AgentInstallIconRow,
+  type AgentInstallIconItem,
+} from "@/components/shared/agent-install-icon-row";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { PermissionTags } from "@/components/shared/permission-tags";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { api } from "@/lib/invoke";
+import { buildInstallState } from "@/lib/install-surface";
 import { agentDisplayName, sortAgentNames } from "@/lib/types";
 import type { Extension } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
@@ -19,36 +23,58 @@ function AgentInstallCell({ ext }: { ext: Extension }) {
   const installedExtensions = useExtensionStore((s) => s.extensions);
   const rescanAndFetch = useExtensionStore((s) => s.rescanAndFetch);
   const installFromHub = useHubStore((s) => s.installFromHub);
+  const setSelectedId = useHubStore((s) => s.setSelectedId);
   const [pendingAgent, setPendingAgent] = useState<string | null>(null);
+  const [optimisticInstalled, setOptimisticInstalled] = useState<Set<string>>(
+    new Set(),
+  );
+
+  useEffect(() => {
+    setOptimisticInstalled(new Set());
+  }, [ext.id]);
 
   const visibleAgents = sortAgentNames(
     agents.filter((agent) => agent.detected).map((agent) => agent.name),
     agentOrder,
   );
+  const matchingInstances = installedExtensions.filter(
+    (instance) => instance.kind === ext.kind && instance.name === ext.name,
+  );
 
   const handleToggle = async (
-    event: React.MouseEvent<HTMLButtonElement>,
     agentName: string,
   ) => {
-    event.stopPropagation();
     setPendingAgent(agentName);
     try {
-      const installed = installedExtensions.filter(
-        (instance) =>
-          instance.kind === ext.kind &&
-          instance.name === ext.name &&
-          instance.agents.includes(agentName) &&
-          instance.scope.type === "global",
-      );
+      const installState = buildInstallState({
+        agentName,
+        instances: matchingInstances,
+        surface: "local-hub",
+      });
+      const { globalInstances } = installState;
+      const wasOptimistic = optimisticInstalled.has(agentName);
 
-      if (installed.length > 0) {
-        await Promise.all(installed.map((instance) => api.deleteExtension(instance.id)));
+      if (installState.listAction === "open-detail" && !wasOptimistic) {
+        setSelectedId(ext.id);
+        return;
+      }
+
+      if (globalInstances.length > 0 || wasOptimistic) {
+        await Promise.all(
+          globalInstances.map((instance) => api.deleteExtension(instance.id)),
+        );
+        setOptimisticInstalled((prev) => {
+          const next = new Set(prev);
+          next.delete(agentName);
+          return next;
+        });
         await rescanAndFetch();
         toast.success(`已从 ${agentDisplayName(agentName)} 移除`);
         return;
       }
 
       await installFromHub(ext.id, agentName, { type: "global" }, false);
+      setOptimisticInstalled((prev) => new Set(prev).add(agentName));
       await rescanAndFetch();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -58,43 +84,39 @@ function AgentInstallCell({ ext }: { ext: Extension }) {
     }
   };
 
-  return (
-    <div className="flex items-center gap-1.5">
-      {visibleAgents.map((agentName) => {
-        const installedForAgent = installedExtensions.some(
-          (instance) =>
-            instance.kind === ext.kind &&
-            instance.name === ext.name &&
-            instance.agents.includes(agentName) &&
-            instance.scope.type === "global",
-        );
-        const isPending = pendingAgent === agentName;
+  const items: AgentInstallIconItem[] = visibleAgents.map((agentName) => {
+    const installState = buildInstallState({
+      agentName,
+      instances: matchingInstances,
+      surface: "local-hub",
+    });
+    const optimistic = optimisticInstalled.has(agentName);
+    const pending = pendingAgent === agentName;
+    const installed = installState.globalInstalled || optimistic;
+    const title =
+      installState.listAction === "open-detail" && !optimistic
+        ? `${agentDisplayName(agentName)} · 已安装到项目，点击查看详情`
+        : `${agentDisplayName(agentName)}${
+            installState.globalInstalled || optimistic
+              ? " · 点击移除全局安装"
+              : " · 安装到全局"
+          }`;
 
-        return (
-          <button
-            key={`${ext.id}:${agentName}`}
-            type="button"
-            onClick={(event) => {
-              void handleToggle(event, agentName);
-            }}
-            disabled={isPending}
-            title={`${agentDisplayName(agentName)}${
-              installedForAgent ? " · 点击移除" : " · 安装到全局"
-            }`}
-            className={`flex h-9 w-9 items-center justify-center rounded-full border transition-all ${
-              installedForAgent
-                ? "border-border/70 bg-muted/40 shadow-sm"
-                : "border-transparent bg-transparent"
-            } hover:scale-[1.03] hover:border-border/60 ${
-              isPending ? "opacity-70" : ""
-            }`}
-          >
-            <div className={installedForAgent ? "" : "grayscale opacity-40"}>
-              <AgentMascot name={agentName} size={20} />
-            </div>
-          </button>
-        );
-      })}
+    return {
+      name: agentName,
+      installed,
+      pending,
+      title,
+      onClick: () => void handleToggle(agentName),
+    };
+  });
+
+  return (
+    <div
+      onClick={(event) => event.stopPropagation()}
+      className="min-w-[18rem]"
+    >
+      <AgentInstallIconRow items={items} />
     </div>
   );
 }

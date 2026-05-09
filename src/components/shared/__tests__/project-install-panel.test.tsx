@@ -93,4 +93,38 @@ describe("ProjectInstallPanel", () => {
       screen.getByText("No project-capable agents detected"),
     ).toBeTruthy();
   });
+
+  it("hides missing projects from the selector", () => {
+    render(
+      <ProjectInstallPanel
+        projects={[
+          {
+            id: "alpha",
+            name: "alpha",
+            path: "/projects/alpha",
+            created_at: "2026-05-09T00:00:00.000Z",
+            exists: true,
+          },
+          {
+            id: "beta",
+            name: "beta",
+            path: "/projects/beta",
+            created_at: "2026-05-09T00:00:00.000Z",
+            exists: false,
+          },
+        ]}
+        selectedProjectPath="/projects/alpha"
+        selectedProjectName="alpha"
+        onProjectChange={() => undefined}
+        agentItems={[]}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("option", { name: "beta" }),
+    ).toBeNull();
+    expect(
+      screen.getAllByRole("option").map((option) => option.textContent),
+    ).toEqual(["Select an existing project", "alpha"]);
+  });
 });
