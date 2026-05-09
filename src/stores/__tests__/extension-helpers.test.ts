@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Extension } from "@/lib/types";
+import { resolveProjectSelection } from "@/lib/install-surface";
+import type { ConfigScope, Extension } from "@/lib/types";
 import {
   buildGroups,
   expandGroupKeys,
@@ -35,6 +36,17 @@ const baseExt: Extension = {
   scope: { type: "global" },
 };
 
+const alphaScope: ConfigScope = {
+  type: "project",
+  name: "alpha",
+  path: "/projects/alpha",
+};
+const betaScope: ConfigScope = {
+  type: "project",
+  name: "beta",
+  path: "/projects/beta",
+};
+
 // ---------------------------------------------------------------------------
 // buildGroups
 // ---------------------------------------------------------------------------
@@ -49,6 +61,16 @@ describe("buildGroups", () => {
     expect(groups[0].instances).toHaveLength(2);
     expect(groups[0].agents).toContain("claude");
     expect(groups[0].agents).toContain("cursor");
+  });
+
+  it("deduplicates repeated extension rows with the same id", () => {
+    const duplicated = { ...baseExt, id: "dup", agents: ["claude"] };
+
+    const groups = buildGroups([duplicated, duplicated]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].instances).toHaveLength(1);
+    expect(groups[0].instances[0].id).toBe("dup");
   });
 
   it("merges a sourceless row into a URL-based sibling sharing kind+name+scope", () => {
@@ -137,6 +159,58 @@ describe("buildGroups", () => {
 
     expect(groups).toHaveLength(1);
     expect(groups[0].instances).toHaveLength(2);
+  });
+
+  it("prefers the first installed project in project-list order", () => {
+    const result = resolveProjectSelection({
+      contextScope: { type: "all" },
+      installedInstances: [
+        {
+          ...baseExt,
+          id: "beta-instance",
+          kind: "mcp",
+          name: "chrome-devtools",
+          source: {
+            origin: "registry",
+            url: null,
+            version: null,
+            commit_hash: null,
+          },
+          scope: betaScope,
+        },
+        {
+          ...baseExt,
+          id: "alpha-instance",
+          kind: "mcp",
+          name: "chrome-devtools",
+          source: {
+            origin: "registry",
+            url: null,
+            version: null,
+            commit_hash: null,
+          },
+          scope: alphaScope,
+        },
+      ],
+      projects: [
+        {
+          id: "beta",
+          name: "beta",
+          path: betaScope.path,
+          created_at: "2026-05-09T00:00:00.000Z",
+          exists: true,
+        },
+        {
+          id: "alpha",
+          name: "alpha",
+          path: alphaScope.path,
+          created_at: "2026-05-09T00:00:00.000Z",
+          exists: true,
+        },
+      ],
+    });
+
+    expect(result).toEqual(betaScope);
   });
 
   it("does NOT merge a sourceless row when there are multiple URL-based siblings (ambiguous)", () => {
