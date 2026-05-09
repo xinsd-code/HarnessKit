@@ -22,16 +22,7 @@ export function resolveProjectSelection({
   projects,
 }: ResolveProjectSelectionOptions): ConfigScope | null {
   if (contextScope?.type === "project") {
-    const contextProject = projects.find(
-      (project) => project.path === contextScope.path,
-    );
-    if (contextProject) {
-      return {
-        type: "project",
-        name: contextProject.name,
-        path: contextProject.path,
-      };
-    }
+    return contextScope;
   }
 
   for (const project of projects) {

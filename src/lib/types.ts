@@ -124,14 +124,6 @@ export function logicalExtensionName(ext: Extension): string {
  *  extension is truly sourceless (hand-written project skill, agent-bundled
  *  global skill the user never linked, etc.). */
 export function deriveExtensionUrl(ext: Extension): string | null {
-  // Project-scoped skills often inherit the host repository's git URL from
-  // scanner heuristics, which is not the skill asset's real origin. Treat
-  // project rows without install metadata as sourceless so the Extensions
-  // overview groups one logical asset together instead of splitting by the
-  // surrounding project repo.
-  if (ext.scope.type === "project" && ext.install_meta == null) {
-    return null;
-  }
   return (
     ext.source.url ??
     ext.install_meta?.url ??
