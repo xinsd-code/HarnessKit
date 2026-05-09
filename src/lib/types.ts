@@ -124,6 +124,14 @@ export function logicalExtensionName(ext: Extension): string {
  *  extension is truly sourceless (hand-written project skill, agent-bundled
  *  global skill the user never linked, etc.). */
 export function deriveExtensionUrl(ext: Extension): string | null {
+  // Project-scoped skills often inherit the host repository's git URL from
+  // scanner heuristics, which is not the skill asset's real origin. Treat
+  // project rows without install metadata as sourceless so the Extensions
+  // overview groups one logical asset together instead of splitting by the
+  // surrounding project repo.
+  if (ext.scope.type === "project" && ext.install_meta == null) {
+    return null;
+  }
   return (
     ext.source.url ??
     ext.install_meta?.url ??
@@ -205,6 +213,13 @@ export type ConfigCategory =
 export type ConfigScope =
   | { type: "global" }
   | { type: "project"; name: string; path: string };
+
+export type InstallSurfaceContextScope = { type: "all" } | ConfigScope;
+export type InstallSurface =
+  | "local-hub"
+  | "extension-detail"
+  | "extension-list";
+export type InstallListAction = "install" | "uninstall" | "open-detail";
 
 /** Stable identifier for a scope, suitable for use as a Map key or filter value.
  *  "global" for the global scope; the project path for project scopes. */
@@ -397,6 +412,28 @@ export interface Project {
   path: string;
   created_at: string;
   exists: boolean;
+}
+
+export interface ResolveProjectSelectionOptions {
+  contextScope: InstallSurfaceContextScope | null;
+  installedInstances: Extension[];
+  projects: Project[];
+}
+
+export interface BuildInstallStateOptions {
+  agentName: string;
+  instances: Extension[];
+  projectScope?: ConfigScope | null;
+  surface: InstallSurface;
+}
+
+export interface InstallState {
+  globalInstalled: boolean;
+  projectInstalled: boolean;
+  installed: boolean;
+  globalInstances: Extension[];
+  projectInstances: Extension[];
+  listAction: InstallListAction;
 }
 
 export interface DiscoveredProject {
