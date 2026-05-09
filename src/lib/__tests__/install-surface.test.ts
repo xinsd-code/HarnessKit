@@ -105,6 +105,7 @@ describe("buildInstallState", () => {
 
     expect(state.globalInstalled).toBe(false);
     expect(state.projectInstalled).toBe(true);
+    expect(state.installed).toBe(false);
     expect(state.listAction).toBe("open-detail");
   });
 
@@ -124,6 +125,20 @@ describe("buildInstallState", () => {
     expect(state.installed).toBe(true);
     expect(state.globalInstances.map((ext) => ext.id)).toEqual(["global"]);
     expect(state.projectInstances.map((ext) => ext.id)).toEqual(["project"]);
+  });
+
+  it("treats extension-detail project installs as installed", () => {
+    const state = buildInstallState({
+      agentName: "claude",
+      instances: [makeExtension({ id: "alpha", scope: alphaScope, agents: ["claude"] })],
+      projectScope: alphaScope,
+      surface: "extension-detail",
+    });
+
+    expect(state.globalInstalled).toBe(false);
+    expect(state.projectInstalled).toBe(true);
+    expect(state.installed).toBe(true);
+    expect(state.listAction).toBe("uninstall");
   });
 });
 

@@ -79,7 +79,7 @@ export function buildInstallState({
     return {
       globalInstalled,
       projectInstalled,
-      installed: true,
+      installed: false,
       globalInstances,
       projectInstances,
       listAction: "open-detail",
