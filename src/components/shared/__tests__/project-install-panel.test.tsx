@@ -53,7 +53,7 @@ describe("ProjectInstallPanel", () => {
     expect(onInstall).toHaveBeenCalledTimes(1);
   });
 
-  it("does not render a project selector for global-only kinds", () => {
+  it("shows the empty project state when no projects exist", () => {
     render(
       <ProjectInstallPanel
         projects={[]}
@@ -61,11 +61,36 @@ describe("ProjectInstallPanel", () => {
         onProjectChange={() => undefined}
         selectedProjectName={null}
         agentItems={[]}
-        emptyText="Project install is unavailable"
+        emptyProjectText="Project install is unavailable"
       />,
     );
 
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(screen.getByText("Project install is unavailable")).toBeTruthy();
+  });
+
+  it("shows the empty agent state when a project is selected but no project-capable agents exist", () => {
+    render(
+      <ProjectInstallPanel
+        projects={[
+          {
+            id: "alpha",
+            name: "alpha",
+            path: "/projects/alpha",
+            created_at: "2026-05-09T00:00:00.000Z",
+            exists: true,
+          },
+        ]}
+        selectedProjectPath="/projects/alpha"
+        selectedProjectName="alpha"
+        onProjectChange={() => undefined}
+        agentItems={[]}
+        emptyAgentsText="No project-capable agents detected"
+      />,
+    );
+
+    expect(
+      screen.getByText("No project-capable agents detected"),
+    ).toBeTruthy();
   });
 });

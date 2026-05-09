@@ -16,7 +16,6 @@ interface ProjectInstallPanelProps {
   selectedProjectName?: string | null;
   placeholder?: string;
   selectAriaLabel?: string;
-  emptyText?: string;
   emptyProjectText?: string;
   emptyAgentsText?: string;
 }
@@ -31,15 +30,13 @@ export function ProjectInstallPanel({
   selectedProjectName,
   placeholder = "Select an existing project",
   selectAriaLabel = "Select target project",
-  emptyText,
   emptyProjectText = "Select a project first",
   emptyAgentsText = "No project-capable agents detected",
 }: ProjectInstallPanelProps) {
-  const resolvedEmptyProjectText = emptyText ?? emptyProjectText;
   if (projects.length === 0) {
-    return resolvedEmptyProjectText ? (
+    return emptyProjectText ? (
       <div className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-        {resolvedEmptyProjectText}
+        {emptyProjectText}
       </div>
     ) : null;
   }
