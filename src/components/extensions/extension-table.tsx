@@ -22,6 +22,7 @@ import { agentDisplayName, scopeLabel, sortAgentNames } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { findCliChildren } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
+import { useScopeStore } from "@/stores/scope-store";
 import { toast } from "@/stores/toast-store";
 
 const col = createColumnHelper<GroupedExtension>();
@@ -212,7 +213,7 @@ export function ExtensionTable({
         id: "select",
         header: () => {
           const ids = useExtensionStore.getState().selectedIds;
-          const all = useExtensionStore.getState().filtered(true);
+          const all = useExtensionStore.getState().filtered();
           const allSelected = all.length > 0 && ids.size === all.length;
           return (
             <input
@@ -278,7 +279,11 @@ export function ExtensionTable({
                 />
               )}
               <span>{displayName}</span>
-              {hasGlobalInstance(ext.instances) && <GlobalBadge />}
+              {(() => {
+              const s = useScopeStore.getState().current;
+              const af = useExtensionStore.getState().agentFilter;
+              return s.type === "project" && af != null && hasGlobalInstance(ext.instances);
+            })() && <GlobalBadge />}
             </span>
           );
         },

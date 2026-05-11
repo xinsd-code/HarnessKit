@@ -83,7 +83,7 @@ export function ExtensionFilters() {
       ),
     [agents, agentOrder],
   );
-  const resultCount = filtered(true).length;
+  const resultCount = filtered().length;
 
   // Clear packFilter when the selected pack no longer exists in the current
   // scope — otherwise the dropdown shows a stale value not in options and

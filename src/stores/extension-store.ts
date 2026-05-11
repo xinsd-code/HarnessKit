@@ -173,7 +173,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   selectAll() {
     const keys = new Set(
       get()
-        .filtered(true)
+        .filtered()
         .map((g) => g.groupKey),
     );
     set({ selectedIds: keys });

@@ -56,11 +56,13 @@ export default function ExtensionsPage() {
   // can pre-sync prevScopeRef.current without this cleanup undoing it on
   // the same render's effect phase.
   const prevScopeRef = useRef(scope);
+  const isDeepLinkRef = useRef(isDeepLink);
+  isDeepLinkRef.current = isDeepLink;
   useEffect(() => {
-    if (prevScopeRef.current !== scope) {
+    if (prevScopeRef.current !== scope && !isDeepLinkRef.current) {
       setSelectedId(null);
-      prevScopeRef.current = scope;
     }
+    prevScopeRef.current = scope;
   }, [scope, setSelectedId]);
 
   // Deep-link handler: selects the target group, then clears the URL params.
