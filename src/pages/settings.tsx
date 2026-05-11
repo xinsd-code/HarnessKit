@@ -360,7 +360,9 @@ export default function SettingsPage() {
   const agentMap = new Map(agents.map((a) => [a.name.toLowerCase(), a]));
   const homeDir = inferHomeDirectory(agents.map((agent) => agent.path));
   const availablePresets = AGENT_BASE_CONFIGS.filter(
-    (preset) => !agentMap.has(preset.id.toLowerCase()),
+    (preset) =>
+      !agentMap.has(preset.id.toLowerCase()) &&
+      preset.id.toLowerCase() !== "openclaw",
   );
 
   const existingPaths = new Set(projects.map((p) => p.path));

@@ -5,7 +5,9 @@ import { HubDetail } from "@/components/local-hub/hub-detail";
 import { HubFilters } from "@/components/local-hub/hub-filters";
 import { HubTable } from "@/components/local-hub/hub-table";
 import { SyncDialog } from "@/components/local-hub/sync-dialog";
+import { extensionListGroupKey, usesLooseLogicalAssetIdentity } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
+import { buildGroups } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useHubStore } from "@/stores/hub-store";
 import { toast } from "@/stores/toast-store";
@@ -23,12 +25,13 @@ export default function LocalHubPage() {
   const agents = useAgentStore((s) => s.agents);
   const checkUpdates = useExtensionStore((s) => s.checkUpdates);
   const checkingUpdates = useExtensionStore((s) => s.checkingUpdates);
+  const fetchInstalledExtensions = useExtensionStore((s) => s.fetch);
   const installedExtensions = useExtensionStore((s) => s.extensions);
   const didFetchRef = useRef(false);
   const [showSyncDialog, setShowSyncDialog] = useState(false);
 
   const data = useMemo(() => {
-    return extensions.filter((ext) => {
+    const filtered = extensions.filter((ext) => {
       if (kindFilter && ext.kind !== kindFilter) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
@@ -39,13 +42,37 @@ export default function LocalHubPage() {
       }
       return true;
     });
+
+    const loose = filtered.filter((ext) => usesLooseLogicalAssetIdentity(ext));
+    const strict = filtered.filter((ext) => !usesLooseLogicalAssetIdentity(ext));
+    const groupedLoose = buildGroups(loose).map((group) => {
+      const representative = group.instances[0];
+      return {
+        ...representative,
+        id: representative.id,
+        name: group.name,
+        kind: group.kind,
+        description: group.description,
+        source: group.source,
+        agents: group.agents,
+        tags: group.tags,
+        pack: group.pack,
+        permissions: group.permissions,
+        enabled: group.enabled,
+        trust_score: group.trust_score,
+        installed_at: group.installed_at,
+        updated_at: group.updated_at,
+      };
+    });
+
+    return [...groupedLoose, ...strict];
   }, [extensions, kindFilter, searchQuery]);
 
   useEffect(() => {
     if (didFetchRef.current) return;
     didFetchRef.current = true;
-    fetch();
-  }, [fetch]);
+    void Promise.all([fetch(), fetchInstalledExtensions()]);
+  }, [fetch, fetchInstalledExtensions]);
 
   useEffect(() => {
     if (agents.length === 0) {
@@ -89,7 +116,7 @@ export default function LocalHubPage() {
     const latestStatuses = useExtensionStore.getState().updateStatuses;
     const matchedCount = data.filter((hubExt) =>
       installedExtensions.some((instance) => {
-        if (instance.kind !== hubExt.kind || instance.name !== hubExt.name) {
+        if (extensionListGroupKey(hubExt) !== extensionListGroupKey(instance)) {
           return false;
         }
         return latestStatuses.get(instance.id)?.status === "update_available";

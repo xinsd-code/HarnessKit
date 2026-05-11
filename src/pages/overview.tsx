@@ -15,8 +15,8 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AgentCard } from "@/components/shared/agent-card";
-import type { DashboardStats, Project } from "@/lib/types";
-import { sortAgents } from "@/lib/types";
+import type { DashboardStats } from "@/lib/types";
+import { logicalAssetKey, sortAgents } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useAuditStore } from "@/stores/audit-store";
 import {
@@ -24,18 +24,9 @@ import {
   filterSkillTabGroups,
   useExtensionStore,
 } from "@/stores/extension-store";
+import { useHubStore } from "@/stores/hub-store";
 import { useProjectStore } from "@/stores/project-store";
 import { toast } from "@/stores/toast-store";
-
-function formatTerminalCount(value: number) {
-  return value >= 100 ? String(value) : String(value).padStart(2, "0");
-}
-
-function shortPath(path: string) {
-  const parts = path.split("/").filter(Boolean);
-  if (parts.length <= 3) return path;
-  return `.../${parts.slice(-3).join("/")}`;
-}
 
 // ---------------------------------------------------------------------------
 // Small composable pieces
@@ -106,7 +97,7 @@ function QuickAction({
   );
 }
 
-function ProjectMetric({
+function OverviewMetric({
   label,
   value,
   icon: Icon,
@@ -125,63 +116,6 @@ function ProjectMetric({
         {value}
       </div>
     </div>
-  );
-}
-
-function ProjectOverviewCard({
-  project,
-  extensionCount,
-  agentCount,
-  onClick,
-}: {
-  project: Project;
-  extensionCount: number;
-  agentCount: number;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="group flex min-w-0 items-center gap-3 rounded-lg border border-border/60 bg-card/40 px-4 py-3 text-left transition-colors hover:border-border hover:bg-card"
-      title={project.path}
-    >
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
-        {project.exists ? (
-          <FolderOpen size={17} strokeWidth={1.75} aria-hidden="true" />
-        ) : (
-          <TriangleAlert size={17} strokeWidth={1.75} aria-hidden="true" />
-        )}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium text-foreground">
-            {project.name}
-          </span>
-          {!project.exists && (
-            <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-              Missing
-            </span>
-          )}
-        </div>
-        <div className="mt-1 truncate text-xs text-muted-foreground">
-          {shortPath(project.path)}
-        </div>
-      </div>
-      <div className="shrink-0 text-right text-xs text-muted-foreground">
-        <div>
-          <span className="font-medium text-foreground tabular-nums">
-            {extensionCount}
-          </span>{" "}
-          ext.
-        </div>
-        <div>
-          <span className="font-medium text-foreground tabular-nums">
-            {agentCount}
-          </span>{" "}
-          agents
-        </div>
-      </div>
-    </button>
   );
 }
 
@@ -223,6 +157,9 @@ function OverviewSkeleton() {
 export default function OverviewPage() {
   const navigate = useNavigate();
   const extensions = useExtensionStore((s) => s.extensions);
+  const hubExtensions = useHubStore((s) => s.extensions);
+  const hubHasFetched = useHubStore((s) => s.hasFetched);
+  const fetchHubExtensions = useHubStore((s) => s.fetch);
   const extHasFetched = useExtensionStore((s) => s.hasFetched);
   const checkUpdates = useExtensionStore((s) => s.checkUpdates);
   const checkingUpdates = useExtensionStore((s) => s.checkingUpdates);
@@ -243,19 +180,19 @@ export default function OverviewPage() {
 
   useEffect(() => {
     loadCached();
-    fetchAgents()
+    Promise.all([fetchAgents(), fetchHubExtensions()])
       .catch((e) => {
-        console.error("Failed to load data:", e);
+        console.error("Failed to load overview data:", e);
       })
       .finally(() => setLocalReady(true));
-  }, [loadCached, fetchAgents]);
+  }, [loadCached, fetchAgents, fetchHubExtensions]);
 
   useEffect(() => {
     if (!projectsLoaded && !projectsLoading) loadProjects();
   }, [loadProjects, projectsLoaded, projectsLoading]);
 
   // Show skeleton until both extensions (fetched in App.tsx) and local data are ready.
-  const initialLoaded = localReady && extHasFetched;
+  const initialLoaded = localReady && extHasFetched && hubHasFetched;
 
   // Filter extensions to only those belonging to enabled agents
   const enabledAgentNames = useMemo(
@@ -356,30 +293,42 @@ export default function OverviewPage() {
     [agents, agentExtCounts, agentOrder],
   );
 
+  const localHubOverview = useMemo(() => {
+    const counts = { skill: 0, mcp: 0, plugin: 0 };
+    const seen = new Set<string>();
+
+    for (const ext of hubExtensions) {
+      if (ext.kind !== "skill" && ext.kind !== "mcp" && ext.kind !== "plugin") {
+        continue;
+      }
+
+      const key = logicalAssetKey(ext);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      counts[ext.kind]++;
+    }
+
+    return {
+      assets: seen.size,
+      skills: counts.skill,
+      mcp: counts.mcp,
+      plugins: counts.plugin,
+    };
+  }, [hubExtensions]);
+
   const projectOverview = useMemo(() => {
-    const rows = projects.map((project) => {
+    const withExtensionsCount = projects.filter((project) => {
       const scopedExtensions = visibleExtensions.filter(
         (ext) =>
           ext.scope.type === "project" && ext.scope.path === project.path,
       );
-      const projectAgents = new Set(scopedExtensions.flatMap((ext) => ext.agents));
-      return {
-        project,
-        extensionCount: buildGroups(scopedExtensions).length,
-        agentCount: projectAgents.size,
-      };
-    });
+      return buildGroups(scopedExtensions).length > 0;
+    }).length;
 
     return {
-      rows: rows.sort((a, b) => {
-        if (a.project.exists !== b.project.exists) {
-          return a.project.exists ? -1 : 1;
-        }
-        return b.extensionCount - a.extensionCount;
-      }),
       availableCount: projects.filter((project) => project.exists).length,
       missingCount: projects.filter((project) => !project.exists).length,
-      withExtensionsCount: rows.filter((row) => row.extensionCount > 0).length,
+      withExtensionsCount,
     };
   }, [projects, visibleExtensions]);
 
@@ -395,46 +344,9 @@ export default function OverviewPage() {
       {/* Header — editorial greeting with inline stats                     */}
       {/* ----------------------------------------------------------------- */}
       <header className="space-y-2">
-        {enabledAgents.length > 0 || stats.total_extensions > 0 ? (
-          <div className="terminal-status select-none">
-            <h2
-              className="terminal-status__line"
-              aria-label={`${enabledAgents.length} agents / ${stats.total_extensions} extensions`}
-            >
-              <span className="terminal-status__command">
-                <span className="terminal-status__prompt" aria-hidden="true">
-                  &gt;
-                </span>
-                <span className="terminal-status__command-text">hk status</span>
-              </span>
-              <span className="terminal-status__output">
-                <span className="terminal-status__metric">
-                  <span className="terminal-status__count tabular-nums">
-                    {formatTerminalCount(enabledAgents.length)}
-                  </span>
-                  <span className="terminal-status__label">
-                    agent{enabledAgents.length !== 1 ? "s" : ""}
-                  </span>
-                </span>
-                <span className="terminal-status__separator" aria-hidden="true">
-                  /
-                </span>
-                <span className="terminal-status__metric">
-                  <span className="terminal-status__count tabular-nums">
-                    {formatTerminalCount(stats.total_extensions)}
-                  </span>
-                  <span className="terminal-status__label">
-                    extension{stats.total_extensions !== 1 ? "s" : ""}
-                  </span>
-                </span>
-              </span>
-            </h2>
-          </div>
-        ) : (
-          <h2 className="text-2xl font-bold tracking-tight text-foreground select-none">
-            Welcome to HarnessKit
-          </h2>
-        )}
+        <h2 className="text-2xl font-bold tracking-tight text-foreground select-none">
+          Overview
+        </h2>
         {stats.total_extensions > 0 ? (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             {stats.skill_count > 0 && (
@@ -481,60 +393,59 @@ export default function OverviewPage() {
       </header>
 
       <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Projects overview
-          </h3>
-          <button
-            onClick={() => navigate("/projects?scope=all")}
-            className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            View all
-          </button>
-        </div>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Local Hub Overview
+        </h3>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <ProjectMetric
+          <OverviewMetric
+            label="Assets"
+            value={localHubOverview.assets}
+            icon={Package}
+          />
+          <OverviewMetric
+            label="Skills"
+            value={localHubOverview.skills}
+            icon={Package}
+          />
+          <OverviewMetric
+            label="MCP"
+            value={localHubOverview.mcp}
+            icon={Server}
+          />
+          <OverviewMetric
+            label="Plugins"
+            value={localHubOverview.plugins}
+            icon={Puzzle}
+          />
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Projects overview
+        </h3>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <OverviewMetric
             label="Projects"
             value={projects.length}
             icon={FolderKanban}
           />
-          <ProjectMetric
+          <OverviewMetric
             label="Available"
             value={projectOverview.availableCount}
             icon={FolderOpen}
           />
-          <ProjectMetric
+          <OverviewMetric
             label="With extensions"
             value={projectOverview.withExtensionsCount}
             icon={Package}
           />
-          <ProjectMetric
+          <OverviewMetric
             label="Missing"
             value={projectOverview.missingCount}
             icon={TriangleAlert}
           />
         </div>
-        {projects.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-sm text-muted-foreground">
-            No projects added yet.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            {projectOverview.rows.slice(0, 4).map((row) => (
-              <ProjectOverviewCard
-                key={row.project.id}
-                project={row.project}
-                extensionCount={row.extensionCount}
-                agentCount={row.agentCount}
-                onClick={() =>
-                  navigate(
-                    `/projects?scope=${encodeURIComponent(row.project.path)}`,
-                  )
-                }
-              />
-            ))}
-          </div>
-        )}
       </section>
 
       {/* ----------------------------------------------------------------- */}

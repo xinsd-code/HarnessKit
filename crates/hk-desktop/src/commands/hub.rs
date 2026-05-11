@@ -15,7 +15,7 @@ pub async fn backup_to_hub(
     extension_id: String,
 ) -> Result<(), String> {
     let store = state.store.clone();
-    let adapters = state.adapters.clone();
+    let adapters = state.runtime_adapters();
     // Get projects from store
     let projects: Vec<(String, String)> = {
         let store_guard = store.lock();
@@ -44,7 +44,7 @@ pub async fn install_from_hub(
     force: bool,
 ) -> Result<Vec<Extension>, String> {
     let store = state.store.clone();
-    let adapters = state.adapters.clone();
+    let adapters = state.runtime_adapters();
     tauri::async_runtime::spawn_blocking(move || {
         service::install_from_hub(&store, &adapters, &extension_id, &target_agent, &scope, force)
     })
@@ -76,8 +76,14 @@ pub fn check_hub_install_conflict(
     state: State<AppState>,
     extension_id: String,
     target_agent: String,
+    scope: ConfigScope,
 ) -> Option<Extension> {
-    service::check_hub_install_conflict(&state.store, &extension_id, &target_agent)
+    service::check_hub_install_conflict(
+        &state.store,
+        &extension_id,
+        &target_agent,
+        &scope,
+    )
 }
 
 /// Get the Local Hub directory path
@@ -132,7 +138,8 @@ pub fn preview_sync_to_hub(state: State<AppState>) -> Result<service::SyncPrevie
             .map(|p| (p.name, p.path))
             .collect()
     };
-    service::preview_sync_to_hub(&state.store, &state.adapters, &projects).map_err(|e| e.to_string())
+    let adapters = state.runtime_adapters();
+    service::preview_sync_to_hub(&state.store, &adapters, &projects).map_err(|e| e.to_string())
 }
 
 /// Sync specific extensions to Hub (after user confirms conflicts)
@@ -142,7 +149,7 @@ pub async fn sync_extensions_to_hub(
     extension_ids: Vec<String>,
 ) -> Result<Vec<String>, String> {
     let store = state.store.clone();
-    let adapters = state.adapters.clone();
+    let adapters = state.runtime_adapters();
     // Get projects from store
     let projects: Vec<(String, String)> = {
         let store_guard = store.lock();

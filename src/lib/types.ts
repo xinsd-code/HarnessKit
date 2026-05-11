@@ -87,31 +87,37 @@ function extractDeveloper(url: string | null): string {
   return url;
 }
 
-/** Stable grouping key: same kind + name + developer → same group.
- *  Origin is intentionally excluded so the same logical skill installed in
- *  different scopes (e.g. global registry copy + project-local copy) or via
- *  different install methods (git clone vs. marketplace) folds into one row;
- *  the merged row exposes both instances.
- *
- *  For hooks, group by command only (ignore event name) so the same command
- *  deployed to agents with different event names merges into one row.
- *
- *  URL resolution: marketplace-installed skills end up with `source.url=null`
- *  because the scanner re-discovers them as files in agent skill dirs and has
- *  no way to know they came from a marketplace. The authoritative "where did
- *  this come from" record lives in `install_meta.url` (written by HK at
- *  install time). Fall back to it so the 6 marketplace copies of the same
- *  skill group together and stay separate from a same-named hand-written
- *  project skill (which has neither field set). */
 /** Logical name used for grouping. For hooks the wire name is
  *  `event:matcher:command`; we group by command only so the same command
  *  deployed to agents with different events merges into one row. */
-export function logicalExtensionName(ext: Extension): string {
+export function logicalExtensionName(
+  ext: Pick<Extension, "kind" | "name">,
+): string {
   if (ext.kind === "hook") {
     const parts = ext.name.split(":");
     if (parts.length >= 3) return parts.slice(2).join(":");
   }
   return ext.name;
+}
+
+export function usesLooseLogicalAssetIdentity(
+  ext: Pick<Extension, "kind">,
+): boolean {
+  return ext.kind === "skill" || ext.kind === "mcp" || ext.kind === "plugin";
+}
+
+export function logicalAssetKey(ext: Pick<Extension, "kind" | "name">): string {
+  return `${ext.kind}\0${logicalExtensionName(ext)}`;
+}
+
+export function sameLogicalAsset(
+  a: Pick<Extension, "kind" | "name">,
+  b: Pick<Extension, "kind" | "name">,
+): boolean {
+  if (usesLooseLogicalAssetIdentity(a) && usesLooseLogicalAssetIdentity(b)) {
+    return logicalAssetKey(a) === logicalAssetKey(b);
+  }
+  return a.kind === b.kind && a.name === b.name;
 }
 
 /** Authoritative "where did this come from" URL for grouping purposes.
@@ -131,6 +137,8 @@ export function deriveExtensionUrl(ext: Extension): string | null {
   );
 }
 
+/** Source-aware key for strict identity use cases. Extensions and Local Hub
+ *  list surfaces should use `extensionListGroupKey` instead. */
 export function extensionGroupKey(ext: Extension): string {
   // When the URL is null, fall back to scopeKey so a project-level
   // "code-review" doesn't accidentally merge with an unrelated global
@@ -140,6 +148,14 @@ export function extensionGroupKey(ext: Extension): string {
   const url = deriveExtensionUrl(ext);
   const developer = url ? extractDeveloper(url) : `(${scopeKey(ext.scope)})`;
   return `${ext.kind}\0${logicalExtensionName(ext)}\0${developer}`;
+}
+
+/** Group key used by the Extensions list. Logical assets intentionally ignore
+ *  install provenance, while strict kinds keep the source-aware identity. */
+export function extensionListGroupKey(ext: Extension): string {
+  return usesLooseLogicalAssetIdentity(ext)
+    ? logicalAssetKey(ext)
+    : extensionGroupKey(ext);
 }
 
 /** Sort agent name strings by canonical display order. */
@@ -211,7 +227,7 @@ export type InstallSurface =
   | "local-hub"
   | "extension-detail"
   | "extension-list";
-export type InstallListAction = "install" | "uninstall" | "open-detail";
+export type InstallListAction = "install" | "uninstall";
 
 /** Stable identifier for a scope, suitable for use as a Map key or filter value.
  *  "global" for the global scope; the project path for project scopes. */

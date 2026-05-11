@@ -31,6 +31,7 @@ pub struct InstallFromHubParams {
 pub struct CheckHubConflictParams {
     pub extension_id: String,
     pub target_agent: String,
+    pub scope: ConfigScope,
 }
 
 #[derive(Deserialize)]
@@ -107,6 +108,7 @@ pub async fn check_hub_install_conflict(
             &state.store,
             &params.extension_id,
             &params.target_agent,
+            &params.scope,
         ))
     })
     .await

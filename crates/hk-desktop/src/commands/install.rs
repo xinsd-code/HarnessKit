@@ -25,7 +25,7 @@ pub async fn install_from_local(
     target_scope: ConfigScope,
 ) -> Result<manager::InstallResult, HkError> {
     let store = state.store.clone();
-    let adapters = state.adapters.clone();
+    let adapters = state.runtime_adapters();
     tauri::async_runtime::spawn_blocking(move || {
         let source_path = std::path::Path::new(&path);
         if !source_path.is_dir() {
@@ -126,7 +126,7 @@ pub async fn install_from_git(
     target_scope: ConfigScope,
 ) -> Result<manager::InstallResult, HkError> {
     let store = state.store.clone();
-    let adapters = state.adapters.clone();
+    let adapters = state.runtime_adapters();
     tauri::async_runtime::spawn_blocking(move || {
         hk_core::sanitize::validate_git_url(&url)
             .map_err(|e| HkError::Validation(e.to_string()))?;
@@ -212,7 +212,7 @@ pub async fn scan_git_repo(
     }
 
     let store_clone = state.store.clone();
-    let adapters = state.adapters.clone();
+    let adapters = state.runtime_adapters();
     let pending_clones = state.pending_clones.clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<ScanResult, HkError> {
@@ -345,7 +345,7 @@ pub async fn install_scanned_skills(
     };
 
     let store_clone = state.store.clone();
-    let adapters = state.adapters.clone();
+    let adapters = state.runtime_adapters();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<manager::InstallResult>, HkError> {
         let mut results = Vec::new();
@@ -456,7 +456,7 @@ pub async fn install_new_repo_skills(
     target_scope: ConfigScope,
 ) -> Result<Vec<manager::InstallResult>, HkError> {
     let store_clone = state.store.clone();
-    let adapters = state.adapters.clone();
+    let adapters = state.runtime_adapters();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<manager::InstallResult>, HkError> {
         // Clone the repo once
@@ -569,7 +569,7 @@ pub async fn install_to_agent(
     target_agent: String,
 ) -> Result<String, HkError> {
     let store = state.store.clone();
-    let adapters = state.adapters.clone();
+    let adapters = state.runtime_adapters();
     tauri::async_runtime::spawn_blocking(move || {
         service::install_to_agent(&store, &adapters, &extension_id, &target_agent)
     })
@@ -585,7 +585,7 @@ pub async fn install_to_project(
     target_scope: ConfigScope,
 ) -> Result<String, HkError> {
     let store = state.store.clone();
-    let adapters = state.adapters.clone();
+    let adapters = state.runtime_adapters();
     tauri::async_runtime::spawn_blocking(move || {
         service::install_to_project(
             &store,

@@ -1,27 +1,30 @@
-import { ChevronDown, Folder, Loader2, Trash2, X } from "lucide-react";
+import { Loader2, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { PermissionDetail } from "@/components/extensions/permission-detail";
 import { SkillFileSection } from "@/components/extensions/skill-file-section";
+import {
+  AgentInstallIconRow,
+  type AgentInstallIconItem,
+} from "@/components/shared/agent-install-icon-row";
+import { ProjectInstallPanel } from "@/components/shared/project-install-panel";
 import { canInstallAtScope } from "@/lib/agent-capabilities";
 import { api } from "@/lib/invoke";
+import {
+  buildInstallState,
+  resolveProjectSelection,
+} from "@/lib/install-surface";
 import type { ConfigScope, Extension, ExtensionKind } from "@/lib/types";
-import { agentDisplayName, sortAgents } from "@/lib/types";
+import {
+  agentDisplayName,
+  extensionListGroupKey,
+  sameLogicalAsset,
+  sortAgents,
+} from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useHubStore } from "@/stores/hub-store";
 import { useProjectStore } from "@/stores/project-store";
 import { toast } from "@/stores/toast-store";
-
-const AGENT_ICON_TONES: Record<string, string> = {
-  claude: "border-agent-claude/25 bg-agent-claude/10",
-  codex: "border-agent-codex/20 bg-agent-codex/10",
-  gemini: "border-agent-gemini/20 bg-agent-gemini/12",
-  cursor: "border-agent-cursor/20 bg-agent-cursor/10",
-  antigravity: "border-agent-antigravity/20 bg-agent-antigravity/10",
-  copilot: "border-agent-copilot/20 bg-agent-copilot/10",
-  windsurf: "border-agent-windsurf/20 bg-agent-windsurf/10",
-};
 
 function scopeMatches(
   extScope: ConfigScope,
@@ -33,6 +36,7 @@ function scopeMatches(
   return extScope.type === "project" && extScope.path === targetScope.path;
 }
 
+
 export function HubDetail() {
   const extensions = useHubStore((s) => s.extensions);
   const selectedId = useHubStore((s) => s.selectedId);
@@ -41,6 +45,13 @@ export function HubDetail() {
   const installFromHub = useHubStore((s) => s.installFromHub);
   const extensionContent = useHubStore((s) => s.extensionContent);
   const loadExtensionContent = useHubStore((s) => s.loadExtensionContent);
+  const fetchHubExtensions = useHubStore((s) => s.fetch);
+
+  const markInstalled = useHubStore((s) => s.markInstalled);
+  const unmarkInstalled = useHubStore((s) => s.unmarkInstalled);
+  const isHubInstalled = useHubStore((s) => s.isHubInstalled);
+  // Subscribe so the component re-renders when hub install state changes
+  void useHubStore((s) => s.hubInstalledKeys);
 
   const agents = useAgentStore((s) => s.agents);
   const agentOrder = useAgentStore((s) => s.agentOrder);
@@ -62,15 +73,29 @@ export function HubDetail() {
   } | null>(null);
   const [selectedProjectPath, setSelectedProjectPath] = useState("");
 
-  const ext = extensions.find((e) => e.id === selectedId);
-  const content = selectedId ? extensionContent.get(selectedId) : null;
+  // Reset conflict state when switching to a different extension
+  useEffect(() => {
+    setConflict(null);
+    setConflictTarget(null);
+  }, [selectedId]);
+
+  const selectedHubExtensions = selectedId
+    ? (() => {
+        const exactMatch = extensions.find((e) => e.id === selectedId);
+        if (exactMatch) return [exactMatch];
+        return extensions.filter((e) => extensionListGroupKey(e) === selectedId);
+      })()
+    : [];
+  const ext = selectedHubExtensions[0] ?? null;
+  const availableProjects = projects.filter((project) => project.exists);
+  const content = ext ? extensionContent.get(ext.id) : null;
 
   // Load content when extension is selected
   useEffect(() => {
-    if (selectedId && !content) {
-      loadExtensionContent(selectedId);
+    if (ext && !content) {
+      loadExtensionContent(ext.id);
     }
-  }, [selectedId, content, loadExtensionContent]);
+  }, [ext, content, loadExtensionContent]);
 
   useEffect(() => {
     if (agents.length === 0) {
@@ -84,11 +109,37 @@ export function HubDetail() {
     }
   }, [projectsLoaded, loadProjects]);
 
+  useEffect(() => {
+    if (!ext) return;
+    const selectedProject = resolveProjectSelection({
+      contextScope: null,
+      installedInstances: installedExtensions.filter((instance) =>
+        sameLogicalAsset(ext, instance),
+      ),
+      projects: availableProjects,
+    });
+    if (
+      selectedProjectPath &&
+      availableProjects.some((project) => project.path === selectedProjectPath)
+    ) {
+      return;
+    }
+    const nextProjectPath =
+      selectedProject?.type === "project" ? selectedProject.path : null;
+    if (nextProjectPath && nextProjectPath !== selectedProjectPath) {
+      setSelectedProjectPath(nextProjectPath);
+      return;
+    }
+    if (selectedProjectPath) {
+      setSelectedProjectPath("");
+    }
+  }, [ext, installedExtensions, availableProjects, selectedProjectPath]);
+
   if (!ext) return null;
 
   const projectScope: ConfigScope | null = selectedProjectPath
     ? (() => {
-        const project = projects.find((item) => item.path === selectedProjectPath);
+        const project = availableProjects.find((item) => item.path === selectedProjectPath);
         return project
           ? { type: "project", name: project.name, path: project.path }
           : null;
@@ -100,44 +151,38 @@ export function HubDetail() {
     agentOrder,
   );
   const globalInstallAgents = ext.kind === "cli" ? [] : detectedAgents;
-  const projectTargetKind: ExtensionKind | null = ext.kind === "skill" ? "skill" : null;
+  const projectTargetKind: ExtensionKind | null =
+    ext.kind === "skill" || ext.kind === "mcp"
+      ? ext.kind
+      : null;
   const projectInstallAgents =
     projectScope && projectTargetKind
       ? detectedAgents.filter((agent) =>
           canInstallAtScope(agent.name, projectTargetKind, projectScope),
         )
       : [];
+  const matchingInstancesForAsset = installedExtensions.filter((instance) =>
+    sameLogicalAsset(ext, instance),
+  );
 
   const matchingInstances = (scope: ConfigScope, agentName: string) =>
-    installedExtensions.filter(
+    matchingInstancesForAsset.filter(
       (instance) =>
-        instance.kind === ext.kind &&
-        instance.name === ext.name &&
         instance.agents.includes(agentName) &&
         scopeMatches(instance.scope, scope),
     );
 
-  const globalInstalledAgents = new Set(
-    globalInstallAgents
-      .filter(
-        (agent) => matchingInstances({ type: "global" }, agent.name).length > 0,
-      )
-      .map((agent) => agent.name),
-  );
-  const projectInstalledAgents = new Set(
-    projectScope
-      ? projectInstallAgents
-          .filter((agent) => matchingInstances(projectScope, agent.name).length > 0)
-          .map((agent) => agent.name)
-      : [],
-  );
-
   const handleInstall = async (agent: string, scope: ConfigScope) => {
-    setDeploying(agent);
+    const isGlobalInstall = scope.type === "global";
+    if (isGlobalInstall) setDeploying(agent);
     try {
       const installed = matchingInstances(scope, agent);
-      if (installed.length > 0) {
-        await Promise.all(installed.map((instance) => api.deleteExtension(instance.id)));
+      const markedInstalled = isHubInstalled(ext.id, scope, agent);
+      if (installed.length > 0 || markedInstalled) {
+        if (installed.length > 0) {
+          await Promise.all(installed.map((instance) => api.deleteExtension(instance.id)));
+        }
+        unmarkInstalled(ext.id, scope, agent);
         await rescanAndFetch();
         toast.success(
           scope.type === "project"
@@ -148,20 +193,83 @@ export function HubDetail() {
       }
 
       // Check for conflict first
-      const conflictExt = await api.checkHubInstallConflict(ext.id, agent);
+      const conflictExt = await api.checkHubInstallConflict(ext.id, agent, scope);
       if (conflictExt) {
         setConflict(conflictExt);
         setConflictTarget({ agent, scope });
-        setDeploying(null);
+        if (isGlobalInstall) setDeploying(null);
         return;
       }
-      await installFromHub(ext.id, agent, scope, false);
+      try {
+        await installFromHub(ext.id, agent, scope, false);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        // If backend detects a conflict our frontend check missed, surface it
+        if (msg.includes("already exists") || msg.includes("Use force=true")) {
+          const conflictExt = await api.checkHubInstallConflict(ext.id, agent, scope);
+          if (conflictExt) {
+            setConflict(conflictExt);
+            setConflictTarget({ agent, scope });
+            return;
+          }
+        }
+        throw e;
+      }
+      markInstalled(ext.id, scope, agent);
+      await rescanAndFetch();
     } catch (e) {
       console.error("Install failed:", e);
     } finally {
-      setDeploying(null);
+      if (isGlobalInstall) setDeploying(null);
     }
   };
+
+  const globalAgentItems: AgentInstallIconItem[] = globalInstallAgents.map(
+    (agent) => {
+      const installState = buildInstallState({
+        agentName: agent.name,
+        instances: matchingInstancesForAsset,
+        surface: "extension-detail",
+      });
+      const installed = installState.globalInstalled || isHubInstalled(ext.id, { type: "global" }, agent.name);
+      return {
+        name: agent.name,
+        installed,
+        pending: deploying === agent.name,
+        title: `${agentDisplayName(agent.name)}${
+          installed ? " · 点击移除全局安装" : " · 安装到全局"
+        }`,
+        onClick: () => void handleInstall(agent.name, { type: "global" }),
+      };
+    },
+  );
+
+  const projectAgentItems: AgentInstallIconItem[] =
+    projectScope && projectTargetKind
+      ? projectInstallAgents.map((agent) => {
+          const installState = buildInstallState({
+            agentName: agent.name,
+            instances: matchingInstancesForAsset,
+            projectScope,
+            surface: "extension-detail",
+          });
+          const installed = installState.projectInstalled || isHubInstalled(ext.id, projectScope, agent.name);
+          return {
+            name: agent.name,
+            installed,
+            pending: projectDeploying === agent.name,
+            title: `${agentDisplayName(agent.name)}${
+              installed ? " · 点击移除项目安装" : " · 安装到项目"
+            }`,
+            onClick: () => {
+              setProjectDeploying(agent.name);
+              void handleInstall(agent.name, projectScope).finally(() =>
+                setProjectDeploying(null),
+              );
+            },
+          };
+        })
+      : [];
 
   const handleForceInstall = async (agent: string, scope: ConfigScope) => {
     setDeploying(agent);
@@ -169,6 +277,8 @@ export function HubDetail() {
     setConflictTarget(null);
     try {
       await installFromHub(ext.id, agent, scope, true);
+      markInstalled(ext.id, scope, agent);
+      await rescanAndFetch();
     } catch (e) {
       console.error("Force install failed:", e);
     } finally {
@@ -179,7 +289,16 @@ export function HubDetail() {
   const handleDelete = async () => {
     setDeleting(true);
     try {
-      await deleteFromHub(ext.id);
+      if (selectedHubExtensions.length <= 1) {
+        await deleteFromHub(ext.id);
+      } else {
+        await Promise.all(
+          selectedHubExtensions.map((item) => api.deleteFromHub(item.id)),
+        );
+        setSelectedId(null);
+        await fetchHubExtensions();
+        toast.success("Deleted from Local Hub");
+      }
       setShowDelete(false);
     } catch (e) {
       console.error("Delete failed:", e);
@@ -224,149 +343,21 @@ export function HubDetail() {
             <h4 className="text-xs font-medium text-muted-foreground uppercase">
               Install to Agent
             </h4>
-            <div className="flex flex-wrap gap-1.5">
-              {globalInstallAgents.map((agent) => {
-                const isInstalled = globalInstalledAgents.has(agent.name);
-                const isPending = deploying === agent.name;
-                return (
-                  <button
-                    key={`hub-global:${agent.name}`}
-                    type="button"
-                    title={`${agentDisplayName(agent.name)}${
-                      isInstalled ? " · 点击移除" : " · 安装到全局"
-                    }`}
-                    disabled={isPending}
-                    onClick={() => void handleInstall(agent.name, { type: "global" })}
-                    className={`flex h-11 w-11 items-center justify-center rounded-full border transition-all ${
-                      isInstalled
-                        ? `${AGENT_ICON_TONES[agent.name] ?? "border-border bg-muted/40"} shadow-sm`
-                        : "border-border bg-muted/30"
-                    } hover:scale-[1.03] hover:border-border/60 ${
-                      isPending ? "opacity-70" : ""
-                    }`}
-                  >
-                    <div
-                      className={`flex h-6 w-6 items-center justify-center ${
-                        isInstalled ? "" : "grayscale opacity-40"
-                      }`}
-                    >
-                      {isPending ? (
-                        <Loader2 size={14} className="animate-spin text-muted-foreground" />
-                      ) : (
-                        <AgentMascot name={agent.name} size={20} />
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+            <AgentInstallIconRow items={globalAgentItems} />
           </div>
         )}
 
         {projectTargetKind && (
-          <div className="space-y-2">
-            <div className="flex items-baseline gap-2">
-              <h4 className="text-xs font-medium text-muted-foreground uppercase">
-                Install to Project
-              </h4>
-              {projectScope?.type === "project" && (
-                <span className="text-[10px] text-muted-foreground/60">
-                  · {projectScope.name}
-                </span>
-              )}
-            </div>
-            <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                  Target Project
-                </span>
-                <span className="rounded-full bg-card px-2 py-0.5 text-[10px] text-muted-foreground">
-                  {projects.length} saved
-                </span>
-              </div>
-              <label className="group relative block">
-                <Folder
-                  size={14}
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors group-focus-within:text-foreground"
-                />
-                <select
-                  value={selectedProjectPath}
-                  onChange={(e) => setSelectedProjectPath(e.target.value)}
-                  className="min-w-0 w-full appearance-none rounded-xl border border-border bg-card py-2 pl-9 pr-9 text-sm text-foreground shadow-sm transition-colors focus:border-ring focus:bg-background focus:outline-none"
-                >
-                  <option value="">Select an existing project</option>
-                  {projects.map((project) => (
-                    <option key={project.path} value={project.path}>
-                      {project.name}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown
-                  size={14}
-                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                />
-              </label>
-              <div className="mt-3 border-t border-border/60 pt-3">
-                {!projectScope ? (
-                  <div className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-                    Select a project first
-                  </div>
-                ) : projectInstallAgents.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-                    No project-capable agents detected
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {projectInstallAgents.map((agent) => {
-                      const isInstalled = projectInstalledAgents.has(agent.name);
-                      const isPending = projectDeploying === agent.name;
-                      return (
-                        <button
-                          key={`hub-project:${agent.name}`}
-                          type="button"
-                          title={`${agentDisplayName(agent.name)}${
-                            isInstalled ? " · 已安装到项目" : " · 安装到项目"
-                          }`}
-                          disabled={isPending}
-                          onClick={async () => {
-                            if (!projectScope) return;
-                            setProjectDeploying(agent.name);
-                            try {
-                              await handleInstall(agent.name, projectScope);
-                            } finally {
-                              setProjectDeploying(null);
-                            }
-                          }}
-                          className={`flex h-11 w-11 items-center justify-center rounded-full border transition-all ${
-                            isInstalled
-                              ? `${AGENT_ICON_TONES[agent.name] ?? "border-border bg-muted/40"} shadow-sm`
-                              : "border-border bg-muted/30"
-                          } hover:scale-[1.03] hover:border-border/60 ${
-                            isPending ? "opacity-70" : ""
-                          }`}
-                        >
-                          <div
-                            className={`flex h-6 w-6 items-center justify-center ${
-                              isInstalled ? "" : "grayscale opacity-40"
-                            }`}
-                          >
-                            {isPending ? (
-                              <Loader2
-                                size={14}
-                                className="animate-spin text-muted-foreground"
-                              />
-                            ) : (
-                              <AgentMascot name={agent.name} size={20} />
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          <ProjectInstallPanel
+            projects={availableProjects}
+            selectedProjectPath={selectedProjectPath}
+            onProjectChange={setSelectedProjectPath}
+            agentItems={projectAgentItems}
+            selectedProjectName={projectScope?.type === "project" ? projectScope.name : null}
+            placeholder="Select an existing project"
+            emptyProjectText="Select a project first"
+            emptyAgentsText="No project-capable agents detected"
+          />
         )}
 
         {/* Permissions */}

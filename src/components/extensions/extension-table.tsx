@@ -46,11 +46,9 @@ function AgentMembershipCell({
 }) {
   const agents = useAgentStore((s) => s.agents);
   const installToAgent = useExtensionStore((s) => s.installToAgent);
-  const deleteFromAgents = useExtensionStore((s) => s.deleteFromAgents);
   const rescanAndFetch = useExtensionStore((s) => s.rescanAndFetch);
   const extensions = useExtensionStore((s) => s.extensions);
-  const setSelectedId = useExtensionStore((s) => s.setSelectedId);
-  const [pendingAgent, setPendingAgent] = useState<string | null>(null);
+  const [pendingAgents, setPendingAgents] = useState<Set<string>>(new Set());
 
   const visibleAgents = useMemo(
     () =>
@@ -69,12 +67,6 @@ function AgentMembershipCell({
     });
     const name = toastNameForGroup(ext);
     const isInstalled = state.globalInstalled;
-    const isProjectOnlyInstalled = state.listAction === "open-detail";
-
-    if (isProjectOnlyInstalled) {
-      setSelectedId(ext.groupKey);
-      return;
-    }
     if (
       !isInstalled &&
       ext.kind === "hook" &&
@@ -84,7 +76,7 @@ function AgentMembershipCell({
       return;
     }
 
-    setPendingAgent(agentName);
+    setPendingAgents((prev) => new Set(prev).add(agentName));
     try {
       if (isInstalled) {
         if (ext.kind === "cli") {
@@ -109,7 +101,12 @@ function AgentMembershipCell({
           }
           await rescanAndFetch();
         } else {
-          await deleteFromAgents(ext.groupKey, [agentName]);
+          await Promise.all(
+            state.globalInstances.map((instance) =>
+              api.deleteExtension(instance.id),
+            ),
+          );
+          await rescanAndFetch();
         }
         toast.success(
           `${agentDisplayName(agentName)} 已移除 ${name}`,
@@ -144,7 +141,11 @@ function AgentMembershipCell({
       const message = error instanceof Error ? error.message : String(error);
       toast.error(`操作失败: ${message}`);
     } finally {
-      setPendingAgent(null);
+      setPendingAgents((prev) => {
+        const next = new Set(prev);
+        next.delete(agentName);
+        return next;
+      });
     }
   };
 
@@ -157,9 +158,9 @@ function AgentMembershipCell({
             instances: ext.instances,
             surface: "extension-list",
           });
-          const isPending = pendingAgent === agentName;
+          const isPending = pendingAgents.has(agentName);
           const isUnsupportedAdd =
-            state.listAction === "install" &&
+            !state.globalInstalled &&
             ext.kind === "hook" &&
             AGENTS_WITHOUT_HOOKS.has(agentName);
 
@@ -167,16 +168,14 @@ function AgentMembershipCell({
             name: agentName,
             installed: state.globalInstalled,
             pending: isPending,
-            disabled: isUnsupportedAdd,
+            disabled: isUnsupportedAdd || isPending,
             title:
-              state.listAction === "open-detail"
-                ? `${agentDisplayName(agentName)} · 已安装到项目，点击查看详情`
-                : state.globalInstalled
-                  ? `${agentDisplayName(agentName)} · 点击移除全局安装`
-                  : isUnsupportedAdd
-                    ? `${agentDisplayName(agentName)} · 当前不可添加`
-                    : `${agentDisplayName(agentName)} · 点击添加全局安装`,
-            onClick: isUnsupportedAdd
+              state.globalInstalled
+                ? `${agentDisplayName(agentName)} · 点击移除全局安装`
+                : isUnsupportedAdd
+                  ? `${agentDisplayName(agentName)} · 当前不可添加`
+                  : `${agentDisplayName(agentName)} · 点击添加全局安装`,
+            onClick: isUnsupportedAdd || isPending
               ? undefined
               : () => {
                   void handleToggle(agentName);
@@ -245,6 +244,7 @@ export function ExtensionTable({
       }),
       col.accessor("name", {
         header: "Name",
+        size: 240,
         sortingFn: (a, b) =>
           a.original.name.localeCompare(b.original.name, undefined, {
             sensitivity: "base",
@@ -283,10 +283,12 @@ export function ExtensionTable({
       }),
       col.accessor("kind", {
         header: "Kind",
+        size: 80,
         cell: (info) => <KindBadge kind={info.getValue()} />,
       }),
       col.accessor("agents", {
         header: "Agent",
+        size: 320,
         cell: (info) => (
           <AgentMembershipCell
             ext={info.row.original}
@@ -296,11 +298,13 @@ export function ExtensionTable({
       }),
       col.accessor("permissions", {
         header: "Permissions",
+        size: 100,
         cell: (info) => <PermissionTags permissions={info.getValue()} />,
         enableSorting: false,
       }),
       col.accessor("trust_score", {
         header: "Audit",
+        size: 80,
         cell: (info) => {
           const val = info.getValue();
           return val != null ? (
@@ -312,6 +316,7 @@ export function ExtensionTable({
       }),
       col.accessor("enabled", {
         header: "Status",
+        size: 90,
         cell: (info) => {
           const ext = info.row.original;
           return (

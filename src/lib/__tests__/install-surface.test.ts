@@ -68,6 +68,37 @@ describe("resolveProjectSelection", () => {
     expect(result).toEqual(alphaScope);
   });
 
+  it("keeps the current project scope ahead of other installed projects", () => {
+    const result = resolveProjectSelection({
+      contextScope: alphaScope,
+      installedInstances: [
+        makeExtension({ id: "beta", scope: betaScope }),
+        makeExtension({ id: "alpha", scope: alphaScope }),
+      ],
+      projects: [
+        makeProject("alpha", "/projects/alpha"),
+        makeProject("beta", "/projects/beta"),
+      ],
+    });
+
+    expect(result).toEqual(alphaScope);
+  });
+
+  it("does not preserve a stale project scope when the project is missing", () => {
+    const result = resolveProjectSelection({
+      contextScope: alphaScope,
+      installedInstances: [makeExtension({ id: "alpha", scope: alphaScope })],
+      projects: [
+        {
+          ...makeProject("alpha", "/projects/alpha"),
+          exists: false,
+        },
+      ],
+    });
+
+    expect(result).toBeNull();
+  });
+
   it("falls back to the first project in the project list, not install order", () => {
     const result = resolveProjectSelection({
       contextScope: { type: "all" },
@@ -96,7 +127,7 @@ describe("resolveProjectSelection", () => {
 });
 
 describe("buildInstallState", () => {
-  it("treats Local Hub project-only installs as open-detail in the list", () => {
+  it("treats Local Hub project-only installs as install in the list", () => {
     const state = buildInstallState({
       agentName: "claude",
       instances: [makeExtension({ id: "alpha", scope: alphaScope, agents: ["claude"] })],
@@ -106,7 +137,20 @@ describe("buildInstallState", () => {
     expect(state.globalInstalled).toBe(false);
     expect(state.projectInstalled).toBe(true);
     expect(state.installed).toBe(false);
-    expect(state.listAction).toBe("open-detail");
+    expect(state.listAction).toBe("install");
+  });
+
+  it("treats extension-list project-only installs as install in the list", () => {
+    const state = buildInstallState({
+      agentName: "claude",
+      instances: [makeExtension({ id: "alpha", scope: alphaScope, agents: ["claude"] })],
+      surface: "extension-list",
+    });
+
+    expect(state.globalInstalled).toBe(false);
+    expect(state.projectInstalled).toBe(true);
+    expect(state.installed).toBe(false);
+    expect(state.listAction).toBe("install");
   });
 
   it("keeps global and project installs separate when both exist", () => {

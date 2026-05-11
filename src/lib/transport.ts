@@ -27,7 +27,9 @@ export async function transport<T>(
 ): Promise<T> {
   if (tauriInvokePromise) {
     const invoke = await tauriInvokePromise;
-    return invoke(command, args ? toSnakeKeys(args) : undefined) as Promise<T>;
+    // Tauri 2 auto-maps camelCase JS args to snake_case Rust params,
+    // so we pass args as-is (no toSnakeKeys needed).
+    return invoke(command, args ?? undefined) as Promise<T>;
   }
   return httpInvoke<T>(command, args);
 }

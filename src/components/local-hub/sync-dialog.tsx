@@ -148,15 +148,15 @@ export function SyncDialog({ open, onClose }: SyncDialogProps) {
                   <div className="flex gap-2">
                     <button
                       onClick={selectAll}
-                      className="text-xs text-primary hover:underline"
+                      className="rounded-lg border border-border px-3 py-1 text-xs font-medium hover:bg-accent"
                     >
-                      Select all
+                      Select All
                     </button>
                     <button
                       onClick={deselectAll}
-                      className="text-xs text-muted-foreground hover:underline"
+                      className="rounded-lg border border-border px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent"
                     >
-                      Deselect all
+                      Deselect All
                     </button>
                   </div>
                 )}

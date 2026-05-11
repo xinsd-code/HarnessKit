@@ -1,6 +1,6 @@
 import { clsx } from "clsx";
 import { HardDrive } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   AgentInstallIconRow,
   type AgentInstallIconItem,
@@ -10,7 +10,12 @@ import { PermissionTags } from "@/components/shared/permission-tags";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { api } from "@/lib/invoke";
 import { buildInstallState } from "@/lib/install-surface";
-import { agentDisplayName, sortAgentNames } from "@/lib/types";
+import {
+  agentDisplayName,
+  extensionListGroupKey,
+  sortAgentNames,
+  usesLooseLogicalAssetIdentity,
+} from "@/lib/types";
 import type { Extension } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
@@ -23,28 +28,27 @@ function AgentInstallCell({ ext }: { ext: Extension }) {
   const installedExtensions = useExtensionStore((s) => s.extensions);
   const rescanAndFetch = useExtensionStore((s) => s.rescanAndFetch);
   const installFromHub = useHubStore((s) => s.installFromHub);
-  const setSelectedId = useHubStore((s) => s.setSelectedId);
-  const [pendingAgent, setPendingAgent] = useState<string | null>(null);
-  const [optimisticInstalled, setOptimisticInstalled] = useState<Set<string>>(
-    new Set(),
-  );
+  const markInstalled = useHubStore((s) => s.markInstalled);
+  const unmarkInstalled = useHubStore((s) => s.unmarkInstalled);
+  const isHubInstalled = useHubStore((s) => s.isHubInstalled);
+  // Subscribe so the component re-renders when hub install state changes
+  void useHubStore((s) => s.hubInstalledKeys);
+  const [pendingAgents, setPendingAgents] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    setOptimisticInstalled(new Set());
-  }, [ext.id]);
-
+  const globalScope = { type: "global" as const };
   const visibleAgents = sortAgentNames(
     agents.filter((agent) => agent.detected).map((agent) => agent.name),
     agentOrder,
   );
-  const matchingInstances = installedExtensions.filter(
-    (instance) => instance.kind === ext.kind && instance.name === ext.name,
+  const assetKey = extensionListGroupKey(ext);
+  const matchingInstances = installedExtensions.filter((instance) =>
+    extensionListGroupKey(instance) === assetKey,
   );
 
   const handleToggle = async (
     agentName: string,
   ) => {
-    setPendingAgent(agentName);
+    setPendingAgents((prev) => new Set(prev).add(agentName));
     try {
       const installState = buildInstallState({
         agentName,
@@ -52,35 +56,32 @@ function AgentInstallCell({ ext }: { ext: Extension }) {
         surface: "local-hub",
       });
       const { globalInstances } = installState;
-      const wasOptimistic = optimisticInstalled.has(agentName);
+      const markedInstalled = isHubInstalled(ext.id, globalScope, agentName);
 
-      if (installState.listAction === "open-detail" && !wasOptimistic) {
-        setSelectedId(ext.id);
-        return;
-      }
-
-      if (globalInstances.length > 0 || wasOptimistic) {
-        await Promise.all(
-          globalInstances.map((instance) => api.deleteExtension(instance.id)),
-        );
-        setOptimisticInstalled((prev) => {
-          const next = new Set(prev);
-          next.delete(agentName);
-          return next;
-        });
+      if (globalInstances.length > 0 || markedInstalled) {
+        if (globalInstances.length > 0) {
+          await Promise.all(
+            globalInstances.map((instance) => api.deleteExtension(instance.id)),
+          );
+        }
+        unmarkInstalled(ext.id, globalScope, agentName);
         await rescanAndFetch();
         toast.success(`已从 ${agentDisplayName(agentName)} 移除`);
         return;
       }
 
       await installFromHub(ext.id, agentName, { type: "global" }, false);
-      setOptimisticInstalled((prev) => new Set(prev).add(agentName));
+      markInstalled(ext.id, globalScope, agentName);
       await rescanAndFetch();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       toast.error(`操作失败: ${message}`);
     } finally {
-      setPendingAgent(null);
+      setPendingAgents((prev) => {
+        const next = new Set(prev);
+        next.delete(agentName);
+        return next;
+      });
     }
   };
 
@@ -90,24 +91,19 @@ function AgentInstallCell({ ext }: { ext: Extension }) {
       instances: matchingInstances,
       surface: "local-hub",
     });
-    const optimistic = optimisticInstalled.has(agentName);
-    const pending = pendingAgent === agentName;
-    const installed = installState.globalInstalled || optimistic;
-    const title =
-      installState.listAction === "open-detail" && !optimistic
-        ? `${agentDisplayName(agentName)} · 已安装到项目，点击查看详情`
-        : `${agentDisplayName(agentName)}${
-            installState.globalInstalled || optimistic
-              ? " · 点击移除全局安装"
-              : " · 安装到全局"
-          }`;
+    const pending = pendingAgents.has(agentName);
+    const installed = installState.globalInstalled || isHubInstalled(ext.id, globalScope, agentName);
+    const title = `${agentDisplayName(agentName)}${
+      installed ? " · 点击移除全局安装" : " · 安装到全局"
+    }`;
 
     return {
       name: agentName,
       installed,
       pending,
       title,
-      onClick: () => void handleToggle(agentName),
+      disabled: pending,
+      onClick: pending ? undefined : () => void handleToggle(agentName),
     };
   });
 
@@ -163,9 +159,13 @@ export function HubTable({ data }: { data: Extension[] }) {
           </thead>
           <tbody className="divide-y divide-border">
             {data.map((ext) => {
-              const isSelected = selectedId === ext.id;
-              const installedMatches = installedExtensions.filter(
-                (instance) => instance.kind === ext.kind && instance.name === ext.name,
+              const rowSelectionKey = usesLooseLogicalAssetIdentity(ext)
+                ? extensionListGroupKey(ext)
+                : ext.id;
+              const isSelected = selectedId === rowSelectionKey;
+              const assetKey = extensionListGroupKey(ext);
+              const installedMatches = installedExtensions.filter((instance) =>
+                extensionListGroupKey(instance) === assetKey,
               );
               const trustScore =
                 installedMatches.reduce<number | null>((current, instance) => {
@@ -177,7 +177,9 @@ export function HubTable({ data }: { data: Extension[] }) {
               return (
                 <tr
                   key={ext.id}
-                  onClick={() => setSelectedId(isSelected ? null : ext.id)}
+                  onClick={() =>
+                    setSelectedId(isSelected ? null : rowSelectionKey)
+                  }
                   className={clsx(
                     "cursor-pointer transition-colors duration-150",
                     isSelected

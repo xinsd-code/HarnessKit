@@ -2,8 +2,10 @@ import type { Extension, ExtensionKind, GroupedExtension } from "@/lib/types";
 import {
   deriveExtensionUrl,
   extensionGroupKey,
+  extensionListGroupKey,
   logicalExtensionName,
   sortAgentNames,
+  usesLooseLogicalAssetIdentity,
 } from "@/lib/types";
 import type { ScopeValue } from "@/stores/scope-store";
 
@@ -56,7 +58,62 @@ function deduplicatePermissions(
   return result;
 }
 
+function deduplicateExtensionsById(extensions: Extension[]): Extension[] {
+  const seen = new Set<string>();
+  const result: Extension[] = [];
+  for (const ext of extensions) {
+    if (seen.has(ext.id)) continue;
+    seen.add(ext.id);
+    result.push(ext);
+  }
+  return result;
+}
+
+function buildGroupedExtension(
+  key: string,
+  instances: Extension[],
+): GroupedExtension {
+  const dedupedInstances = deduplicateExtensionsById(instances);
+  const first = dedupedInstances[0];
+  return {
+    groupKey: key,
+    name: first.name,
+    kind: first.kind,
+    description: first.description,
+    source: first.source,
+    agents: sortAgentNames([
+      ...new Set(dedupedInstances.flatMap((e) => e.agents)),
+    ]),
+    tags: [...new Set(dedupedInstances.flatMap((e) => e.tags))],
+    pack: dedupedInstances.find((e) => e.pack)?.pack ?? null,
+    permissions: deduplicatePermissions(
+      dedupedInstances.flatMap((e) => e.permissions),
+    ),
+    enabled: dedupedInstances.some((e) => e.enabled),
+    trust_score: dedupedInstances.reduce<number | null>(
+      (min, e) =>
+        e.trust_score != null
+          ? min != null
+            ? Math.min(min, e.trust_score)
+            : e.trust_score
+          : min,
+      null,
+    ),
+    installed_at: dedupedInstances.reduce(
+      (earliest, e) =>
+        e.installed_at < earliest ? e.installed_at : earliest,
+      first.installed_at,
+    ),
+    updated_at: dedupedInstances.reduce(
+      (latest, e) => (e.updated_at > latest ? e.updated_at : latest),
+      first.updated_at,
+    ),
+    instances: dedupedInstances,
+  };
+}
+
 export function buildGroups(extensions: Extension[]): GroupedExtension[] {
+  const uniqueExtensions = deduplicateExtensionsById(extensions);
   // Pre-pass: index URL-keyed groups by (kind, logical name) so a sourceless
   // instance (e.g. a project copy rediscovered from disk without install
   // metadata) can attach to its marketplace-installed/global sibling instead
@@ -64,7 +121,8 @@ export function buildGroups(extensions: Extension[]): GroupedExtension[] {
   // sibling — multiple distinct developers for the same logical asset means
   // we can't safely decide which one a sourceless row belongs to.
   const urlSiblings = new Map<string, Set<string>>();
-  for (const ext of extensions) {
+  for (const ext of uniqueExtensions) {
+    if (usesLooseLogicalAssetIdentity(ext)) continue;
     if (deriveExtensionUrl(ext) == null) continue;
     const sk = `${ext.kind}\0${logicalExtensionName(ext)}`;
     const keys = urlSiblings.get(sk) ?? new Set<string>();
@@ -73,9 +131,9 @@ export function buildGroups(extensions: Extension[]): GroupedExtension[] {
   }
 
   const map = new Map<string, Extension[]>();
-  for (const ext of extensions) {
-    let key = extensionGroupKey(ext);
-    if (deriveExtensionUrl(ext) == null) {
+  for (const ext of uniqueExtensions) {
+    let key = extensionListGroupKey(ext);
+    if (!usesLooseLogicalAssetIdentity(ext) && deriveExtensionUrl(ext) == null) {
       const sk = `${ext.kind}\0${logicalExtensionName(ext)}`;
       const siblings = urlSiblings.get(sk);
       if (siblings?.size === 1) {
@@ -90,40 +148,7 @@ export function buildGroups(extensions: Extension[]): GroupedExtension[] {
   }
   const groups: GroupedExtension[] = [];
   for (const [key, instances] of map) {
-    const first = instances[0];
-    groups.push({
-      groupKey: key,
-      name: first.name,
-      kind: first.kind,
-      description: first.description,
-      source: first.source,
-      agents: sortAgentNames([...new Set(instances.flatMap((e) => e.agents))]),
-      tags: [...new Set(instances.flatMap((e) => e.tags))],
-      pack: instances.find((e) => e.pack)?.pack ?? null,
-      permissions: deduplicatePermissions(
-        instances.flatMap((e) => e.permissions),
-      ),
-      enabled: instances.some((e) => e.enabled),
-      trust_score: instances.reduce<number | null>(
-        (min, e) =>
-          e.trust_score != null
-            ? min != null
-              ? Math.min(min, e.trust_score)
-              : e.trust_score
-            : min,
-        null,
-      ),
-      installed_at: instances.reduce(
-        (earliest, e) =>
-          e.installed_at < earliest ? e.installed_at : earliest,
-        first.installed_at,
-      ),
-      updated_at: instances.reduce(
-        (latest, e) => (e.updated_at > latest ? e.updated_at : latest),
-        first.updated_at,
-      ),
-      instances,
-    });
+    groups.push(buildGroupedExtension(key, instances));
   }
   const merged = new Map<string, GroupedExtension>();
   for (const group of groups) {
@@ -137,33 +162,13 @@ export function buildGroups(extensions: Extension[]): GroupedExtension[] {
       merged.set(mergeKey, group);
       continue;
     }
-    merged.set(mergeKey, {
-      ...existing,
-      agents: sortAgentNames(
-        [...new Set([...existing.agents, ...group.agents])],
-      ),
-      tags: [...new Set([...existing.tags, ...group.tags])],
-      permissions: deduplicatePermissions([
-        ...existing.permissions,
-        ...group.permissions,
+    merged.set(
+      mergeKey,
+      buildGroupedExtension(mergeKey, [
+        ...existing.instances,
+        ...group.instances,
       ]),
-      enabled: existing.enabled || group.enabled,
-      trust_score:
-        existing.trust_score != null || group.trust_score != null
-          ? [existing.trust_score, group.trust_score]
-              .filter((v): v is number => v != null)
-              .reduce((min, v) => Math.min(min, v), 100)
-          : null,
-      installed_at:
-        existing.installed_at < group.installed_at
-          ? existing.installed_at
-          : group.installed_at,
-      updated_at:
-        existing.updated_at > group.updated_at
-          ? existing.updated_at
-          : group.updated_at,
-      instances: [...existing.instances, ...group.instances],
-    });
+    );
   }
   return [...merged.values()];
 }
@@ -243,12 +248,12 @@ export function findCliChildren(
       (cliId && e.cli_parent_id === cliId) ||
       (cliPack && e.pack === cliPack)
     ) {
-      matchedGroupKeys.add(extensionGroupKey(e));
+      matchedGroupKeys.add(extensionListGroupKey(e));
     }
   }
   // Second pass: return ALL extensions belonging to matched groups
   return extensions.filter(
-    (e) => e.kind !== "cli" && matchedGroupKeys.has(extensionGroupKey(e)),
+    (e) => e.kind !== "cli" && matchedGroupKeys.has(extensionListGroupKey(e)),
   );
 }
 

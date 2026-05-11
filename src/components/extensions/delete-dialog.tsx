@@ -11,6 +11,7 @@ import { agentDisplayName } from "@/lib/types";
 type DeleteItem = {
   key: string;
   agents: string[];
+  instanceIds: string[];
   paths: string[];
   mcps: string[];
   shared: boolean;
@@ -19,26 +20,45 @@ type DeleteItem = {
   configCleanup?: string;
 };
 
+function normalizeSkillDir(path: string | null | undefined): string | null {
+  if (!path) return null;
+  return path.replace(/\/SKILL\.md(\.disabled)?$/, "");
+}
+
 /**
  * Build path-based delete items from skill locations.
  * Each item = one physical path, with agent names as the primary label.
  */
 function buildPathItems(
   locations: [string, string, string | null][],
+  instances: GroupedExtension["instances"],
+  instanceData: Map<string, ExtContent>,
 ): DeleteItem[] {
-  const pathMap = new Map<string, { agents: string[]; symlink?: string }>();
+  const pathMap = new Map<
+    string,
+    { agents: string[]; instanceIds: Set<string>; symlink?: string }
+  >();
   for (const [agent, path, symlinkTarget] of locations) {
-    const entry = pathMap.get(path) ?? { agents: [] };
+    const entry = pathMap.get(path) ?? { agents: [], instanceIds: new Set() };
     if (!entry.agents.includes(agent)) entry.agents.push(agent);
+    for (const instance of instances) {
+      const sourceDir = normalizeSkillDir(instance.source_path);
+      const loadedDir = normalizeSkillDir(instanceData.get(instance.id)?.path);
+      const matchesPath = sourceDir === path || loadedDir === path;
+      if (matchesPath && instance.agents.includes(agent)) {
+        entry.instanceIds.add(instance.id);
+      }
+    }
     if (symlinkTarget) entry.symlink = symlinkTarget;
     pathMap.set(path, entry);
   }
 
   const items: DeleteItem[] = [];
-  for (const [path, { agents, symlink }] of pathMap) {
+  for (const [path, { agents, instanceIds, symlink }] of pathMap) {
     items.push({
       key: `path:${path}`,
       agents,
+      instanceIds: [...instanceIds],
       paths: [path],
       mcps: [],
       shared: agents.length > 1,
@@ -80,8 +100,9 @@ function buildAgentItems(
                 : null
         : null;
     return {
-      key: `agent:${inst.agents[0]}`,
+      key: `agent:${inst.agents[0]}:${inst.id}`,
       agents: [...inst.agents],
+      instanceIds: [inst.id],
       paths: configPath ? [configPath] : [],
       mcps: [],
       shared: false,
@@ -96,8 +117,8 @@ export function DeleteDialog({
   group,
   instanceData,
   deleting,
-  deleteAgents,
-  setDeleteAgents,
+  deleteKeys,
+  setDeleteKeys,
   onDelete,
   onClose,
   childExtensions,
@@ -106,9 +127,9 @@ export function DeleteDialog({
   group: GroupedExtension;
   instanceData: Map<string, ExtContent>;
   deleting: boolean;
-  deleteAgents: Set<string>;
-  setDeleteAgents: (s: Set<string>) => void;
-  onDelete: (agents: string[]) => void;
+  deleteKeys: Set<string>;
+  setDeleteKeys: (s: Set<string>) => void;
+  onDelete: (payload: { agents: string[]; instanceIds: string[] }) => void;
   onClose: () => void;
   childExtensions?: Extension[];
   skillLocations?: [string, string, string | null][];
@@ -126,8 +147,8 @@ export function DeleteDialog({
   useFocusTrap(dlgRef, true);
 
   useEffect(() => {
-    setDeleteAgents(new Set());
-  }, [setDeleteAgents]);
+    setDeleteKeys(new Set());
+  }, [setDeleteKeys]);
 
   const displayName =
     group.kind === "hook"
@@ -222,7 +243,12 @@ export function DeleteDialog({
 
             <button
               disabled={deleting}
-              onClick={() => onDelete(group.agents)}
+              onClick={() =>
+                onDelete({
+                  agents: group.agents,
+                  instanceIds: [],
+                })
+              }
               className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-destructive px-3 py-2 text-xs font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
             >
               {deleting ? (
@@ -269,10 +295,10 @@ export function DeleteDialog({
     isSkill && filteredSkillLocations && filteredSkillLocations.length > 0;
 
   const items: DeleteItem[] = usePathBased
-    ? buildPathItems(filteredSkillLocations!)
+    ? buildPathItems(filteredSkillLocations!, group.instances, instanceData)
     : buildAgentItems(group.instances, instanceData, group.kind, group.name);
 
-  const selectedKeys = deleteAgents;
+  const selectedKeys = deleteKeys;
   const allSelected =
     items.length > 0 && items.every((i) => selectedKeys.has(i.key));
   const isSingle = items.length === 1;
@@ -324,7 +350,7 @@ export function DeleteDialog({
                   type="checkbox"
                   checked={allSelected}
                   onChange={() => {
-                    setDeleteAgents(
+                    setDeleteKeys(
                       allSelected
                         ? new Set()
                         : new Set(items.map((i) => i.key)),
@@ -350,7 +376,7 @@ export function DeleteDialog({
                       const next = new Set(selectedKeys);
                       if (next.has(item.key)) next.delete(item.key);
                       else next.add(item.key);
-                      setDeleteAgents(next);
+                      setDeleteKeys(next);
                     }}
                     className="mt-0.5 rounded border-border accent-destructive"
                   />
@@ -478,7 +504,12 @@ export function DeleteDialog({
           {isSingle ? (
             <button
               disabled={deleting}
-              onClick={() => onDelete(items[0].agents)}
+              onClick={() =>
+                onDelete({
+                  agents: items[0].agents,
+                  instanceIds: items[0].instanceIds,
+                })
+              }
               className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-destructive px-3 py-2 text-xs font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
             >
               {deleting ? (
@@ -493,12 +524,17 @@ export function DeleteDialog({
               disabled={deleting || selectedKeys.size === 0}
               onClick={() => {
                 const agents = new Set<string>();
+                const instanceIds = new Set<string>();
                 for (const item of items) {
                   if (selectedKeys.has(item.key)) {
                     for (const a of item.agents) agents.add(a);
+                    for (const id of item.instanceIds) instanceIds.add(id);
                   }
                 }
-                onDelete(Array.from(agents));
+                onDelete({
+                  agents: Array.from(agents),
+                  instanceIds: Array.from(instanceIds),
+                });
               }}
               className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-destructive px-3 py-2 text-xs font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
             >

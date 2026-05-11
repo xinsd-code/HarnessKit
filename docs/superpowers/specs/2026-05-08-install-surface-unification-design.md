@@ -1,129 +1,129 @@
-# Install Surface Unification Design
+# 安装面统一设计文档
 
-Date: 2026-05-08
+日期：2026-05-08
 
-## Background
+## 背景
 
-HarnessKit currently exposes install state and install actions in two separate surfaces:
+HarnessKit 当前在两个页面中暴露安装状态与安装动作：
 
 - `Extensions`
 - `Local Hub`
 
-Both surfaces render:
+两个页面都会展示：
 
-- an agent column in the list
-- `Install to Agent` in detail
-- `Install to Project` in detail
+- 列表中的 Agent 列
+- 详情页中的 `Install to Agent`
+- 详情页中的 `Install to Project`
 
-Those three interaction zones have drifted apart. The same asset can appear installed in one surface and uninstalled in another, the default project selection differs by page and by asset kind, and delete/install semantics are not consistently scoped. The user requirement is to make `Local Hub` and `Extensions` fully consistent, while fixing the existing MCP project-selection bug in `Extensions` and preventing recurrence through shared state and shared UI.
+这三处交互已经发生漂移：同一个资产可能在一个页面显示已安装，在另一个页面显示未安装；默认项目选择逻辑随页面和资产类型变化；安装与删除的作用域语义也不一致。用户要求是在修正 `Extensions` 中 MCP 项目选择问题的同时，让 `Local Hub` 与 `Extensions` 完全一致，并通过共享状态与共享 UI 防止同类问题反复出现。
 
-## Goals
+## 目标
 
-1. Make `Local Hub` and `Extensions` share one install-state model.
-2. Make `Local Hub` list/detail behavior match `Extensions` after `Extensions` is corrected.
-3. Fix `Install to Project` default-selection behavior for MCP and align it across supported asset kinds.
-4. Keep scope semantics explicit:
-   - list agent cell operates on global only
-   - `Install to Agent` operates on global only
-   - `Install to Project` operates on the currently selected project only
-5. Extract reusable UI and reusable methods so future fixes apply everywhere.
-6. Add regression coverage so previously seen bugs do not reappear.
+1. 让 `Local Hub` 与 `Extensions` 共享一套安装状态模型。
+2. 让 `Local Hub` 的列表与详情行为对齐修正后的 `Extensions`。
+3. 修复 MCP 的 `Install to Project` 默认项目选择，并让它与其他支持项目安装的资产类型保持一致。
+4. 保持作用域语义明确：
+   - 列表 Agent 列只处理全局安装
+   - `Install to Agent` 只处理全局安装
+   - `Install to Project` 只处理当前选中项目
+5. 提取可复用 UI 与可复用方法，确保后续修改一次生效全局。
+6. 增加回归覆盖，防止之前出现过的 bug 再次复发。
 
-## Non-Goals
+## 非目标
 
-1. No redesign of page layout or visual style.
-2. No change to Local Hub storage format or hub sync semantics.
-3. No new scope type beyond existing `global` and `project`.
-4. No support expansion beyond current agent capabilities.
+1. 不重做页面视觉设计。
+2. 不改 Local Hub 的存储格式与同步格式。
+3. 不引入新的作用域类型，仍只支持 `global` 和 `project`。
+4. 不扩展当前 Agent 能力边界之外的安装能力。
 
-## Unified Behavior Rules
+## 统一行为规则
 
-### 1. Agent Column
+### 1. Agent 列
 
-The list agent column answers a display question:
+列表中的 Agent 列只回答一个问题：
 
-- does this asset currently exist for this agent in the relevant visible scope?
+- 当前资产在当前可见语义下，是否已经存在于这个 agent 中
 
-Rules:
+规则如下：
 
-- In `Extensions`, visibility follows current page scope.
-- In `Local Hub`, the row is a hub asset rather than an installed instance, so the column shows aggregated status:
-  - highlight if any install exists for that agent
-  - if only project installs exist, the tooltip must say the asset is installed in a project and the click opens detail instead of deleting
-  - if a global install exists, the click removes the global install
-  - if no install exists, the click installs globally
+- 在 `Extensions` 中，可见性由当前页面 scope 决定。
+- 在 `Local Hub` 中，行本身是 Hub 资产，不是安装实例，因此 Agent 列要做聚合展示：
+  - 只要该 agent 在任意 scope 下有安装，就高亮
+  - 如果只有项目安装，没有全局安装，tooltip 必须明确提示“已安装到项目，点击查看详情”
+  - 如果存在全局安装，点击列表图标只移除全局安装
+  - 如果完全未安装，点击列表图标只安装到全局
 
 ### 2. Install to Agent
 
-`Install to Agent` always refers to global scope only.
+`Install to Agent` 永远只代表全局安装。
 
-Rules:
+规则如下：
 
-- highlighted if a global install exists for that agent
-- clicking a highlighted icon removes the global install only
-- clicking an unhighlighted icon installs the asset globally for that agent
-- project installs must not affect the highlighted state here
+- 有全局安装时高亮
+- 点击高亮图标只移除全局安装
+- 点击未高亮图标只安装到全局
+- 项目安装状态不能影响这里的高亮结果
 
 ### 3. Install to Project
 
-`Install to Project` always refers to the currently selected project only.
+`Install to Project` 永远只代表当前选中项目。
 
-Rules:
+规则如下：
 
-- highlighted if a project-scoped install exists for the selected project and agent
-- clicking a highlighted icon removes the install from the selected project only
-- clicking an unhighlighted icon installs into the selected project only
-- global installs must not affect the highlighted state here
+- 当前选中项目 + 当前 agent 下存在安装时高亮
+- 点击高亮图标只从当前选中项目移除
+- 点击未高亮图标只安装到当前选中项目
+- 全局安装状态不能影响这里的高亮结果
 
-### 4. Default Project Selection
+### 4. 默认项目选择
 
-Project selection follows one shared rule:
+项目选择统一遵循一套规则：
 
-1. if the current page context already has a project scope, use it first
-2. otherwise, if the asset already exists in one or more projects, select the first installed project
-3. otherwise, keep the selection empty
+1. 如果当前页面上下文已经带有 project scope，优先使用当前 scope
+2. 否则，如果当前资产已经安装到一个或多个项目中，默认选中第一个已安装项目
+3. 否则保持空选
 
-This rule applies consistently to all project-capable kinds:
+这个规则统一适用于所有支持项目安装的类型：
 
 - `skill`
 - `mcp`
 - `cli`
 
-### 5. Supported Action Matrix
+### 5. 支持矩阵
 
-- `skill`: supports global and project install surfaces
-- `mcp`: supports global and project install surfaces
-- `cli`: supports global and project install surfaces, but actual install orchestration may map to child assets
-- `plugin`: supports global install surface only
-- `hook`: supports global install surface only
+- `skill`：支持全局安装面与项目安装面
+- `mcp`：支持全局安装面与项目安装面
+- `cli`：支持全局安装面与项目安装面，但底层可能仍通过子资产完成安装
+- `plugin`：只支持全局安装面
+- `hook`：只支持全局安装面
 
-## Architecture
+## 架构设计
 
-### Shared State Layer
+### 共享状态层
 
-Introduce a shared install-state helper layer under the existing front-end shared logic area.
+新增一层共享安装状态辅助层，放在前端公共逻辑区域，统一处理项目选择、安装状态推导和安装来源选择。
 
-Core helpers:
+核心 helper 包括：
 
 1. `resolveProjectSelection(...)`
-   - inputs:
-     - current page scope
-     - asset instances
-     - project list
-     - CLI child instances when relevant
-   - outputs:
-     - selected project scope or null
-     - available project options
-     - selection source: `context | installed | empty`
+   - 输入：
+     - 当前页面 scope
+     - 当前资产实例
+     - 项目列表
+     - CLI 子资产实例（如有）
+   - 输出：
+     - 当前选中的项目 scope 或 `null`
+     - 可选项目列表
+     - 选择来源：`context | installed | empty`
 
 2. `buildInstallState(...)`
-   - inputs:
-     - grouped extension or hub asset identity
-     - installed extensions
-     - target agent
-     - selected project scope
-     - page mode: `extensions | local-hub`
-   - outputs:
+   - 输入：
+     - grouped extension 或 hub 资产身份信息
+     - 全量已安装扩展
+     - 目标 agent
+     - 当前选中的项目 scope
+     - 页面模式：`extensions | local-hub`
+   - 输出：
      - `hasGlobalInstall`
      - `hasProjectInstall`
      - `hasAnyInstall`
@@ -132,165 +132,168 @@ Core helpers:
      - `listAction`
      - `globalAction`
      - `projectAction`
-     - tooltip text
+     - tooltip 文案
 
 3. `getInstallSourceInstance(...)`
-   - inputs:
-     - asset group
-     - target scope
-     - asset kind
-   - outputs:
-     - source instance to copy from
-     - explicit failure reason when unavailable
+   - 输入：
+     - 资产组
+     - 目标 scope
+     - 资产类型
+   - 输出：
+     - 本次安装应使用的 source instance
+     - 如果没有合法 source，返回明确失败原因
 
-These helpers must become the only place where install-state decisions are derived. Page components may not open-code install-state checks after this refactor.
+约束：
 
-### Shared UI Layer
+- 安装状态推导以后只能在这层做
+- 页面组件不得再手写本地安装状态判断
 
-Introduce reusable UI components for the icon rows and project panel.
+### 共享 UI 层
+
+引入两类共享 UI：
 
 1. `AgentInstallIconRow`
-   - renders agent icons from precomputed state
-   - supports modes:
+   - 负责根据预计算状态渲染 Agent 图标行
+   - 支持模式：
      - `list`
      - `global-detail`
      - `project-detail`
-   - consumes only precomputed view-model items and callbacks
+   - 只消费外部传入的 view model 与回调，不自己做业务判断
 
 2. `ProjectInstallPanel`
-   - renders:
-     - title
-     - target project selector
-     - project-scoped agent icon row
-     - empty and unsupported states
-   - reused by `Extensions` and `Local Hub`
+   - 负责渲染：
+     - 标题
+     - 项目选择器
+     - 当前项目下的 Agent 图标组
+     - 空态与不支持态
+   - 在 `Extensions` 和 `Local Hub` 中复用
 
 3. `useInstallActionController`
-   - shared action wiring for:
-     - global install
-     - global delete
-     - project install
-     - project delete
-     - optimistic pending state
-     - refetch/rescan
-     - conflict handling
-     - toast messages
+   - 负责统一封装：
+     - 全局安装
+     - 全局删除
+     - 项目安装
+     - 项目删除
+     - optimistic pending 状态
+     - rescan / fetch
+     - 冲突处理
+     - toast 文案
 
-The data source may differ:
+虽然两个页面的数据来源不同：
 
-- `Extensions` acts on installed instances
-- `Local Hub` acts on hub assets plus hub install endpoints
+- `Extensions` 操作安装实例
+- `Local Hub` 操作 Hub 资产与 Hub 安装接口
 
-But the view model and UI must remain shared.
+但 view model 和 UI 必须保持一致。
 
-## Page-Level Integration
+## 页面集成方案
 
 ### Extensions
 
-`Extensions` becomes the corrected baseline surface.
+`Extensions` 将作为修正后的基线页面。
 
-Required changes:
+需要完成：
 
-1. Replace page-local project defaulting logic with `resolveProjectSelection(...)`.
-2. Replace page-local icon-state logic with `buildInstallState(...)`.
-3. Route list/detail interactions through shared action/controller helpers.
-4. Ensure MCP uses the same project-selection and project-action flow as skill and CLI.
+1. 用 `resolveProjectSelection(...)` 替换页面本地的项目默认选择逻辑
+2. 用 `buildInstallState(...)` 替换页面本地的图标状态逻辑
+3. 通过共享 action/controller 接管列表与详情中的安装/删除动作
+4. 让 MCP 与 skill、CLI 走同一套项目选择与项目动作流程
 
 ### Local Hub
 
-`Local Hub` reuses the same display and interaction model but keeps hub-specific install endpoints.
+`Local Hub` 复用相同的展示与交互模型，但保留 Hub 自己的安装接口。
 
-Required changes:
+需要完成：
 
-1. Fetch installed extensions on page entry so hub rows can compute aggregated state.
-2. Replace page-local install-state logic with `buildInstallState(...)`.
-3. Reuse shared detail project-selection logic through `resolveProjectSelection(...)`.
-4. Reuse shared icon-row and project-panel UI.
+1. 页面进入时必须拉取已安装扩展，保证 Hub 行可以计算聚合状态
+2. 用 `buildInstallState(...)` 替换页面本地安装状态逻辑
+3. 用 `resolveProjectSelection(...)` 统一详情页项目默认选择
+4. 复用共享 Agent 图标行与共享项目安装面板
 
-## Asset-Specific Notes
+## 资产类型说明
 
 ### Skill
 
-Must support full global and project flows with aligned state in:
+必须在以下四处都保持状态一致：
 
-- `Extensions` list
-- `Extensions` detail
-- `Local Hub` list
-- `Local Hub` detail
+- `Extensions` 列表
+- `Extensions` 详情
+- `Local Hub` 列表
+- `Local Hub` 详情
 
 ### MCP
 
-Must support:
+必须修复：
 
-- corrected default project selection
-- correct project-scope highlight
-- project-scope install/remove limited to selected project
+- 默认项目选择错误
+- 当前项目下高亮错误
+- 项目安装 / 删除没有严格限定在当前项目下
 
-This is a priority regression target because `Extensions` already exhibits incorrect project selection for MCP.
+这是本轮重点回归对象，因为 `Extensions` 当前已经出现该问题。
 
 ### CLI
 
-CLI remains a parent surface with child-asset orchestration. Shared state must still expose a single coherent install view to the user.
+CLI 仍然是父级交互面，底层通过子资产编排安装状态与安装动作。
 
-Rules:
+要求：
 
-- project selection must still follow the shared rule
-- install/remove must preserve current CLI child orchestration
-- CLI parent and child states must not drift apart visually
+- 项目默认选择仍遵循共享规则
+- 安装 / 删除仍保持当前 CLI 子资产编排逻辑
+- CLI 父级与子资产状态不能再出现视觉漂移
 
-### Plugin and Hook
+### Plugin 与 Hook
 
-Both remain global-only install surfaces.
+两者都保持为仅支持全局安装的资产类型。
 
-Rules:
+要求：
 
-- no project install section
-- shared icon row still used for global state
-- capability limits remain enforced
+- 不出现项目安装区
+- 全局图标区仍复用共享 Agent 图标行
+- capability 限制规则保持不变
 
-## Testing Strategy
+## 测试策略
 
-### Unit Tests
+### 单元测试
 
-Add tests for the shared state helpers covering:
+为共享状态 helper 增加测试，至少覆盖：
 
-1. default project selection
-   - context scope wins
-   - installed project fallback
-   - empty fallback
+1. 默认项目选择
+   - 上下文 scope 优先
+   - 已安装项目回退
+   - 空选回退
 
-2. install-state derivation
-   - global only
-   - project only
-   - global plus project
-   - unsupported action cases
+2. 安装状态推导
+   - 只有全局安装
+   - 只有项目安装
+   - 同时存在全局与项目安装
+   - 不支持的动作场景
 
-3. list-action semantics
-   - install global when absent
-   - remove global when global exists
-   - open detail when only project exists in Local Hub
+3. 列表动作语义
+   - 完全未安装时安装到全局
+   - 存在全局安装时移除全局
+   - Local Hub 只有项目安装时打开详情而不是删除
 
-### Component Tests
+### 组件测试
 
-Add focused render/interaction tests for:
+增加聚焦测试：
 
 1. `AgentInstallIconRow`
 2. `ProjectInstallPanel`
 
-At minimum, verify:
+至少验证：
 
-- correct highlight state
-- correct disabled state
-- correct callbacks per action mode
+- 高亮状态正确
+- disabled 状态正确
+- 回调动作正确
 
-### Browser Regression
+### 浏览器回归
 
-Manual browser verification must cover both surfaces:
+必须覆盖两个页面：
 
 1. `Extensions`
 2. `Local Hub`
 
-For each of:
+并对以下类型逐类验证：
 
 - `skill`
 - `mcp`
@@ -298,44 +301,43 @@ For each of:
 - `plugin`
 - `hook`
 
-At minimum, verify:
+至少验证：
 
-- list agent state
-- detail `Install to Agent`
-- detail `Install to Project` where supported
-- default project selection where supported
+- 列表中的 Agent 状态
+- 详情中的 `Install to Agent`
+- 支持时的 `Install to Project`
+- 支持时的默认项目选择
 
-## Implementation Sequence
+## 实施顺序
 
-1. Extract shared state helpers.
-2. Extract shared icon-row and project-panel UI.
-3. Switch `Extensions` to the shared model and fix MCP project selection there.
-4. Switch `Local Hub` to the same shared model.
-5. Add regression tests.
-6. Run build and browser verification across supported asset kinds.
+1. 先抽共享状态 helper
+2. 再抽共享 Agent 图标行与项目安装面板
+3. 先切 `Extensions`，并在这里修复 MCP 项目选择
+4. 再切 `Local Hub`
+5. 最后补测试与浏览器回归
 
-## Risks
+## 风险
 
-1. CLI child orchestration may have edge cases if state aggregation and install actions are refactored independently.
-2. Existing optimistic state in `Local Hub` and `Extensions` may diverge if not routed through one shared controller.
-3. Project selection may appear to “jump” if the shared defaulting logic does not clearly prioritize context over installed fallback.
+1. CLI 子资产编排在重构后可能出现聚合状态与动作脱节
+2. `Local Hub` 与 `Extensions` 中已有的 optimistic 状态处理如果不统一，可能继续发生亮灰不一致
+3. 默认项目选择如果优先级不明确，页面上看起来会“自动跳项目”
 
-## Mitigations
+## 缓解方式
 
-1. Keep CLI-specific orchestration inside the shared action/controller rather than scattering exceptions into pages.
-2. Make the shared state helpers pure and test them directly.
-3. Preserve explicit scope semantics:
-   - list global only
-   - `Install to Agent` global only
-   - `Install to Project` selected project only
+1. 保持 CLI 逻辑收敛在共享 action/controller 中，不把例外散落回页面
+2. 共享状态 helper 保持纯函数，并直接测试
+3. 明确保持作用域语义：
+   - 列表只处理全局
+   - `Install to Agent` 只处理全局
+   - `Install to Project` 只处理当前项目
 
-## Acceptance Criteria
+## 验收标准
 
-The work is complete when:
+满足以下条件即视为完成：
 
-1. `Extensions` and `Local Hub` show the same install status for the same asset/agent/scope combination.
-2. MCP uses the same project-selection rule as skill and CLI.
-3. A project-only install no longer appears as “fully uninstalled” in `Local Hub`.
-4. No page open-codes its own install-state derivation outside the shared helper layer.
-5. Reusable install UI is shared instead of duplicated.
-6. Tests cover the shared rules that previously regressed.
+1. `Extensions` 与 `Local Hub` 对同一资产 / agent / scope 的状态展示一致
+2. MCP 使用与 skill、CLI 相同的项目选择规则
+3. Local Hub 中“只有项目安装”的资产不再显示为完全未安装
+4. 页面层不再自行手写安装状态推导逻辑
+5. 可复用安装 UI 已被提取并复用
+6. 测试覆盖了之前反复回归的安装面规则

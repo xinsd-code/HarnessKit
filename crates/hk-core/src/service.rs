@@ -1282,7 +1282,9 @@ pub fn install_from_hub(
         store_guard.list_extensions(Some(hub_ext.kind), Some(target_agent))?
     };
 
-    let conflict = existing_exts.iter().find(|e| e.name == hub_ext.name);
+    let conflict = existing_exts
+        .iter()
+        .find(|e| e.name == hub_ext.name && same_scope(&e.scope, scope));
     if conflict.is_some() && !force {
         return Err(HkError::Validation(format!(
             "Extension '{}' already exists in {}. Use force=true to overwrite.",
@@ -1310,10 +1312,61 @@ pub fn install_from_hub(
                 ))
             })?;
             std::fs::create_dir_all(&skill_dir)?;
-            deployer::deploy_skill(&source_path, &skill_dir.join(&hub_ext.name))?;
+            // deploy_skill handles creating a subdirectory named after the source
+            // inside skill_dir, so we pass skill_dir directly (NOT skill_dir/<name>).
+            deployer::deploy_skill(&source_path, &skill_dir)?;
         }
         ExtensionKind::Mcp => {
-            // TODO: Handle MCP config merging
+            // Read MCP config from hub backup
+            let mcp_json = source_path.join("mcp.json");
+            if !mcp_json.exists() {
+                return Err(HkError::NotFound("Hub MCP backup is missing mcp.json".into()));
+            }
+            let content = std::fs::read_to_string(&mcp_json)?;
+            let hub_config: serde_json::Value = serde_json::from_str(&content)?;
+            let servers = hub_config
+                .get("mcpServers")
+                .and_then(|v| v.as_object())
+                .ok_or_else(|| HkError::Internal("Invalid MCP config format in hub backup".into()))?;
+
+            let config_path = target_adapter.mcp_config_path_for(scope).ok_or_else(|| {
+                HkError::Internal(format!(
+                    "No MCP config path for agent '{}' in scope {:?}",
+                    target_agent, scope
+                ))
+            })?;
+            // Deploy each MCP server from the hub backup
+            for (name, val) in servers {
+                let cmd = val.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let args: Vec<String> = val
+                    .get("args")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(ToString::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let env: std::collections::HashMap<String, String> = val
+                    .get("env")
+                    .and_then(|v| v.as_object())
+                    .map(|obj| {
+                        obj.iter()
+                            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let mut entry = crate::adapter::McpServerEntry {
+                    name: name.clone(),
+                    command: cmd,
+                    args,
+                    env,
+                };
+                if target_adapter.needs_path_injection() {
+                    deployer::ensure_path_injection(&mut entry);
+                }
+                deployer::deploy_mcp_server(&config_path, &entry, target_adapter.mcp_format())?;
+            }
         }
         ExtensionKind::Plugin => {
             let plugin_dir = match scope {
@@ -1325,18 +1378,66 @@ pub fn install_from_hub(
             };
             if let Some(dir) = plugin_dir {
                 std::fs::create_dir_all(&dir)?;
-                deployer::deploy_skill(&source_path, &dir.join(&hub_ext.name))?;
+                // deploy_skill handles creating a subdirectory named after the source
+                deployer::deploy_skill(&source_path, &dir)?;
             }
         }
         ExtensionKind::Cli => {
-            // CLI installation is typically just ensuring the binary is in PATH
-            // The actual binary should already be installed; hub just tracks metadata
+            // Deploy CLI skills to the agent's skill dir
+            let skill_dir = target_adapter.skill_dir_for(scope).ok_or_else(|| {
+                HkError::Internal(format!(
+                    "No skill directory for agent '{}' in scope {:?}",
+                    target_agent, scope
+                ))
+            })?;
+            std::fs::create_dir_all(&skill_dir)?;
+            // Read cli_meta.json to get binary name for skill discovery
+            let _binary_name = if let Ok(meta_content) = std::fs::read_to_string(source_path.join("cli_meta.json")) {
+                if let Ok(meta) = serde_json::from_str::<crate::models::CliMeta>(&meta_content) {
+                    meta.binary_name
+                } else {
+                    hub_ext.name.to_lowercase()
+                }
+            } else {
+                hub_ext.name.to_lowercase()
+            };
+            // Copy CLI-associated skills from the hub backup
+            if source_path.is_dir() {
+                for entry in std::fs::read_dir(&source_path)?.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() && path.file_name().is_some_and(|n| n != "cli_meta.json") {
+                        deployer::deploy_skill(&path, &skill_dir)?;
+                    }
+                }
+            }
         }
         ExtensionKind::Hook => {}
     }
 
-    // Rescan and return updated extensions
-    Ok(scanner::scan_adapter(target_adapter.as_ref()))
+    // Post-install: scan affected agents, sync to DB, set install meta
+    let agent_names = vec![target_agent.to_string()];
+    let install_meta = InstallMeta {
+        install_type: "hub".into(),
+        url: None,
+        url_resolved: None,
+        branch: None,
+        subpath: None,
+        revision: None,
+        remote_revision: None,
+        checked_at: None,
+        check_error: None,
+    };
+    let pack = hub_ext.pack.clone();
+    let store_ref = store.lock();
+    post_install_sync(
+        &store_ref,
+        adapters,
+        &agent_names,
+        &hub_ext.name,
+        Some(install_meta),
+        pack.as_deref(),
+        scope,
+    )
 }
 
 /// Delete an extension from the Local Hub
@@ -1406,6 +1507,7 @@ pub fn check_hub_install_conflict(
     store: &Mutex<Store>,
     extension_id: &str,
     target_agent: &str,
+    target_scope: &ConfigScope,
 ) -> Option<Extension> {
     let hub_extensions = scanner::scan_local_hub();
     let hub_ext = hub_extensions.iter().find(|e| e.id == extension_id)?;
@@ -1415,7 +1517,9 @@ pub fn check_hub_install_conflict(
         .list_extensions(Some(hub_ext.kind), Some(target_agent))
         .ok()?;
 
-    existing.into_iter().find(|e| e.name == hub_ext.name)
+    existing
+        .into_iter()
+        .find(|e| e.name == hub_ext.name && same_scope(&e.scope, target_scope))
 }
 
 /// Result of a sync operation - contains conflicts that need user resolution

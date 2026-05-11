@@ -34,7 +34,7 @@ pub async fn toggle_extension(
 #[tauri::command]
 pub async fn delete_extension(state: State<'_, AppState>, id: String) -> Result<(), HkError> {
     let store = state.store.clone();
-    let adapters = state.adapters.clone();
+    let adapters = state.runtime_adapters();
     tauri::async_runtime::spawn_blocking(move || service::delete_extension(&store, &adapters, &id))
         .await
         .map_err(|e| HkError::Internal(e.to_string()))?
@@ -160,10 +160,10 @@ pub fn reveal_in_file_manager(state: State<AppState>, path: String) -> Result<()
 /// Returns Vec<(agent_name, path)> for display in the detail panel.
 #[tauri::command]
 pub fn get_skill_locations(state: State<AppState>, name: String) -> Vec<(String, String, Option<String>)> {
-    let adapters = &*state.adapters;
+    let adapters = state.runtime_adapters();
     let projects = state.store.lock().list_project_tuples();
     // UI listing — surface every place this skill exists, regardless of scope.
-    scanner::skill_locations(&name, adapters, &projects, None)
+    scanner::skill_locations(&name, &adapters, &projects, None)
         .into_iter()
         .map(|(agent, path)| {
             let display_path = if path.join("SKILL.md").exists() {
@@ -211,7 +211,8 @@ pub fn get_extension_content(
     state: State<AppState>,
     id: String,
 ) -> Result<ExtensionContent, HkError> {
-    service::get_extension_content(&state.store, &state.adapters, &id)
+    let adapters = state.runtime_adapters();
+    service::get_extension_content(&state.store, &adapters, &id)
 }
 
 #[tauri::command]

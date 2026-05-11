@@ -21,11 +21,18 @@ export function resolveProjectSelection({
   installedInstances,
   projects,
 }: ResolveProjectSelectionOptions): ConfigScope | null {
+  const availableProjects = projects.filter((project) => project.exists);
+
   if (contextScope?.type === "project") {
-    return contextScope;
+    const currentProject = availableProjects.find(
+      (project) => project.path === contextScope.path,
+    );
+    if (currentProject) {
+      return contextScope;
+    }
   }
 
-  for (const project of projects) {
+  for (const project of availableProjects) {
     const hasInstalledInstance = installedInstances.some(
       (instance) =>
         instance.scope.type === "project" &&
@@ -71,25 +78,12 @@ export function buildInstallState({
   const globalInstalled = globalInstances.length > 0;
   const projectInstalled = projectInstances.length > 0;
 
-  if (
-    (surface === "local-hub" || surface === "extension-list") &&
-    projectInstalled &&
-    !globalInstalled
-  ) {
-    return {
-      globalInstalled,
-      projectInstalled,
-      installed: false,
-      globalInstances,
-      projectInstances,
-      listAction: "open-detail",
-    };
-  }
-
   const installed =
-    projectScope?.type === "project"
-      ? projectInstalled || globalInstalled
-      : globalInstalled || projectInstalled;
+    surface === "local-hub" || surface === "extension-list"
+      ? globalInstalled
+      : projectScope?.type === "project"
+        ? projectInstalled || globalInstalled
+        : globalInstalled || projectInstalled;
 
   return {
     globalInstalled,

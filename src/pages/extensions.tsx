@@ -318,9 +318,7 @@ export default function ExtensionsPage() {
         {selectedId && (
           <div className="absolute right-0 top-0 bottom-0 w-96 z-10">
             <ExtensionDetail
-              installProjectScope={
-                selectedProjectScope ?? previousProjectScopeRef.current
-              }
+              installProjectScope={selectedProjectScope}
               onInstallProjectScopeChange={setSelectedProjectScope}
             />
           </div>

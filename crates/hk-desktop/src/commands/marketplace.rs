@@ -58,7 +58,7 @@ pub async fn install_from_marketplace(
     target_scope: ConfigScope,
 ) -> Result<manager::InstallResult, HkError> {
     let store_clone = state.store.clone();
-    let adapters = state.adapters.clone();
+    let adapters = state.runtime_adapters();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<manager::InstallResult, HkError> {
         let (target_dir, agent_name) = if let Some(ref agent) = target_agent {

@@ -940,7 +940,7 @@ pub fn restore_plugin_entry(
 }
 
 /// Ensure Codex hooks feature is enabled in config.toml.
-/// Codex requires `[features] codex_hooks = true` to activate hook support.
+/// Codex requires `[features] hooks = true` to activate hook support.
 pub fn ensure_codex_hooks_enabled(codex_base_dir: &Path) -> Result<(), HkError> {
     let config_toml = codex_base_dir.join("config.toml");
     let content = if config_toml.exists() {
@@ -948,8 +948,8 @@ pub fn ensure_codex_hooks_enabled(codex_base_dir: &Path) -> Result<(), HkError> 
     } else {
         String::new()
     };
-    // Check if already enabled
-    if content.contains("codex_hooks") {
+    // Check if already enabled (new flag or legacy deprecated flag)
+    if content.contains("hooks =") || content.contains("codex_hooks =") {
         return Ok(());
     }
     // Append the feature flag
@@ -957,7 +957,7 @@ pub fn ensure_codex_hooks_enabled(codex_base_dir: &Path) -> Result<(), HkError> 
     if !new_content.ends_with('\n') && !new_content.is_empty() {
         new_content.push('\n');
     }
-    new_content.push_str("\n[features]\ncodex_hooks = true\n");
+    new_content.push_str("\n[features]\nhooks = true\n");
     atomic_write(&config_toml, &new_content)?;
     Ok(())
 }

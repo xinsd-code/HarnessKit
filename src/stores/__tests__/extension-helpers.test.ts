@@ -5,6 +5,7 @@ import {
   buildGroups,
   expandGroupKeys,
   filterSkillTabGroups,
+  findCliChildren,
   getCachedFiltered,
   getCachedGroups,
   isCliChildSkillGroup,
@@ -130,6 +131,129 @@ describe("buildGroups", () => {
     ]);
   });
 
+  it("merges same-name skills across different source metadata", () => {
+    const global = {
+      ...baseExt,
+      id: "global",
+      name: "frontend-design",
+      kind: "skill" as const,
+      source: {
+        origin: "git" as const,
+        url: "https://github.com/acme/frontend-design.git",
+        version: null,
+        commit_hash: null,
+      },
+      pack: "acme/frontend-design",
+      scope: { type: "global" as const },
+    };
+    const project = {
+      ...baseExt,
+      id: "project",
+      name: "frontend-design",
+      kind: "skill" as const,
+      source: {
+        origin: "agent" as const,
+        url: null,
+        version: null,
+        commit_hash: null,
+      },
+      pack: null,
+      scope: alphaScope,
+    };
+
+    const groups = buildGroups([global, project]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].instances.map((instance) => instance.id).sort()).toEqual([
+      "global",
+      "project",
+    ]);
+  });
+
+  it.each(["mcp", "plugin"] as const)(
+    "merges same-name %s rows across different source metadata",
+    (kind) => {
+      const a = {
+        ...baseExt,
+        id: `${kind}-a`,
+        kind,
+        name: "asset-one",
+        source: {
+          origin: "git" as const,
+          url: "https://github.com/acme/asset-one.git",
+          version: null,
+          commit_hash: null,
+        },
+        pack: "acme/asset-one",
+      };
+      const b = {
+        ...baseExt,
+        id: `${kind}-b`,
+        kind,
+        name: "asset-one",
+        source: {
+          origin: "agent" as const,
+          url: null,
+          version: null,
+          commit_hash: null,
+        },
+        pack: null,
+        scope: alphaScope,
+      };
+
+      const groups = buildGroups([a, b]);
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].instances).toHaveLength(2);
+    },
+  );
+
+  it("keeps same-name cli rows separated by current strict identity", () => {
+    const a = {
+      ...baseExt,
+      id: "cli-a",
+      kind: "cli" as const,
+      name: "tool",
+      source: {
+        origin: "git" as const,
+        url: "https://github.com/acme/tool-a.git",
+        version: null,
+        commit_hash: null,
+      },
+    };
+    const b = {
+      ...baseExt,
+      id: "cli-b",
+      kind: "cli" as const,
+      name: "tool",
+      source: {
+        origin: "git" as const,
+        url: "https://github.com/acme/tool-b.git",
+        version: null,
+        commit_hash: null,
+      },
+    };
+
+    expect(buildGroups([a, b])).toHaveLength(2);
+  });
+
+  it("keeps same-command hook rows on current hook grouping behavior", () => {
+    const a = {
+      ...baseExt,
+      id: "hook-a",
+      kind: "hook" as const,
+      name: "PreToolUse:*:/usr/bin/afplay /tmp/a.aiff",
+    };
+    const b = {
+      ...baseExt,
+      id: "hook-b",
+      kind: "hook" as const,
+      name: "PostToolUse:*:/usr/bin/afplay /tmp/a.aiff",
+    };
+
+    expect(buildGroups([a, b])).toHaveLength(1);
+  });
+
   it("merges sourceless global and project rows with the same logical name", () => {
     const sourceless: Extension = {
       ...baseExt,
@@ -213,9 +337,11 @@ describe("buildGroups", () => {
     expect(result).toEqual(betaScope);
   });
 
-  it("does NOT merge a sourceless row when there are multiple URL-based siblings (ambiguous)", () => {
+  it("does NOT merge strict sourceless cli rows when there are multiple URL-based siblings", () => {
     const shared: Extension = {
       ...baseExt,
+      kind: "cli",
+      name: "tool",
       source: { origin: "agent", url: null, version: null, commit_hash: null },
       install_meta: null,
     };
@@ -473,6 +599,58 @@ describe("expandGroupKeys", () => {
   it("returns empty array when no keys are selected", () => {
     const groups = buildGroups([baseExt]);
     expect(expandGroupKeys(groups, new Set())).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findCliChildren
+// ---------------------------------------------------------------------------
+
+describe("findCliChildren", () => {
+  it("returns loose grouped siblings when one CLI child instance matches", () => {
+    const cli = {
+      ...baseExt,
+      id: "cli",
+      kind: "cli" as const,
+      name: "tool-cli",
+      pack: "owner/tool-cli",
+    };
+    const matchedChild = {
+      ...baseExt,
+      id: "matched-child",
+      name: "tool-skill",
+      cli_parent_id: "cli",
+      pack: "owner/tool-cli",
+    };
+    const sourcelessSibling = {
+      ...baseExt,
+      id: "sourceless-sibling",
+      name: "tool-skill",
+      source: {
+        origin: "agent" as const,
+        url: null,
+        version: null,
+        commit_hash: null,
+      },
+      pack: null,
+      scope: alphaScope,
+    };
+    const unrelated = {
+      ...baseExt,
+      id: "unrelated",
+      name: "other-skill",
+    };
+
+    const children = findCliChildren(
+      [cli, matchedChild, sourcelessSibling, unrelated],
+      "cli",
+      "owner/tool-cli",
+    );
+
+    expect(children.map((child) => child.id).sort()).toEqual([
+      "matched-child",
+      "sourceless-sibling",
+    ]);
   });
 });
 

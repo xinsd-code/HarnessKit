@@ -878,7 +878,8 @@ impl Store {
                  install_revision = json_extract(source_json, '$.commit_hash')
              WHERE install_type IS NULL
                AND json_extract(source_json, '$.origin') = 'git'
-               AND json_extract(source_json, '$.url') IS NOT NULL",
+               AND json_extract(source_json, '$.url') IS NOT NULL
+               AND json_extract(scope_json, '$.type') != 'project'",
         )?;
 
         // Backfill install_type for CLI extensions that were installed before
@@ -955,7 +956,19 @@ impl Store {
         };
         for (id, enabled, has_install_meta) in &stale_ids {
             if !scanned_ids.contains(id.as_str()) && *enabled && !has_install_meta {
-                tx.execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
+                // Skip CLI entries — they are only discovered by scan_cli_binaries
+                // (called from scan_all), not by scan_adapter. Deleting them here
+                // would cause churn: CLI entries get deleted, then recreated on
+                // the next full scan_and_sync, losing user tags/pack assignments.
+                let is_cli = {
+                    let mut stmt2 = tx.prepare("SELECT kind FROM extensions WHERE id = ?1")?;
+                    stmt2.query_row(params![id], |row| row.get::<_, String>(0))
+                        .ok()
+                        .is_some_and(|k| k == "cli")
+                };
+                if !is_cli {
+                    tx.execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
+                }
             }
         }
 
@@ -967,7 +980,8 @@ impl Store {
                  install_revision = json_extract(source_json, '$.commit_hash')
              WHERE install_type IS NULL
                AND json_extract(source_json, '$.origin') = 'git'
-               AND json_extract(source_json, '$.url') IS NOT NULL",
+               AND json_extract(source_json, '$.url') IS NOT NULL
+               AND json_extract(scope_json, '$.type') != 'project'",
         )?;
 
         // Backfill install_type for CLI extensions missing install_meta
@@ -994,7 +1008,13 @@ impl Store {
             "SELECT id, install_url, json_extract(source_json, '$.url')
              FROM extensions
              WHERE pack IS NULL
-               AND (install_url IS NOT NULL OR json_extract(source_json, '$.url') IS NOT NULL)",
+               AND (
+                 install_url IS NOT NULL
+                 OR (
+                   json_extract(scope_json, '$.type') != 'project'
+                   AND json_extract(source_json, '$.url') IS NOT NULL
+                 )
+               )",
         )?;
         let rows: Vec<(String, Option<String>, Option<String>)> = stmt
             .query_map([], |row| {
@@ -1970,13 +1990,23 @@ mod tests {
     fn test_sync_preserves_install_meta() {
         let (store, _dir) = test_store();
 
-        // Insert extension with install meta
+        // Insert a project-scoped extension with install meta
         let mut ext = sample_extension();
-        ext.id = "git-skill".into();
-        ext.name = "git-skill".into();
+        ext.id = "project-git-skill".into();
+        ext.name = "project-git-skill".into();
+        ext.scope = ConfigScope::Project {
+            name: "demo".into(),
+            path: "/tmp/demo".into(),
+        };
+        ext.source = Source {
+            origin: SourceOrigin::Git,
+            url: Some("https://github.com/user/project-git-skill".into()),
+            version: None,
+            commit_hash: Some("abc123".into()),
+        };
         ext.install_meta = Some(InstallMeta {
             install_type: "git".into(),
-            url: Some("https://github.com/user/repo".into()),
+            url: Some("https://github.com/user/project-git-skill".into()),
             url_resolved: None,
             branch: None,
             subpath: None,
@@ -1988,7 +2018,7 @@ mod tests {
         store.insert_extension(&ext).unwrap();
 
         // Verify install meta was stored
-        let fetched = store.get_extension("git-skill").unwrap().unwrap();
+        let fetched = store.get_extension("project-git-skill").unwrap().unwrap();
         assert!(fetched.install_meta.is_some());
         assert_eq!(
             fetched.install_meta.as_ref().unwrap().revision.as_deref(),
@@ -1998,14 +2028,18 @@ mod tests {
         // Sync with the same extension (scanner doesn't know about install meta)
         let mut synced = ext.clone();
         synced.install_meta = None;
-        store.sync_extensions(&[synced]).unwrap();
+        store.sync_extensions_for_agent("claude", &[synced]).unwrap();
 
         // Install meta should survive the sync
-        let fetched = store.get_extension("git-skill").unwrap().unwrap();
+        let fetched = store.get_extension("project-git-skill").unwrap().unwrap();
         let im = fetched.install_meta.unwrap();
         assert_eq!(im.install_type, "git");
+        assert_eq!(
+            im.url.as_deref(),
+            Some("https://github.com/user/project-git-skill")
+        );
         assert_eq!(im.revision.as_deref(), Some("abc123"));
-        assert_eq!(im.remote_revision.as_deref(), Some("def456"));
+        assert_eq!(fetched.pack.as_deref(), Some("user/project-git-skill"));
     }
 
     #[test]

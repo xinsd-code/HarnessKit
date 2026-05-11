@@ -3,6 +3,12 @@ import { api } from "@/lib/invoke";
 import type { Extension, ExtensionKind, ExtensionContent, ConfigScope } from "@/lib/types";
 import { toast } from "./toast-store";
 
+function hubInstallKey(hubExtId: string, scope: ConfigScope, agent: string): string {
+  return scope.type === "global"
+    ? `${hubExtId}:global:${agent}`
+    : `${hubExtId}:project:${scope.path}:${agent}`;
+}
+
 interface HubState {
   extensions: Extension[];
   loading: boolean;
@@ -12,6 +18,9 @@ interface HubState {
   selectedId: string | null;
   hubPath: string | null;
   extensionContent: Map<string, ExtensionContent>;
+  /** Persistent set of hub-install keys for tracking which scope+agent combos
+   *  have been installed. Unlike component-local state this survives remounts. */
+  hubInstalledKeys: Set<string>;
   fetch: () => Promise<void>;
   setKindFilter: (kind: ExtensionKind | null) => void;
   setSearchQuery: (query: string) => void;
@@ -21,6 +30,9 @@ interface HubState {
   deleteFromHub: (id: string) => Promise<void>;
   importToHub: (path: string, kind: string) => Promise<void>;
   loadExtensionContent: (id: string) => Promise<void>;
+  markInstalled: (hubExtId: string, scope: ConfigScope, agent: string) => void;
+  unmarkInstalled: (hubExtId: string, scope: ConfigScope, agent: string) => void;
+  isHubInstalled: (hubExtId: string, scope: ConfigScope, agent: string) => boolean;
 }
 
 export const useHubStore = create<HubState>((set, get) => ({
@@ -32,6 +44,7 @@ export const useHubStore = create<HubState>((set, get) => ({
   selectedId: null,
   hubPath: null,
   extensionContent: new Map(),
+  hubInstalledKeys: new Set(),
 
   async fetch() {
     set({ loading: true });
@@ -123,4 +136,25 @@ export const useHubStore = create<HubState>((set, get) => ({
       console.error("Failed to load extension content:", e);
     }
   },
+
+  markInstalled(hubExtId, scope, agent) {
+    set((s) => {
+      const next = new Set(s.hubInstalledKeys);
+      next.add(hubInstallKey(hubExtId, scope, agent));
+      return { hubInstalledKeys: next };
+    });
+  },
+
+  unmarkInstalled(hubExtId, scope, agent) {
+    set((s) => {
+      const next = new Set(s.hubInstalledKeys);
+      next.delete(hubInstallKey(hubExtId, scope, agent));
+      return { hubInstalledKeys: next };
+    });
+  },
+
+  isHubInstalled(hubExtId, scope, agent) {
+    return get().hubInstalledKeys.has(hubInstallKey(hubExtId, scope, agent));
+  },
 }));
+

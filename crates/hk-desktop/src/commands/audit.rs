@@ -11,7 +11,7 @@ pub fn list_audit_results(state: State<AppState>) -> Result<Vec<AuditResult>, Hk
 #[tauri::command]
 pub async fn run_audit(state: State<'_, AppState>) -> Result<Vec<AuditResult>, HkError> {
     let store = state.store.clone();
-    let adapters = state.adapters.clone();
+    let adapters = state.runtime_adapters();
     tauri::async_runtime::spawn_blocking(move || {
         // Read extensions with a brief lock
         let extensions = {

@@ -78,11 +78,15 @@ export function ExtensionDetail({
   const agents = useAgentStore((s) => s.agents);
   const agentOrder = useAgentStore((s) => s.agentOrder);
   const projects = useProjectStore((s) => s.projects);
-  const [deploying, setDeploying] = useState<string | null>(null);
-  const [projectDeploying, setProjectDeploying] = useState<string | null>(null);
+  const [deployingAgents, setDeployingAgents] = useState<Set<string>>(
+    new Set(),
+  );
+  const [projectDeployingAgents, setProjectDeployingAgents] = useState<
+    Set<string>
+  >(new Set());
   const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);
-  const [deleteAgents, setDeleteAgents] = useState<Set<string>>(new Set());
+  const [deleteKeys, setDeleteKeys] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
   // All physical paths where this skill exists, keyed by agent name
   const [skillLocations, setSkillLocations] = useState<
@@ -126,15 +130,20 @@ export function ExtensionDetail({
       setSkillLocations([]);
     }
     setShowDelete(false);
-    setDeleteAgents(new Set());
+    setDeleteKeys(new Set());
   }, [group?.kind, group?.instances[0]?.id, group]);
 
-  // Reset deleteAgents when showDelete is toggled on
+  // Reset deleteKeys when showDelete is toggled on
   useEffect(() => {
     if (showDelete && group) {
-      setDeleteAgents(new Set());
+      setDeleteKeys(new Set());
     }
   }, [showDelete, group]);
+
+  useEffect(() => {
+    setDeployingAgents(new Set());
+    setProjectDeployingAgents(new Set());
+  }, [group?.groupKey]);
 
   useEffect(() => {
     if (!group) return;
@@ -142,16 +151,17 @@ export function ExtensionDetail({
       group.kind === "cli"
         ? findCliChildren(extensions, group.instances[0]?.id, group.pack)
         : group.instances;
+    const availableProjects = projects.filter((project) => project.exists);
     const currentProjectValid =
       installProjectScope?.type === "project"
-        ? projects.some(
+        ? availableProjects.some(
             (project) => project.path === installProjectScope.path,
           )
         : false;
     const selectedProject = resolveProjectSelection({
       contextScope: currentProjectValid ? installProjectScope : null,
       installedInstances,
-      projects,
+      projects: availableProjects,
     });
     const currentProjectPath =
       installProjectScope?.type === "project" ? installProjectScope.path : null;
@@ -212,14 +222,14 @@ export function ExtensionDetail({
             group.kind === "hook" &&
             AGENTS_WITHOUT_HOOKS.has(agent.name);
           const disabled =
-            deploying === agent.name ||
+            deployingAgents.has(agent.name) ||
             (!isInstalled && hookUnsupported) ||
             (isInstalled && !canRemove);
 
           return {
             name: agent.name,
             installed: isInstalled,
-            pending: deploying === agent.name,
+            pending: deployingAgents.has(agent.name),
             disabled,
             title: isInstalled
               ? canRemove
@@ -232,7 +242,7 @@ export function ExtensionDetail({
               ? undefined
               : async () => {
                   if (isInstalled) {
-                    setDeploying(agent.name);
+                    setDeployingAgents((prev) => new Set(prev).add(agent.name));
                     try {
                       const globalToDelete = group.instances.filter(
                         (instance) =>
@@ -253,12 +263,16 @@ export function ExtensionDetail({
                         `从 ${agentDisplayName(agent.name)} 移除失败`,
                       );
                     } finally {
-                      setDeploying(null);
+                      setDeployingAgents((prev) => {
+                        const next = new Set(prev);
+                        next.delete(agent.name);
+                        return next;
+                      });
                     }
                     return;
                   }
                   if (hookUnsupported || !globalSourceInstance) return;
-                  setDeploying(agent.name);
+                  setDeployingAgents((prev) => new Set(prev).add(agent.name));
                   try {
                     if (group.kind === "cli") {
                       const seen = new Set<string>();
@@ -279,7 +293,11 @@ export function ExtensionDetail({
                       `安装到 ${agentDisplayName(agent.name)} 失败`,
                     );
                   } finally {
-                    setDeploying(null);
+                    setDeployingAgents((prev) => {
+                      const next = new Set(prev);
+                      next.delete(agent.name);
+                      return next;
+                    });
                   }
                 },
           };
@@ -299,12 +317,13 @@ export function ExtensionDetail({
           return {
             name: agent.name,
             installed: isInstalled,
-            pending: projectDeploying === agent.name,
+            pending: projectDeployingAgents.has(agent.name),
+            disabled: projectDeployingAgents.has(agent.name),
             title: `${agentDisplayName(agent.name)}${
               isInstalled ? " · 点击移除项目安装" : " · 安装到项目"
             }`,
             onClick: async () => {
-              setProjectDeploying(agent.name);
+              setProjectDeployingAgents((prev) => new Set(prev).add(agent.name));
               try {
                 if (isInstalled) {
                   const matches = projectStateInstances.filter(
@@ -361,7 +380,11 @@ export function ExtensionDetail({
                   error instanceof Error ? error.message : String(error);
                 toast.error(`同步到项目失败: ${message}`);
               } finally {
-                setProjectDeploying(null);
+                setProjectDeployingAgents((prev) => {
+                  const next = new Set(prev);
+                  next.delete(agent.name);
+                  return next;
+                });
               }
             },
           };
@@ -727,8 +750,8 @@ export function ExtensionDetail({
             group={group}
             instanceData={instanceData}
             deleting={deleting}
-            deleteAgents={deleteAgents}
-            setDeleteAgents={setDeleteAgents}
+            deleteKeys={deleteKeys}
+            setDeleteKeys={setDeleteKeys}
             childExtensions={
               group.kind === "cli"
                 ? findCliChildren(
@@ -739,16 +762,29 @@ export function ExtensionDetail({
                 : undefined
             }
             skillLocations={group.kind === "skill" ? skillLocations : undefined}
-            onDelete={async (agents) => {
+            onDelete={async ({ agents, instanceIds }) => {
               setDeleting(true);
               try {
-                await deleteFromAgents(group.groupKey, agents);
+                if (group.kind === "cli") {
+                  await deleteFromAgents(group.groupKey, agents);
+                } else {
+                  const ids = Array.from(new Set(instanceIds));
+                  await Promise.all(ids.map((id) => api.deleteExtension(id)));
+                  await rescanAndFetch();
+                }
+                const allInstanceIds = new Set(
+                  group.instances.map((instance) => instance.id),
+                );
+                const deletingAllInstances =
+                  group.kind === "cli" ||
+                  (allInstanceIds.size > 0 &&
+                    [...allInstanceIds].every((id) => instanceIds.includes(id)));
                 toast.success(
-                  agents.length === group.agents.length
+                  deletingAllInstances
                     ? "Extension deleted. Takes effect in new sessions"
                     : `Deleted from ${agents.map(agentDisplayName).join(", ")}. Takes effect in new sessions`,
                 );
-                if (agents.length === group.agents.length) setSelectedId(null);
+                if (deletingAllInstances) setSelectedId(null);
               } catch {
                 toast.error("Failed to delete");
               } finally {

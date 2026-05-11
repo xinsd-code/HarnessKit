@@ -26,7 +26,8 @@ describe("AgentInstallIconRow", () => {
     );
     expect(onClick).toHaveBeenCalledTimes(1);
     expect(
-      screen.getByRole("button", { name: "Codex · 安装中" }).disabled,
+      (screen.getByRole("button", { name: "Codex · 安装中" }) as HTMLButtonElement)
+        .disabled,
     ).toBe(true);
     expect(screen.queryByText("No agents")).toBeNull();
   });

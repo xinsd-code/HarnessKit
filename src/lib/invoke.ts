@@ -406,10 +406,12 @@ export const api = {
   checkHubInstallConflict(
     extensionId: string,
     targetAgent: string,
+    scope: ConfigScope,
   ): Promise<Extension | null> {
     return transport("check_hub_install_conflict", {
       extensionId,
       targetAgent,
+      scope,
     });
   },
 
@@ -419,7 +421,7 @@ export const api = {
 
   getHubExtensionContent(id: string): Promise<ExtensionContent> {
     validateNonEmpty(id, "Extension ID");
-    return transport("get_hub_extension_content", { id });
+    return transport("get_hub_extension_content", { extensionId: id });
   },
 
   previewSyncToHub(): Promise<{ to_sync: Extension[]; conflicts: Extension[] }> {

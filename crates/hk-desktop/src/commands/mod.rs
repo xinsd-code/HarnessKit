@@ -41,3 +41,15 @@ pub struct AppState {
     pub adapters: Arc<Vec<Box<dyn adapter::AgentAdapter>>>,
     pub pending_clones: Arc<Mutex<HashMap<String, PendingClone>>>,
 }
+
+impl AppState {
+    /// Build the full runtime adapter list including preset agents from the DB.
+    pub fn runtime_adapters(&self) -> Vec<Box<dyn adapter::AgentAdapter>> {
+        let settings = self
+            .store
+            .lock()
+            .list_agent_settings()
+            .unwrap_or_default();
+        adapter::runtime_adapters_for_settings(&settings)
+    }
+}

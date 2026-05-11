@@ -61,7 +61,7 @@ HarnessKit manages **all five extension types** from a unified interface — **S
 | **Qoder** | ✓ | ✓ | ✓ | — | — |
 | **Qwen Code** | ✓ | ✓ | ✓ | — | — |
 | **Kiro CLI** | ✓ | — | ✓ | — | — |
-| **OpenClaw** | ✓ | — | — | — | — |
+
 | **CodeBuddy** | ✓ | — | — | — | — |
 | **Kimi Code CLI** | ✓ | — | — | — | — |
 | **Kilo Code** | ✓ | — | — | — | — |
@@ -99,7 +99,7 @@ A built-in local backup center for your extensions — backup, sync, and restore
 
 ### 🤖 Agent Configs, Memory & Rules
 
-HarnessKit manages every agent's **Configs**, **Memory**, **Rules**, and **Ignore** files from one place. **17 agents supported** — **5 built-in** (auto-detected) plus **12 preset agents** (add from Settings): Claude Code, Codex, Gemini CLI, Cursor, Antigravity, GitHub Copilot, Windsurf, OpenCode, OpenClaw, CodeBuddy, Kimi Code CLI, Kilo Code, Kiro CLI, Trae, Qoder, Qwen Code, and Trae CN.
+HarnessKit manages every agent's **Configs**, **Memory**, **Rules**, and **Ignore** files from one place. **16 agents supported** — **5 built-in** (auto-detected) plus **11 preset agents** (add from Settings): Claude Code, Codex, Gemini CLI, Cursor, Antigravity, GitHub Copilot, Windsurf, OpenCode, CodeBuddy, Kimi Code CLI, Kilo Code, Kiro CLI, Trae, Qoder, Qwen Code, and Trae CN.
 
 - **Config file tracking** — Automatically discovers every agent's config files — both global and per-project. Add your project directories or custom paths and HarnessKit picks them up alongside the global ones.
 - **Per-agent dashboard** — Each agent gets its own page with all files organized by category, showing scope, path, file size, and a summary of installed extensions. Expand any file to preview its content right in the app.
