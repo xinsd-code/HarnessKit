@@ -329,15 +329,43 @@ export function getCachedFiltered(
     result = result.filter((g) => g.tags.includes(tagFilter));
   }
   if (!ignoreScope && scope.type !== "all") {
-    // Match if any instance is in the requested scope. After Phase C dedup,
-    // a single group can span multiple scopes, so we look across instances.
     const targetKey = scope.type === "global" ? "global" : scope.path;
-    result = result.filter((g) =>
-      g.instances.some((i) => {
-        const instKey = i.scope.type === "global" ? "global" : i.scope.path;
-        return instKey === targetKey;
-      }),
-    );
+    if (scope.type === "project" && agentFilter) {
+      // Project + agent filter: include project instances AND global instances
+      // belonging to the filtered agent.
+      result = result.filter((g) =>
+        g.instances.some((i) => {
+          const instKey =
+            i.scope.type === "global" ? "global" : i.scope.path;
+          return (
+            instKey === targetKey ||
+            (i.scope.type === "global" && i.agents.includes(agentFilter))
+          );
+        }),
+      );
+      // Sort: groups with at least one project instance first
+      result = [...result].sort((a, b) => {
+        const aProj = a.instances.some(
+          (i) =>
+            i.scope.type === "project" && i.scope.path === targetKey,
+        );
+        const bProj = b.instances.some(
+          (i) =>
+            i.scope.type === "project" && i.scope.path === targetKey,
+        );
+        if (aProj && !bProj) return -1;
+        if (!aProj && bProj) return 1;
+        return 0;
+      });
+    } else {
+      result = result.filter((g) =>
+        g.instances.some((i) => {
+          const instKey =
+            i.scope.type === "global" ? "global" : i.scope.path;
+          return instKey === targetKey;
+        }),
+      );
+    }
   }
   if (searchQuery.trim()) {
     const q = searchQuery.toLowerCase();
