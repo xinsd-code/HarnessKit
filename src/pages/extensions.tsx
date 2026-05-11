@@ -1,5 +1,5 @@
 import { ArrowDownCircle, Package, Plus, RefreshCw } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ExtensionDetail } from "@/components/extensions/extension-detail";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
@@ -49,20 +49,6 @@ export default function ExtensionsPage() {
     }
       didApplyFiltersRef.current = true;
   }
-
-  // Extensions should always show the full all-scopes list, regardless of the
-  // current sidebar/project selection. Keep the global scope pinned to `all`
-  // while this page is mounted so the store-level filters stay in sync.
-  useLayoutEffect(() => {
-    if (scope.type !== "all") {
-      previousProjectScopeRef.current =
-        scope.type === "project" ? scope : previousProjectScopeRef.current;
-      if (scope.type === "project") {
-        setSelectedProjectScope(scope);
-      }
-      setScope({ type: "all" });
-    }
-  }, [scope.type, setScope]);
 
   // Cleanup: when the user manually changes scope (e.g. via Sidebar
   // ScopeSwitcher), close the detail panel — the selected ext may not exist
@@ -135,7 +121,7 @@ export default function ExtensionsPage() {
       ),
     ).length;
   }, [updateStatuses, grouped]);
-  const data = useExtensionStore((s) => s.filtered(true));
+  const data = useExtensionStore((s) => s.filtered());
   const batchMode = selectedIds.size > 0;
 
   // Close the detail panel when leaving the page so revisiting starts clean.
