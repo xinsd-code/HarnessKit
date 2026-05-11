@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { GlobalBadge } from "@/components/shared/global-badge";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { api } from "@/lib/invoke";
@@ -69,6 +70,7 @@ export function AgentExtensionsPanel({
         const relevantInstances = group.instances.filter((instance) => {
           if (!instance.agents.includes(agentName)) return false;
           if (scope.type === "all") return true;
+          if (scope.type === "project" && instance.scope.type === "global") return true;
           return scopeKey(instance.scope) === scopeKey(scope);
         });
         if (relevantInstances.length === 0) return null;
@@ -91,7 +93,15 @@ export function AgentExtensionsPanel({
           scopes: ConfigScope[];
         } => item != null,
       )
-      .sort((a, b) => a.group.name.localeCompare(b.group.name));
+      .sort((a, b) => {
+        if (scope.type === "project") {
+          const aProj = a.scopes.some((s) => s.type === "project");
+          const bProj = b.scopes.some((s) => s.type === "project");
+          if (aProj && !bProj) return -1;
+          if (!aProj && bProj) return 1;
+        }
+        return a.group.name.localeCompare(b.group.name);
+      });
   }, [agentName, grouped, kind, scope]);
 
   const pendingDeleteGroup =
@@ -196,6 +206,9 @@ export function AgentExtensionsPanel({
                   >
                     {group.enabled ? "Enabled" : "Disabled"}
                   </span>
+                  {scope.type === "project" &&
+                    scopes.length > 0 &&
+                    scopes.every((s) => s.type === "global") && <GlobalBadge />}
                 </div>
                 {group.description && (
                   <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">
@@ -227,14 +240,20 @@ export function AgentExtensionsPanel({
                   Open
                   <ArrowRight size={13} />
                 </button>
-                <button
-                  onClick={() => setPendingDeleteKey(group.groupKey)}
-                  disabled={relevantInstances.length === 0}
-                  className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-40"
-                >
-                  <Trash2 size={13} />
-                  Delete
-                </button>
+                {!(
+                  scope.type === "project" &&
+                  scopes.length > 0 &&
+                  scopes.every((s) => s.type === "global")
+                ) && (
+                  <button
+                    onClick={() => setPendingDeleteKey(group.groupKey)}
+                    disabled={relevantInstances.length === 0}
+                    className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-40"
+                  >
+                    <Trash2 size={13} />
+                    Delete
+                  </button>
+                )}
               </div>
             </div>
           </div>

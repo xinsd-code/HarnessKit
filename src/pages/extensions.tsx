@@ -33,6 +33,20 @@ export default function ExtensionsPage() {
   const [selectedProjectScope, setSelectedProjectScope] =
     useState<ConfigScope | null>(null);
 
+  // Extensions should always show the full all-scopes list, regardless of the
+  // current sidebar/project selection. Keep the global scope pinned to `all`
+  // while this page is mounted so the store-level filters stay in sync.
+  useEffect(() => {
+    if (scope.type !== "all") {
+      previousProjectScopeRef.current =
+        scope.type === "project" ? scope : previousProjectScopeRef.current;
+      if (scope.type === "project") {
+        setSelectedProjectScope(scope);
+      }
+      setScope({ type: "all" });
+    }
+  }, [scope.type, setScope]);
+
   // Apply filter overrides synchronously on first render to avoid an initial
   // filter-change flash. Scope + selection are handled by the deep-link
   // effect below — calling setScope() in render warns about updating a
@@ -123,7 +137,7 @@ export default function ExtensionsPage() {
       ),
     ).length;
   }, [updateStatuses, grouped]);
-  const data = useExtensionStore((s) => s.filtered());
+  const data = useExtensionStore((s) => s.filtered(true));
   const batchMode = selectedIds.size > 0;
 
   // Close the detail panel when leaving the page so revisiting starts clean.
@@ -157,6 +171,7 @@ export default function ExtensionsPage() {
             <h2 className="text-2xl font-bold tracking-tight select-none">
               Extensions
             </h2>
+
             <button
               onClick={() => navigate("/marketplace")}
               className="flex items-center gap-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"

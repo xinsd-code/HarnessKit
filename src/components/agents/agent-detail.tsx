@@ -119,8 +119,9 @@ function AgentDetailContent({
         if (scope.type === "all") return true;
         if (scope.type === "global") return instance.scope.type === "global";
         return (
-          instance.scope.type === "project" &&
-          instance.scope.path === scope.path
+          (instance.scope.type === "project" &&
+            instance.scope.path === scope.path) ||
+          instance.scope.type === "global"
         );
       });
       if (matches) {

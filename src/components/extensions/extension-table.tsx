@@ -22,7 +22,6 @@ import { agentDisplayName, scopeLabel, sortAgentNames } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { findCliChildren } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
-import { useScopeStore } from "@/stores/scope-store";
 import { toast } from "@/stores/toast-store";
 
 const col = createColumnHelper<GroupedExtension>();
@@ -198,6 +197,7 @@ export function ExtensionTable({
 }) {
   const agentOrder = useAgentStore((s) => s.agentOrder);
   const { scope } = useScope();
+  const agentFilter = useExtensionStore((s) => s.agentFilter);
   const navigate = useNavigate();
   // Subscribe to trigger re-render; accessed via getState() in cell renderers
   useExtensionStore((s) => s.selectedIds);
@@ -207,6 +207,7 @@ export function ExtensionTable({
   // Subscribe to trigger re-render; accessed via getState() in cell renderers
   useExtensionStore((s) => s.updateStatuses);
   const toggle = useExtensionStore((s) => s.toggle);
+  const showGlobalBadge = scope.type === "project" && agentFilter != null;
   const columns = useMemo(
     () => [
       col.display({
@@ -279,11 +280,7 @@ export function ExtensionTable({
                 />
               )}
               <span>{displayName}</span>
-              {(() => {
-              const s = useScopeStore.getState().current;
-              const af = useExtensionStore.getState().agentFilter;
-              return s.type === "project" && af != null && hasGlobalInstance(ext.instances);
-            })() && <GlobalBadge />}
+              {showGlobalBadge && hasGlobalInstance(ext.instances) && <GlobalBadge />}
             </span>
           );
         },
@@ -367,7 +364,7 @@ export function ExtensionTable({
     ],
     // selectedIds, updateStatuses accessed via getState() inside cell renderers
     // to avoid recomputing columns on every selection/status change
-    [agentOrder, selectAll, clearSelection, toggleSelected, toggle],
+    [agentOrder, scope, agentFilter, showGlobalBadge, selectAll, clearSelection, toggleSelected, toggle],
   );
   const sorting = useExtensionStore((s) => s.tableSorting) as SortingState;
   const setStoreSorting = useExtensionStore((s) => s.setTableSorting);

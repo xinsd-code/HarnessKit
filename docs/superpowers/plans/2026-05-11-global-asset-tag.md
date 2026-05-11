@@ -1,6 +1,6 @@
 # Global Asset Tag Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** When viewing extensions in a project scope with an agent filter, also show that agent's globally-scoped assets, tagged with a "Global" badge and sorted after project assets.
 
@@ -15,7 +15,7 @@
 **Files:**
 - Create: `src/components/shared/global-badge.tsx`
 
-- [ ] **Step 1: Create the GlobalBadge component**
+- [x] **Step 1: Create the GlobalBadge component**
 
 ```tsx
 import type { Extension } from "@/lib/types";
@@ -37,12 +37,12 @@ export function hasGlobalInstance(instances: Extension[]): boolean {
 }
 ```
 
-- [ ] **Step 2: Verify it compiles**
+- [x] **Step 2: Verify it compiles**
 
 Run: `npx tsc --noEmit src/components/shared/global-badge.tsx`
 Expected: no errors
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/components/shared/global-badge.tsx
@@ -56,7 +56,7 @@ git commit -m "feat: add GlobalBadge component for globally-scoped extensions"
 **Files:**
 - Modify: `src/stores/extension-helpers.ts:331-341`
 
-- [ ] **Step 1: Replace the scope filter block in `getCachedFiltered`**
+- [x] **Step 1: Replace the scope filter block in `getCachedFiltered`**
 
 Replace lines 331-341:
 ```ts
@@ -115,12 +115,12 @@ if (!ignoreScope && scope.type !== "all") {
   }
 ```
 
-- [ ] **Step 2: Verify it compiles**
+- [x] **Step 2: Verify it compiles**
 
 Run: `npx tsc --noEmit`
 Expected: no errors
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/stores/extension-helpers.ts
@@ -134,14 +134,14 @@ git commit -m "feat: include global instances in scope filter when project+agent
 **Files:**
 - Modify: `src/components/extensions/extension-table.tsx:1,252-281`
 
-- [ ] **Step 1: Add import for GlobalBadge**
+- [x] **Step 1: Add import for GlobalBadge**
 
 Add after line 13 (`import { KindBadge } from ...`):
 ```tsx
 import { GlobalBadge, hasGlobalInstance } from "@/components/shared/global-badge";
 ```
 
-- [ ] **Step 2: Add GlobalBadge next to display name**
+- [x] **Step 2: Add GlobalBadge next to display name**
 
 In the Name column cell (lines 271-281), add the GlobalBadge after `{displayName}`:
 
@@ -176,12 +176,12 @@ With:
           );
 ```
 
-- [ ] **Step 3: Verify it compiles**
+- [x] **Step 3: Verify it compiles**
 
 Run: `npx tsc --noEmit`
 Expected: no errors
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/components/extensions/extension-table.tsx
@@ -195,7 +195,7 @@ git commit -m "feat: show GlobalBadge in extension table for globally-scoped ass
 **Files:**
 - Modify: `src/pages/extensions.tsx:53-65,138`
 
-- [ ] **Step 1: Remove the scope-override effect**
+- [x] **Step 1: Remove the scope-override effect**
 
 Delete lines 53-65 (the `useLayoutEffect` that forces scope to `"all"`):
 ```tsx
@@ -214,7 +214,7 @@ Delete lines 53-65 (the `useLayoutEffect` that forces scope to `"all"`):
   }, [scope.type, setScope]);
 ```
 
-- [ ] **Step 2: Change filtered() to respect scope**
+- [x] **Step 2: Change filtered() to respect scope**
 
 On line 138, change:
 ```tsx
@@ -225,7 +225,7 @@ To:
 const data = useExtensionStore((s) => s.filtered());
 ```
 
-- [ ] **Step 3: Remove unused imports**
+- [x] **Step 3: Remove unused imports**
 
 Line 1: Remove `useLayoutEffect` from the React import since it was only used by the removed effect. Change:
 ```tsx
@@ -236,12 +236,12 @@ To:
 import { useEffect, useMemo, useRef, useState } from "react";
 ```
 
-- [ ] **Step 4: Verify it compiles**
+- [x] **Step 4: Verify it compiles**
 
 Run: `npx tsc --noEmit`
 Expected: no errors
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/pages/extensions.tsx
@@ -252,12 +252,12 @@ git commit -m "feat: respect scope filter on Extensions page instead of forcing 
 
 ### Task 5: Manual verification
 
-- [ ] **Step 1: Build the project**
+- [x] **Step 1: Build the project**
 
 Run: `npm run build`
 Expected: build succeeds
 
-- [ ] **Step 2: Start the dev server and verify manually**
+- [x] **Step 2: Start the dev server and verify manually**
 
 Run: `npm run dev`
 
