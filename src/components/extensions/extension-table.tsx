@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AgentInstallIconRow } from "@/components/shared/agent-install-icon-row";
 import { KindBadge } from "@/components/shared/kind-badge";
+import { GlobalBadge, hasGlobalInstance } from "@/components/shared/global-badge";
 import { PermissionTags } from "@/components/shared/permission-tags";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { useScope } from "@/hooks/use-scope";
@@ -277,6 +278,7 @@ export function ExtensionTable({
                 />
               )}
               <span>{displayName}</span>
+              {hasGlobalInstance(ext.instances) && <GlobalBadge />}
             </span>
           );
         },
