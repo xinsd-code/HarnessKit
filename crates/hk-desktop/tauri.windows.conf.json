@@ -1,0 +1,10 @@
+{
+  "app": {
+    "windows": [
+      {
+        "title": "HarnessKit",
+        "transparent": false
+      }
+    ]
+  }
+}
