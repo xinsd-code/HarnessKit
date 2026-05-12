@@ -97,15 +97,29 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Determine macOS signing mode
+        id: macos_signing
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_CERTIFICATE_PASSWORD" ] && [ -n "$APPLE_SIGNING_IDENTITY" ] && [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            echo "mode=signed" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=unsigned" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Import Apple certificate
+        if: steps.macos_signing.outputs.mode == 'signed'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
-          if [ -z "$APPLE_CERTIFICATE" ]; then
-            echo "No certificate provided, skipping"
-            exit 0
-          fi
           echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
           security create-keychain -p actions build.keychain
           security default-keychain -s build.keychain
@@ -115,7 +129,8 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
           rm certificate.p12
 
-      - name: Build desktop app
+      - name: Build signed desktop app
+        if: steps.macos_signing.outputs.mode == 'signed'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -127,11 +142,28 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
-          # Required so tauri-action populates `latest.json`'s `notes` field;
-          # without it the in-app updater shows an empty changelog.
           releaseBody: ${{ needs.create-release.outputs.changelog }}
           tauriScript: cargo tauri
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} --config crates/hk-desktop/tauri.macos.conf.json
+
+      - name: Build unsigned desktop app
+        if: steps.macos_signing.outputs.mode == 'unsigned'
+        shell: bash
+        run: |
+          npm run build
+          cargo tauri build --target "${{ matrix.target }}" --config crates/hk-desktop/tauri.macos.conf.json --bundles dmg
+
+      - name: Upload unsigned macOS desktop asset
+        if: steps.macos_signing.outputs.mode == 'unsigned'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DMG_PATH=$(find "target/${{ matrix.target }}/release/bundle/dmg" -maxdepth 1 -name '*.dmg' | head -n 1)
+          test -n "$DMG_PATH"
+          DEST="HarnessKit-macos-${{ matrix.arch }}-unsigned.dmg"
+          cp "$DMG_PATH" "$DEST"
+          gh release upload "${{ github.ref_name }}" "$DEST" --clobber
 
       - name: Build CLI (with embedded web frontend)
         run: |
@@ -142,8 +174,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp "target/${{ matrix.target }}/release/hk" "hk-macos-${{ matrix.arch }}"
-          gh release upload "${{ github.ref_name }}" "hk-macos-${{ matrix.arch }}" --clobber
+          cp "target/${{ matrix.target }}/release/hk" "hk-cli-macos-${{ matrix.arch }}"
+          gh release upload "${{ github.ref_name }}" "hk-cli-macos-${{ matrix.arch }}" --clobber
 
   release-desktop-windows:
     needs: create-release
