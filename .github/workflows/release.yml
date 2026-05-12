@@ -207,14 +207,26 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build desktop app
-        uses: tauri-apps/tauri-action@v0
+      - name: Build Windows desktop installers
+        shell: bash
+        run: |
+          npm run build
+          cargo tauri build --target x86_64-pc-windows-msvc --config crates/hk-desktop/tauri.windows.conf.json --bundles nsis,msi
+
+      - name: Validate and upload Windows desktop assets
+        shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          releaseId: ${{ needs.create-release.outputs.release_id }}
-          releaseBody: ${{ needs.create-release.outputs.changelog }}
-          tauriScript: cargo tauri
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $bundleRoot = "target/x86_64-pc-windows-msvc/release/bundle"
+          $nsis = Get-ChildItem "$bundleRoot/nsis/*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $msi = Get-ChildItem "$bundleRoot/msi/*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $nsis) { throw "Missing NSIS installer output" }
+          if (-not $msi) { throw "Missing MSI output" }
+          Copy-Item $nsis.FullName "HarnessKit-windows-x64-installer.exe"
+          Copy-Item $msi.FullName "HarnessKit-windows-x64.msi"
+          gh release upload "${{ github.ref_name }}" "HarnessKit-windows-x64-installer.exe" --clobber
+          gh release upload "${{ github.ref_name }}" "HarnessKit-windows-x64.msi" --clobber
 
   release-cli-linux:
     needs: create-release
@@ -289,5 +301,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          cp target/release/hk.exe hk-windows-x64.exe
-          gh release upload "${{ github.ref_name }}" hk-windows-x64.exe --clobber
+          cp target/release/hk.exe hk-cli-windows-x64.exe
+          gh release upload "${{ github.ref_name }}" hk-cli-windows-x64.exe --clobber
