@@ -41,6 +41,16 @@ jobs:
           if [ -z "$BODY" ]; then
             BODY="Bug fixes and improvements."
           fi
+          DOWNLOADS=$(cat <<'DOWNLOADS_EOF'
+          ## Downloads
+          - **Windows desktop:** Use `HarnessKit-windows-x64-installer.exe` first. `HarnessKit-windows-x64.msi` is the alternate enterprise-friendly package.
+          - **macOS desktop:** Files ending in `-unsigned.dmg` are unsigned internal testing builds until Apple signing secrets are configured.
+          - **CLI assets:** Files beginning with `hk-cli-` are command-line binaries, not desktop applications.
+          DOWNLOADS_EOF
+          )
+          BODY="$BODY
+
+          $DOWNLOADS"
           {
             echo "body<<CHANGELOG_EOF"
             echo "$BODY"
@@ -266,8 +276,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp target/x86_64-unknown-linux-musl/release/hk hk-linux-x64
-          gh release upload "${{ github.ref_name }}" hk-linux-x64 --clobber
+          cp target/x86_64-unknown-linux-musl/release/hk hk-cli-linux-x64
+          gh release upload "${{ github.ref_name }}" hk-cli-linux-x64 --clobber
 
   release-cli-windows:
     needs: create-release
