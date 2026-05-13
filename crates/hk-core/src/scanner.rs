@@ -3073,6 +3073,10 @@ mod project_extension_tests {
             r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":["echo proj-hook"]}]}}"#,
         )
         .unwrap();
+        let expected_hook_path = project
+            .join(".claude/settings.json")
+            .to_string_lossy()
+            .to_string();
 
         let adapter = ClaudeAdapter::with_home(home);
         assert!(!adapter.detect(), "global ~/.claude marker should be absent");
@@ -3099,8 +3103,12 @@ mod project_extension_tests {
         assert!(
             extensions
                 .iter()
-                .any(|e| e.kind == ExtensionKind::Hook && e.name.contains("proj-hook")),
-            "project hook should be scanned even without a global Claude dir"
+                .any(|e| {
+                    e.kind == ExtensionKind::Hook
+                        && matches!(e.scope, ConfigScope::Project { .. })
+                        && e.source_path.as_deref() == Some(expected_hook_path.as_str())
+                }),
+            "project hook should be discovered from the project settings file"
         );
         assert!(
             extensions
@@ -3117,14 +3125,6 @@ mod project_extension_tests {
                     && e.name == "proj-mcp"
                     && matches!(e.scope, ConfigScope::Project { .. })),
             "project MCP should be project-scoped"
-        );
-        assert!(
-            extensions
-                .iter()
-                .any(|e| e.kind == ExtensionKind::Hook
-                    && e.name.contains("proj-hook")
-                    && matches!(e.scope, ConfigScope::Project { .. })),
-            "project hook should be project-scoped"
         );
     }
 }
