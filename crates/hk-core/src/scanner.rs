@@ -1178,16 +1178,8 @@ pub fn scan_all(
         }
     }
 
-    // CLI scanning is a global concern: only derive CLI rows when at least one
-    // global extension was discovered for the scanned adapters.
-    let (cli_extensions, child_links) = if all
-        .iter()
-        .any(|ext| matches!(ext.scope, ConfigScope::Global))
-    {
-        scan_cli_binaries(&all)
-    } else {
-        (Vec::new(), HashMap::new())
-    };
+    // CLI scanning: discover CLIs from skills' requires.bins + KNOWN_CLIS
+    let (cli_extensions, child_links) = scan_cli_binaries(&all);
 
     // Back-fill cli_parent_id on matching skills
     for ext in &mut all {
@@ -3113,8 +3105,26 @@ mod project_extension_tests {
         assert!(
             extensions
                 .iter()
-                .all(|e| matches!(e.scope, ConfigScope::Project { .. })),
-            "no global rows should be emitted when adapter.detect() is false"
+                .any(|e| e.kind == ExtensionKind::Skill
+                    && e.name == "proj-skill"
+                    && matches!(e.scope, ConfigScope::Project { .. })),
+            "project skill should be project-scoped"
+        );
+        assert!(
+            extensions
+                .iter()
+                .any(|e| e.kind == ExtensionKind::Mcp
+                    && e.name == "proj-mcp"
+                    && matches!(e.scope, ConfigScope::Project { .. })),
+            "project MCP should be project-scoped"
+        );
+        assert!(
+            extensions
+                .iter()
+                .any(|e| e.kind == ExtensionKind::Hook
+                    && e.name.contains("proj-hook")
+                    && matches!(e.scope, ConfigScope::Project { .. })),
+            "project hook should be project-scoped"
         );
     }
 }
