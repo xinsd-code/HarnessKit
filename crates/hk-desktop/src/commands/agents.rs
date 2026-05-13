@@ -225,11 +225,11 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, Hk
     let mut results = Vec::new();
     for a in &runtime_adapters {
         let detected = a.detect();
-        let mut config_files = if detected {
-            scanner::scan_agent_configs(a.as_ref(), &projects)
-        } else {
-            vec![]
-        };
+        // Always scan project-scoped config files regardless of whether the
+        // agent's global home directory is detected. On Windows the global
+        // ~/.claude dir may not exist at the default path while project-level
+        // .claude/ directories are still present and should be shown.
+        let mut config_files = scanner::scan_agent_configs(a.as_ref(), &projects);
 
         // Merge user-defined custom config paths (skip if path already found by auto-scan)
         let existing_paths: std::collections::HashSet<String> = config_files
