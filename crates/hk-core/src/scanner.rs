@@ -3127,6 +3127,52 @@ mod project_extension_tests {
             "project MCP should be project-scoped"
         );
     }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    #[ignore = "requires Windows path semantics and is intended for Windows release validation"]
+    fn windows_custom_agent_path_global_extensions_scan() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let claude_dir = home.join(".claude");
+        fs::create_dir_all(claude_dir.join("skills/global-skill")).unwrap();
+        fs::write(
+            claude_dir.join("skills/global-skill/SKILL.md"),
+            "---\nname: global-skill\ndescription: global skill\nrequires:\n  bins:\n    - lark-cli\n---\nbody",
+        )
+        .unwrap();
+        fs::write(
+            home.join(".claude.json"),
+            r#"{"mcpServers":{"global-mcp":{"command":"node","args":["server.js"]}}}"#,
+        )
+        .unwrap();
+        fs::write(
+            claude_dir.join("settings.json"),
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":["echo global-hook"]}]}}"#,
+        )
+        .unwrap();
+
+        let adapter = ClaudeAdapter::with_home(home.to_path_buf());
+        assert!(adapter.detect());
+        let adapters: Vec<Box<dyn AgentAdapter>> = vec![Box::new(adapter)];
+        let extensions = scan_all(&adapters, &[]);
+
+        assert!(
+            extensions
+                .iter()
+                .any(|e| e.kind == ExtensionKind::Skill && e.name == "global-skill")
+        );
+        assert!(
+            extensions
+                .iter()
+                .any(|e| e.kind == ExtensionKind::Mcp && e.name == "global-mcp")
+        );
+        assert!(
+            extensions
+                .iter()
+                .any(|e| e.kind == ExtensionKind::Hook && e.name.contains("global-hook"))
+        );
+    }
 }
 
 #[cfg(test)]
