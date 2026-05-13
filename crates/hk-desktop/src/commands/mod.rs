@@ -24,10 +24,16 @@ pub use projects::*;
 pub use settings::*;
 
 use hk_core::adapter;
+use hk_core::sanitize::strip_windows_extended_path_prefix;
 use hk_core::store::Store;
 use parking_lot::Mutex;
+use std::path::{Path, PathBuf};
 use std::collections::HashMap;
 use std::sync::Arc;
+
+pub(super) fn normalize(p: &Path) -> PathBuf {
+    PathBuf::from(strip_windows_extended_path_prefix(&p.to_string_lossy()))
+}
 
 pub struct PendingClone {
     pub _temp_dir: tempfile::TempDir,
@@ -51,5 +57,24 @@ impl AppState {
             .list_agent_settings()
             .unwrap_or_default();
         adapter::runtime_adapters_for_settings(&settings)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize;
+    use std::path::Path;
+
+    #[test]
+    fn normalize_strips_windows_extended_prefix() {
+        assert_eq!(
+            normalize(Path::new(r"\\?\D:\workspace\HarnessKit")),
+            Path::new(r"D:\workspace\HarnessKit")
+        );
+    }
+
+    #[test]
+    fn normalize_leaves_regular_paths_unchanged() {
+        assert_eq!(normalize(Path::new("/tmp/hk")), Path::new("/tmp/hk"));
     }
 }

@@ -44,7 +44,7 @@ jobs:
           DOWNLOADS=$(cat <<'DOWNLOADS_EOF'
           ## Downloads
           - **Windows desktop:** Use `HarnessKit-windows-x64-installer.exe` first. `HarnessKit-windows-x64.msi` is the alternate enterprise-friendly package.
-          - **macOS desktop:** Files ending in `-unsigned.dmg` are unsigned internal testing builds until Apple signing secrets are configured.
+          - **macOS desktop:** A desktop dmg is published only for signed macOS builds. If no dmg is attached, signing/notarization is not configured for that release yet.
           - **CLI assets:** Files beginning with `hk-cli-` are command-line binaries, not desktop applications.
           DOWNLOADS_EOF
           )
@@ -156,24 +156,11 @@ jobs:
           tauriScript: cargo tauri
           args: --target ${{ matrix.target }} --config crates/hk-desktop/tauri.macos.conf.json
 
-      - name: Build unsigned desktop app
+      - name: Skip unsigned macOS desktop artifact
         if: steps.macos_signing.outputs.mode == 'unsigned'
         shell: bash
         run: |
-          npm run build
-          cargo tauri build --target "${{ matrix.target }}" --config crates/hk-desktop/tauri.macos.conf.json --bundles dmg
-
-      - name: Upload unsigned macOS desktop asset
-        if: steps.macos_signing.outputs.mode == 'unsigned'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          DMG_PATH=$(find "target/${{ matrix.target }}/release/bundle/dmg" -maxdepth 1 -name '*.dmg' | head -n 1)
-          test -n "$DMG_PATH"
-          DEST="HarnessKit-macos-${{ matrix.arch }}-unsigned.dmg"
-          cp "$DMG_PATH" "$DEST"
-          gh release upload "${{ github.ref_name }}" "$DEST" --clobber
+          echo "Skipping macOS desktop dmg publish because Apple signing/notarization secrets are missing."
 
       - name: Build CLI (with embedded web frontend)
         run: |
