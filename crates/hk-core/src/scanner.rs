@@ -4,7 +4,14 @@ use chrono::{DateTime, Utc};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
 use std::sync::LazyLock;
+
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 struct KnownCli {
     binary_name: &'static str,
@@ -72,6 +79,16 @@ static KNOWN_CLIS: &[KnownCli] = &[
         repo_url: None,
     },
 ];
+
+fn command_output(program: &str, args: &[&str]) -> std::io::Result<Output> {
+    let mut command = Command::new(program);
+    command.args(args);
+    #[cfg(target_os = "windows")]
+    {
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command.output()
+}
 
 /// FNV-1a 64-bit hash — deterministic across Rust versions (unlike DefaultHasher).
 /// NOTE: FNV-1a is not collision-resistant. With a very large number of extensions,
@@ -576,9 +593,7 @@ pub(crate) fn run_which(name: &str) -> Option<String> {
     #[cfg(not(target_os = "windows"))]
     const WHICH_CMD: &str = "which";
 
-    std::process::Command::new(WHICH_CMD)
-        .arg(name)
-        .output()
+    command_output(WHICH_CMD, &[name])
         .ok()
         .filter(|o| o.status.success())
         .and_then(|o| {
@@ -645,10 +660,7 @@ fn get_binary_version(name: &str) -> Option<String> {
     }
     static VERSION_RE: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"(\d+\.\d+(?:\.\d+)?)").unwrap());
-    let output = std::process::Command::new(name)
-        .arg("--version")
-        .output()
-        .ok()?;
+    let output = command_output(name, &["--version"]).ok()?;
     let text = String::from_utf8_lossy(&output.stdout);
     let text = if text.trim().is_empty() {
         String::from_utf8_lossy(&output.stderr)
