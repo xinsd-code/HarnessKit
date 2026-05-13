@@ -1159,25 +1159,35 @@ pub fn scan_all(
 ) -> Vec<Extension> {
     let mut all = Vec::new();
     for adapter in adapters {
-        if !adapter.detect() {
-            continue;
+        if adapter.detect() {
+            for skill_dir in adapter.skill_dirs() {
+                all.extend(scan_skill_dir(&skill_dir, adapter.name()));
+            }
+            all.extend(scan_mcp_servers(adapter.as_ref()));
+            all.extend(scan_hooks(adapter.as_ref()));
+            all.extend(scan_plugins(adapter.as_ref()));
         }
-        for skill_dir in adapter.skill_dirs() {
-            all.extend(scan_skill_dir(&skill_dir, adapter.name()));
-        }
-        all.extend(scan_mcp_servers(adapter.as_ref()));
-        all.extend(scan_hooks(adapter.as_ref()));
-        all.extend(scan_plugins(adapter.as_ref()));
 
-        // Project-scoped extensions for every known project
+        // Project-scoped extensions belong to the registered project, not to
+        // the existence of the agent's global home directory. This matters on
+        // Windows when the desktop app can see project config files but the
+        // user has not installed that agent globally at the default path.
         for (project_name, project_path) in projects {
             let path = Path::new(project_path);
             all.extend(scan_project_extensions(adapter.as_ref(), project_name, path));
         }
     }
 
-    // CLI scanning: discover CLIs from skills' requires.bins + KNOWN_CLIS
-    let (cli_extensions, child_links) = scan_cli_binaries(&all);
+    // CLI scanning is a global concern: only derive CLI rows when at least one
+    // global extension was discovered for the scanned adapters.
+    let (cli_extensions, child_links) = if all
+        .iter()
+        .any(|ext| matches!(ext.scope, ConfigScope::Global))
+    {
+        scan_cli_binaries(&all)
+    } else {
+        (Vec::new(), HashMap::new())
+    };
 
     // Back-fill cli_parent_id on matching skills
     for ext in &mut all {
@@ -3046,6 +3056,66 @@ mod project_extension_tests {
             std::path::Path::new("/nonexistent/ghost"),
         );
         assert!(exts.is_empty());
+    }
+
+    #[test]
+    fn scan_all_includes_project_extensions_even_when_global_agent_dir_is_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home-without-claude");
+        fs::create_dir_all(&home).unwrap();
+
+        let project = tmp.path().join("project");
+        fs::create_dir_all(project.join(".claude/skills/proj-skill")).unwrap();
+        fs::write(
+            project.join(".claude/skills/proj-skill/SKILL.md"),
+            "---\nname: proj-skill\ndescription: project skill\n---\nbody",
+        )
+        .unwrap();
+        fs::write(
+            project.join(".mcp.json"),
+            r#"{"mcpServers":{"proj-mcp":{"command":"node","args":["server.js"]}}}"#,
+        )
+        .unwrap();
+        fs::write(
+            project.join(".claude/settings.json"),
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":["echo proj-hook"]}]}}"#,
+        )
+        .unwrap();
+
+        let adapter = ClaudeAdapter::with_home(home);
+        assert!(!adapter.detect(), "global ~/.claude marker should be absent");
+
+        let adapters: Vec<Box<dyn AgentAdapter>> = vec![Box::new(adapter)];
+        let projects = vec![(
+            "project".to_string(),
+            project.to_string_lossy().to_string(),
+        )];
+        let extensions = scan_all(&adapters, &projects);
+
+        assert!(
+            extensions
+                .iter()
+                .any(|e| e.kind == ExtensionKind::Skill && e.name == "proj-skill"),
+            "project skill should be scanned even without a global Claude dir"
+        );
+        assert!(
+            extensions
+                .iter()
+                .any(|e| e.kind == ExtensionKind::Mcp && e.name == "proj-mcp"),
+            "project MCP should be scanned even without a global Claude dir"
+        );
+        assert!(
+            extensions
+                .iter()
+                .any(|e| e.kind == ExtensionKind::Hook && e.name.contains("proj-hook")),
+            "project hook should be scanned even without a global Claude dir"
+        );
+        assert!(
+            extensions
+                .iter()
+                .all(|e| matches!(e.scope, ConfigScope::Project { .. })),
+            "no global rows should be emitted when adapter.detect() is false"
+        );
     }
 }
 
