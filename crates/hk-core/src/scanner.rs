@@ -1,5 +1,6 @@
 use crate::adapter::AgentAdapter;
 use crate::models::*;
+use crate::sanitize::strip_windows_extended_path_prefix;
 use chrono::{DateTime, Utc};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
@@ -12,6 +13,14 @@ use std::os::windows::process::CommandExt;
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+fn display_path(path: &Path) -> String {
+    strip_windows_extended_path_prefix(&path.to_string_lossy())
+}
+
+fn display_path_str(path: &str) -> String {
+    strip_windows_extended_path_prefix(path)
+}
 
 struct KnownCli {
     binary_name: &'static str,
@@ -225,9 +234,9 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
             updated_at: file_modified_time(&path),
 
             source_path: Some(if is_disabled {
-                path.join("SKILL.md").to_string_lossy().to_string()
+                display_path(&path.join("SKILL.md"))
             } else {
-                skill_file.to_string_lossy().to_string()
+                display_path(&skill_file)
             }),
             cli_parent_id: None,
             cli_meta: None,
@@ -1002,7 +1011,7 @@ pub fn scan_project_extensions(
     }
     let scope = ConfigScope::Project {
         name: project_name.to_string(),
-        path: project_path.to_string_lossy().to_string(),
+        path: display_path(project_path),
     };
     let mut all = Vec::new();
 
@@ -1022,7 +1031,7 @@ pub fn scan_project_extensions(
     if let Some(rel) = adapter.project_mcp_config_relpath() {
         let mcp_path = project_path.join(&rel);
         if mcp_path.is_file() {
-            let mcp_path_str = mcp_path.to_string_lossy().to_string();
+            let mcp_path_str = display_path(&mcp_path);
             let config_created = file_created_time(&mcp_path);
             let config_modified = file_modified_time(&mcp_path);
             for server in adapter.read_mcp_servers_from(&mcp_path) {
@@ -1090,7 +1099,7 @@ pub fn scan_project_extensions(
     if let Some(rel) = adapter.project_hook_config_relpath() {
         let hook_path = project_path.join(&rel);
         if hook_path.is_file() {
-            let hook_path_str = hook_path.to_string_lossy().to_string();
+            let hook_path_str = display_path(&hook_path);
             let config_created = file_created_time(&hook_path);
             let config_modified = file_modified_time(&hook_path);
             for hook in adapter.read_hooks_from(&hook_path) {
@@ -1259,7 +1268,7 @@ pub fn find_skill_by_id(
                     project_root.join(&rel),
                     ConfigScope::Project {
                         name: project_name.clone(),
-                        path: project_path.clone(),
+                        path: display_path_str(project_path),
                     },
                 ));
             }
@@ -1327,7 +1336,7 @@ pub fn find_skill_by_id(
                     project_root.join(&rel),
                     ConfigScope::Project {
                         name: project_name.clone(),
-                        path: project_path.clone(),
+                        path: display_path_str(project_path),
                     },
                 ));
             }
@@ -1438,10 +1447,10 @@ pub fn skill_locations(
     };
 
     let want_global = matches!(scope_filter, None | Some(ConfigScope::Global));
-    let want_project_path: Option<&str> = match scope_filter {
-        Some(ConfigScope::Project { path, .. }) => Some(path.as_str()),
-        Some(ConfigScope::Global) => Some(""), // never matches → skip projects
-        None => None,                          // walk every project
+    let want_project_path: Option<String> = match scope_filter {
+        Some(ConfigScope::Project { path, .. }) => Some(display_path_str(path)),
+        Some(ConfigScope::Global) => Some(String::new()), // never matches → skip projects
+        None => None,                                      // walk every project
     };
 
     for adapter in adapters {
@@ -1457,8 +1466,8 @@ pub fn skill_locations(
             continue;
         }
         for (_project_name, project_path) in projects {
-            if let Some(want_path) = want_project_path
-                && want_path != project_path
+            if let Some(want_path) = want_project_path.as_deref()
+                && want_path != display_path_str(project_path)
             {
                 continue;
             }
@@ -1523,7 +1532,7 @@ fn discover_projects_recursive(
             .to_string();
         projects.push(DiscoveredProject {
             name,
-            path: dir.to_string_lossy().to_string(),
+            path: display_path(dir),
         });
         // Don't recurse into project subdirectories
         return;
@@ -2050,7 +2059,7 @@ pub fn scan_agent_configs(
 
         let scope = ConfigScope::Project {
             name: project_name.clone(),
-            path: project_path.clone(),
+            path: display_path_str(project_path),
         };
 
         for (category, patterns) in &project_groups {
@@ -2077,7 +2086,7 @@ pub fn scan_agent_configs(
 
         for skill_dir in adapter.project_skill_dirs() {
             for path in resolve_pattern(project_root, &skill_dir) {
-                let path_str = path.to_string_lossy().to_string();
+                let path_str = display_path(&path);
                 if seen_project_config_paths.contains(&path_str) {
                     continue;
                 }
@@ -2101,7 +2110,7 @@ pub fn scan_agent_configs(
         .into_iter()
         .flatten()
         {
-            let path_str = path.to_string_lossy().to_string();
+            let path_str = display_path(&path);
             if seen_project_config_paths.contains(&path_str) {
                 continue;
             }
@@ -2148,7 +2157,7 @@ fn stat_config_entry(
     });
 
     Some(AgentConfigFile {
-        path: path.to_string_lossy().to_string(),
+        path: display_path(path),
         agent: agent.to_string(),
         category,
         scope,
@@ -2301,7 +2310,7 @@ fn scan_hub_skills(hub_path: &Path) -> Vec<Extension> {
             trust_score: None,
             installed_at: file_created_time(&scan_root),
             updated_at: file_modified_time(&scan_root),
-            source_path: Some(scan_root.to_string_lossy().to_string()),
+            source_path: Some(display_path(&scan_root)),
             cli_parent_id: None,
             cli_meta: None,
             install_meta: None,
@@ -2326,7 +2335,7 @@ fn scan_hub_mcp(hub_path: &Path) -> Vec<Extension> {
 
     for entry in entries.flatten() {
         let path = entry.path();
-        let (config_path, display_path) = if path.is_dir() {
+        let (config_path, display_root) = if path.is_dir() {
             let config = path.join("mcp.json");
             if !config.exists() {
                 continue;
@@ -2372,7 +2381,7 @@ fn scan_hub_mcp(hub_path: &Path) -> Vec<Extension> {
                 trust_score: None,
                 installed_at: config_created,
                 updated_at: config_modified,
-                source_path: Some(display_path.to_string_lossy().to_string()),
+                source_path: Some(display_path(&display_root)),
                 cli_parent_id: None,
                 cli_meta: None,
                 install_meta: None,
@@ -2429,7 +2438,7 @@ fn scan_hub_plugins(hub_path: &Path) -> Vec<Extension> {
             trust_score: None,
             installed_at: file_created_time(&path),
             updated_at: file_modified_time(&path),
-            source_path: Some(path.to_string_lossy().to_string()),
+            source_path: Some(display_path(&path)),
             cli_parent_id: None,
             cli_meta: None,
             install_meta: None,
@@ -2493,7 +2502,7 @@ fn scan_hub_clis(hub_path: &Path) -> Vec<Extension> {
             trust_score: None,
             installed_at: file_created_time(&path),
             updated_at: file_modified_time(&path),
-            source_path: Some(path.to_string_lossy().to_string()),
+            source_path: Some(display_path(&path)),
             cli_parent_id: None,
             cli_meta,
             install_meta: None,
@@ -3045,6 +3054,18 @@ mod config_tests {
     use super::*;
     use crate::adapter::claude::ClaudeAdapter;
     use std::fs;
+
+    #[test]
+    fn test_display_path_strips_windows_extended_prefix() {
+        assert_eq!(
+            display_path_str(r"\\?\D:\workspace\myproject"),
+            r"D:\workspace\myproject"
+        );
+        assert_eq!(
+            display_path_str(r"\\?\UNC\server\share\myproject"),
+            r"\\server\share\myproject"
+        );
+    }
 
     #[test]
     fn test_scan_agent_configs_global_files() {

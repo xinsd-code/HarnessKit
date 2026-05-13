@@ -696,6 +696,18 @@ html.dark[data-theme="tiesen"][data-web="true"] {
   html.dark[data-web="true"] #root {
     background: var(--sidebar);
   }
+  /* Windows desktop windows are opaque, so macOS-style translucency composites
+     against a gray canvas. Paint the shell/sidebar solid in dark mode there. */
+  html.dark[data-desktop-platform="windows"],
+  html.dark[data-desktop-platform="windows"] body,
+  html.dark[data-desktop-platform="windows"] #root,
+  html.dark[data-desktop-platform="windows"] .app-shell-surface,
+  html.dark[data-desktop-platform="windows"] .app-sidebar {
+    background: var(--sidebar);
+  }
+  html.dark[data-desktop-platform="windows"] .app-shell-surface {
+    backdrop-filter: none;
+  }
   body {
     @apply text-foreground;
     letter-spacing: var(--tracking-normal);

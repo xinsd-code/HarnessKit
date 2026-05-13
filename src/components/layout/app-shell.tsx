@@ -95,7 +95,7 @@ export function AppShell() {
   return (
     <div className="h-screen overflow-hidden text-foreground">
       {/* Frosted glass surface */}
-      <div className="flex h-full bg-sidebar/25 backdrop-blur-xl backdrop-saturate-150 backdrop-brightness-105">
+      <div className="app-shell-surface flex h-full bg-sidebar/25 backdrop-blur-xl backdrop-saturate-150 backdrop-brightness-105">
         <Sidebar />
 
         {/* py+pr padding exposes frosted surface on top / right / bottom */}

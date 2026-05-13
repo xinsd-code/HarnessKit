@@ -108,6 +108,9 @@ pub fn is_windows_abs_path(s: &str) -> bool {
 
 /// Strip Windows extended-length path prefix (`\\?\`) when present.
 pub fn strip_windows_extended_path_prefix(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{rest}");
+    }
     path.strip_prefix(r"\\?\").unwrap_or(path).to_string()
 }
 
@@ -232,6 +235,10 @@ mod tests {
         assert_eq!(
             strip_windows_extended_path_prefix(r"\\?\D:\workspace\demo"),
             r"D:\workspace\demo"
+        );
+        assert_eq!(
+            strip_windows_extended_path_prefix(r"\\?\UNC\server\share\demo"),
+            r"\\server\share\demo"
         );
         assert_eq!(
             strip_windows_extended_path_prefix("/tmp/demo"),

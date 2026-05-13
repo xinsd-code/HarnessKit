@@ -44,8 +44,8 @@ jobs:
           DOWNLOADS=$(cat <<'DOWNLOADS_EOF'
           ## Downloads
           - **Windows desktop:** Use `HarnessKit-windows-x64-installer.exe` first. `HarnessKit-windows-x64.msi` is the alternate enterprise-friendly package.
-          - **macOS desktop:** A desktop dmg is published only for signed macOS builds. If no dmg is attached, signing/notarization is not configured for that release yet.
-          - **CLI assets:** Files beginning with `hk-cli-` are command-line binaries, not desktop applications.
+          - **macOS desktop:** Unsigned temporary dmg files are published when Apple signing/notarization secrets are missing. Gatekeeper may require manual approval.
+          - **CLI assets:** `hk-cli-*` packages are temporarily disabled for this release workflow.
           DOWNLOADS_EOF
           )
           BODY="$BODY
@@ -156,18 +156,35 @@ jobs:
           tauriScript: cargo tauri
           args: --target ${{ matrix.target }} --config crates/hk-desktop/tauri.macos.conf.json
 
-      - name: Skip unsigned macOS desktop artifact
+      - name: Build unsigned macOS dmg
         if: steps.macos_signing.outputs.mode == 'unsigned'
         shell: bash
         run: |
-          echo "Skipping macOS desktop dmg publish because Apple signing/notarization secrets are missing."
+          npm run build
+          cargo tauri build --target ${{ matrix.target }} --config crates/hk-desktop/tauri.macos.conf.json --bundles dmg
+
+      - name: Upload unsigned macOS dmg
+        if: steps.macos_signing.outputs.mode == 'unsigned'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          dmg=$(find "target/${{ matrix.target }}/release/bundle/dmg" -name "*.dmg" -print -quit)
+          if [ -z "$dmg" ]; then
+            echo "Missing unsigned macOS dmg output" >&2
+            exit 1
+          fi
+          cp "$dmg" "HarnessKit-macos-${{ matrix.arch }}-unsigned.dmg"
+          gh release upload "${{ github.ref_name }}" "HarnessKit-macos-${{ matrix.arch }}-unsigned.dmg" --clobber
 
       - name: Build CLI (with embedded web frontend)
+        if: ${{ false }}
         run: |
           npm run build
           cargo build --release --target ${{ matrix.target }} -p hk-cli
 
       - name: Upload CLI to release
+        if: ${{ false }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -226,6 +243,7 @@ jobs:
           gh release upload "${{ github.ref_name }}" "HarnessKit-windows-x64.msi" --clobber
 
   release-cli-linux:
+    if: ${{ false }}
     needs: create-release
     runs-on: ubuntu-22.04
     permissions:
@@ -267,6 +285,7 @@ jobs:
           gh release upload "${{ github.ref_name }}" hk-cli-linux-x64 --clobber
 
   release-cli-windows:
+    if: ${{ false }}
     needs: create-release
     runs-on: windows-latest
     permissions:

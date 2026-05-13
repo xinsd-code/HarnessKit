@@ -240,9 +240,10 @@ pub fn add_custom_config_path(
             "Config paths cannot contain '..' components".into(),
         ));
     }
-    let resolved_path = std::path::Path::new(&resolved);
+    let resolved_path = super::normalize(std::path::Path::new(&resolved));
     let home = dirs::home_dir()
         .ok_or_else(|| HkError::Internal("Cannot determine home directory".into()))?;
+    let home = super::normalize(&home);
     if !resolved_path.starts_with(&home) {
         return Err(HkError::PathNotAllowed(
             "Custom config paths must be within your home directory".into(),
@@ -254,6 +255,7 @@ pub fn add_custom_config_path(
         ));
     }
     let scope_json = serde_json::to_string(&target_scope).ok();
+    let resolved = resolved_path.to_string_lossy().to_string();
     let store = state.store.lock();
     store.add_custom_config_path(&agent, &resolved, &label, &category, scope_json.as_deref())
 }
@@ -278,9 +280,10 @@ pub fn update_custom_config_path(
             "Config paths cannot contain '..' components".into(),
         ));
     }
-    let resolved_path = std::path::Path::new(&resolved);
+    let resolved_path = super::normalize(std::path::Path::new(&resolved));
     let home = dirs::home_dir()
         .ok_or_else(|| HkError::Internal("Cannot determine home directory".into()))?;
+    let home = super::normalize(&home);
     if !resolved_path.starts_with(&home) {
         return Err(HkError::PathNotAllowed(
             "Custom config paths must be within your home directory".into(),
@@ -291,6 +294,7 @@ pub fn update_custom_config_path(
             "Cannot use home directory itself as a config path".into(),
         ));
     }
+    let resolved = resolved_path.to_string_lossy().to_string();
     let store = state.store.lock();
     store.update_custom_config_path(id, &resolved, &label, &category)
 }
