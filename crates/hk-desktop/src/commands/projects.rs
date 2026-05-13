@@ -1,6 +1,6 @@
 use super::AppState;
 use chrono::Utc;
-use hk_core::{HkError, models::*, scanner};
+use hk_core::{HkError, models::*, sanitize::strip_windows_extended_path_prefix, scanner};
 use tauri::State;
 
 #[tauri::command]
@@ -19,7 +19,7 @@ pub fn add_project(state: State<AppState>, path: String) -> Result<Project, HkEr
     let project_path = std::path::Path::new(&path)
         .canonicalize()
         .map_err(|e| HkError::CommandFailed(format!("Invalid path: {}", e)))?;
-    let path = project_path.to_string_lossy().to_string();
+    let path = strip_windows_extended_path_prefix(&project_path.to_string_lossy());
 
     // Validate the path contains project markers for any supported agent
     let has_agent_config = project_path.join(".claude").is_dir()

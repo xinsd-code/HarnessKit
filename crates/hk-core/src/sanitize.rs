@@ -106,6 +106,11 @@ pub fn is_windows_abs_path(s: &str) -> bool {
         && (bytes[2] == b'\\' || bytes[2] == b'/')
 }
 
+/// Strip Windows extended-length path prefix (`\\?\`) when present.
+pub fn strip_windows_extended_path_prefix(path: &str) -> String {
+    path.strip_prefix(r"\\?\").unwrap_or(path).to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -220,5 +225,17 @@ mod tests {
         assert!(!is_windows_abs_path("relative/path"));
         assert!(!is_windows_abs_path("~/foo"));
         assert!(!is_windows_abs_path("C:"));  // too short
+    }
+
+    #[test]
+    fn test_strip_windows_extended_path_prefix() {
+        assert_eq!(
+            strip_windows_extended_path_prefix(r"\\?\D:\workspace\demo"),
+            r"D:\workspace\demo"
+        );
+        assert_eq!(
+            strip_windows_extended_path_prefix("/tmp/demo"),
+            "/tmp/demo"
+        );
     }
 }
