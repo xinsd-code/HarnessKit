@@ -1149,10 +1149,10 @@ pub fn scan_project_extensions(
     all
 }
 
-/// Scan all extensions from all detected agents.
-/// `projects` is a list of `(project_name, project_path)` pairs — for each project,
-/// every detected adapter is asked for its project-scoped extensions on top of the
-/// usual global scan.
+/// Scan all extensions from all adapters.
+/// `projects` is a list of `(project_name, project_path)` pairs — each adapter
+/// is scanned for its project-scoped extensions for every registered project,
+/// even when its global home directory is not detected.
 pub fn scan_all(
     adapters: &[Box<dyn AgentAdapter>],
     projects: &[(String, String)],
