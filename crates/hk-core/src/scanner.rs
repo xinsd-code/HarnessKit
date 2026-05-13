@@ -3135,6 +3135,7 @@ mod project_extension_tests {
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         let claude_dir = home.join(".claude");
+        let expected_hook_path = claude_dir.join("settings.json");
         fs::create_dir_all(claude_dir.join("skills/global-skill")).unwrap();
         fs::write(
             claude_dir.join("skills/global-skill/SKILL.md"),
@@ -3170,7 +3171,11 @@ mod project_extension_tests {
         assert!(
             extensions
                 .iter()
-                .any(|e| e.kind == ExtensionKind::Hook && e.name.contains("global-hook"))
+                .any(|e| {
+                    e.kind == ExtensionKind::Hook
+                        && matches!(e.scope, ConfigScope::Global)
+                        && e.source_path.as_deref() == Some(expected_hook_path.to_string_lossy().as_ref())
+                })
         );
     }
 }
