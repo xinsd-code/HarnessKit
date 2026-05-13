@@ -27,7 +27,6 @@ impl ClaudeAdapter {
         }
     }
 
-    #[cfg(test)]
     pub fn with_home(home: PathBuf) -> Self {
         Self { home }
     }
