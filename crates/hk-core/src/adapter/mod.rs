@@ -505,6 +505,16 @@ mod tests {
         ];
 
         let adapters = runtime_adapters_for_settings(&settings);
+        assert_eq!(
+            adapters.len(),
+            5,
+            "built-in adapters should be replaced in place, not appended"
+        );
+        assert_eq!(
+            adapters.iter().filter(|a| a.name() == "claude").count(),
+            1
+        );
+        assert_eq!(adapters.iter().filter(|a| a.name() == "codex").count(), 1);
         let by_name: std::collections::HashMap<_, _> =
             adapters.iter().map(|a| (a.name().to_string(), a)).collect();
 

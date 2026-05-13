@@ -21,7 +21,7 @@ impl AntigravityAdapter {
             home: dirs::home_dir().unwrap_or_default(),
         }
     }
-    pub fn with_home(home: PathBuf) -> Self {
+    pub(crate) fn with_home(home: PathBuf) -> Self {
         Self { home }
     }
 
