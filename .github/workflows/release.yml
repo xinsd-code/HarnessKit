@@ -44,7 +44,7 @@ jobs:
           DOWNLOADS=$(cat <<'DOWNLOADS_EOF'
           ## Downloads
           - **Windows desktop:** Use `HarnessKit-windows-x64-installer.exe` first. `HarnessKit-windows-x64.msi` is the alternate enterprise-friendly package.
-          - **macOS desktop:** Unsigned temporary dmg files are published when Apple signing/notarization secrets are missing. Gatekeeper may require manual approval.
+          - **macOS desktop:** Temporary ad-hoc signed dmg files are published when Apple signing/notarization secrets are missing. Gatekeeper may require manual approval.
           - **CLI assets:** `hk-cli-*` packages are temporarily disabled for this release workflow.
           DOWNLOADS_EOF
           )
@@ -156,14 +156,16 @@ jobs:
           tauriScript: cargo tauri
           args: --target ${{ matrix.target }} --config crates/hk-desktop/tauri.macos.conf.json
 
-      - name: Build unsigned macOS dmg
+      - name: Build ad-hoc signed macOS dmg
         if: steps.macos_signing.outputs.mode == 'unsigned'
         shell: bash
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
         run: |
           npm run build
           cargo tauri build --target ${{ matrix.target }} --config crates/hk-desktop/tauri.macos.conf.json --bundles dmg
 
-      - name: Upload unsigned macOS dmg
+      - name: Upload ad-hoc signed macOS dmg
         if: steps.macos_signing.outputs.mode == 'unsigned'
         shell: bash
         env:
@@ -171,11 +173,11 @@ jobs:
         run: |
           dmg=$(find "target/${{ matrix.target }}/release/bundle/dmg" -name "*.dmg" -print -quit)
           if [ -z "$dmg" ]; then
-            echo "Missing unsigned macOS dmg output" >&2
+            echo "Missing ad-hoc signed macOS dmg output" >&2
             exit 1
           fi
-          cp "$dmg" "HarnessKit-macos-${{ matrix.arch }}-unsigned.dmg"
-          gh release upload "${{ github.ref_name }}" "HarnessKit-macos-${{ matrix.arch }}-unsigned.dmg" --clobber
+          cp "$dmg" "HarnessKit-macos-${{ matrix.arch }}-adhoc.dmg"
+          gh release upload "${{ github.ref_name }}" "HarnessKit-macos-${{ matrix.arch }}-adhoc.dmg" --clobber
 
       - name: Build CLI (with embedded web frontend)
         if: ${{ false }}

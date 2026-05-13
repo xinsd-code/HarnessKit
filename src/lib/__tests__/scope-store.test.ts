@@ -28,6 +28,16 @@ describe("scope-store hydrate", () => {
     });
   });
 
+  it("uses URL scope when Windows path prefixes differ", () => {
+    const projects = [makeProject("alpha", "D:\\workspace\\alpha")];
+    useScopeStore.getState().hydrate("//?/D:\\workspace\\alpha", projects);
+    expect(useScopeStore.getState().current).toEqual({
+      type: "project",
+      name: "alpha",
+      path: "D:\\workspace\\alpha",
+    });
+  });
+
   it("uses URL 'global' value", () => {
     useScopeStore.getState().hydrate("global", []);
     expect(useScopeStore.getState().current).toEqual({ type: "global" });

@@ -111,7 +111,13 @@ pub fn strip_windows_extended_path_prefix(path: &str) -> String {
     if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
         return format!(r"\\{rest}");
     }
-    path.strip_prefix(r"\\?\").unwrap_or(path).to_string()
+    if let Some(rest) = path.strip_prefix("//?/UNC/") {
+        return format!("//{rest}");
+    }
+    if let Some(rest) = path.strip_prefix(r"\\?\") {
+        return rest.to_string();
+    }
+    path.strip_prefix("//?/").unwrap_or(path).to_string()
 }
 
 #[cfg(test)]
@@ -239,6 +245,14 @@ mod tests {
         assert_eq!(
             strip_windows_extended_path_prefix(r"\\?\UNC\server\share\demo"),
             r"\\server\share\demo"
+        );
+        assert_eq!(
+            strip_windows_extended_path_prefix("//?/D:\\workspace\\demo"),
+            "D:\\workspace\\demo"
+        );
+        assert_eq!(
+            strip_windows_extended_path_prefix("//?/UNC/server/share/demo"),
+            "//server/share/demo"
         );
         assert_eq!(
             strip_windows_extended_path_prefix("/tmp/demo"),

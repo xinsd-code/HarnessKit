@@ -2,21 +2,21 @@ import { clsx } from "clsx";
 import { HardDrive } from "lucide-react";
 import { useState } from "react";
 import {
-  AgentInstallIconRow,
   type AgentInstallIconItem,
+  AgentInstallIconRow,
 } from "@/components/shared/agent-install-icon-row";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { PermissionTags } from "@/components/shared/permission-tags";
 import { TrustBadge } from "@/components/shared/trust-badge";
-import { api } from "@/lib/invoke";
 import { buildInstallState } from "@/lib/install-surface";
+import { api } from "@/lib/invoke";
+import type { Extension } from "@/lib/types";
 import {
   agentDisplayName,
   extensionListGroupKey,
   sortAgentNames,
   usesLooseLogicalAssetIdentity,
 } from "@/lib/types";
-import type { Extension } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useHubStore } from "@/stores/hub-store";
@@ -31,8 +31,6 @@ function AgentInstallCell({ ext }: { ext: Extension }) {
   const markInstalled = useHubStore((s) => s.markInstalled);
   const unmarkInstalled = useHubStore((s) => s.unmarkInstalled);
   const isHubInstalled = useHubStore((s) => s.isHubInstalled);
-  // Subscribe so the component re-renders when hub install state changes
-  void useHubStore((s) => s.hubInstalledKeys);
   const [pendingAgents, setPendingAgents] = useState<Set<string>>(new Set());
 
   const globalScope = { type: "global" as const };
@@ -41,13 +39,11 @@ function AgentInstallCell({ ext }: { ext: Extension }) {
     agentOrder,
   );
   const assetKey = extensionListGroupKey(ext);
-  const matchingInstances = installedExtensions.filter((instance) =>
-    extensionListGroupKey(instance) === assetKey,
+  const matchingInstances = installedExtensions.filter(
+    (instance) => extensionListGroupKey(instance) === assetKey,
   );
 
-  const handleToggle = async (
-    agentName: string,
-  ) => {
+  const handleToggle = async (agentName: string) => {
     setPendingAgents((prev) => new Set(prev).add(agentName));
     try {
       const installState = buildInstallState({
@@ -92,7 +88,7 @@ function AgentInstallCell({ ext }: { ext: Extension }) {
       surface: "local-hub",
     });
     const pending = pendingAgents.has(agentName);
-    const installed = installState.globalInstalled || isHubInstalled(ext.id, globalScope, agentName);
+    const installed = installState.globalInstalled;
     const title = `${agentDisplayName(agentName)}${
       installed ? " · 点击移除全局安装" : " · 安装到全局"
     }`;
@@ -108,10 +104,7 @@ function AgentInstallCell({ ext }: { ext: Extension }) {
   });
 
   return (
-    <div
-      onClick={(event) => event.stopPropagation()}
-      className="min-w-[18rem]"
-    >
+    <div onClick={(event) => event.stopPropagation()} className="min-w-[18rem]">
       <AgentInstallIconRow items={items} />
     </div>
   );
@@ -126,9 +119,12 @@ export function HubTable({ data }: { data: Extension[] }) {
     return (
       <div className="rounded-xl border border-border bg-card p-8 text-center">
         <HardDrive className="mx-auto mb-4 size-12 text-muted-foreground" />
-        <h3 className="text-lg font-medium text-foreground">No Extensions in Hub</h3>
+        <h3 className="text-lg font-medium text-foreground">
+          No Extensions in Hub
+        </h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          Backup extensions from the Extensions page or import from local directories.
+          Backup extensions from the Extensions page or import from local
+          directories.
         </p>
       </div>
     );
@@ -164,8 +160,8 @@ export function HubTable({ data }: { data: Extension[] }) {
                 : ext.id;
               const isSelected = selectedId === rowSelectionKey;
               const assetKey = extensionListGroupKey(ext);
-              const installedMatches = installedExtensions.filter((instance) =>
-                extensionListGroupKey(instance) === assetKey,
+              const installedMatches = installedExtensions.filter(
+                (instance) => extensionListGroupKey(instance) === assetKey,
               );
               const trustScore =
                 installedMatches.reduce<number | null>((current, instance) => {
@@ -188,7 +184,9 @@ export function HubTable({ data }: { data: Extension[] }) {
                   )}
                 >
                   <td className="px-4 py-3 text-sm">
-                    <span className="font-medium text-foreground">{ext.name}</span>
+                    <span className="font-medium text-foreground">
+                      {ext.name}
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-sm">
                     <KindBadge kind={ext.kind} />

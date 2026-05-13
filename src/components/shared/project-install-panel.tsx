@@ -1,9 +1,10 @@
 import { clsx } from "clsx";
 import { ChevronDown, Folder } from "lucide-react";
 import type { Project } from "@/lib/types";
+import { pathsEqual } from "@/lib/types";
 import {
-  AgentInstallIconRow,
   type AgentInstallIconItem,
+  AgentInstallIconRow,
 } from "./agent-install-icon-row";
 
 interface ProjectInstallPanelProps {
@@ -34,8 +35,8 @@ export function ProjectInstallPanel({
   emptyAgentsText = "No project-capable agents detected",
 }: ProjectInstallPanelProps) {
   const availableProjects = projects.filter((project) => project.exists);
-  const selectedProjectExists = availableProjects.some(
-    (project) => project.path === selectedProjectPath,
+  const selectedProjectExists = availableProjects.some((project) =>
+    pathsEqual(project.path, selectedProjectPath),
   );
   const visibleSelectedProjectPath = selectedProjectExists
     ? selectedProjectPath

@@ -20,6 +20,7 @@ import type { ConfigScope, Extension } from "@/lib/types";
 import {
   extensionGroupKey,
   formatRelativeTime,
+  pathsEqual,
   scopeLabel,
   type TrustTier,
   trustTier,
@@ -166,7 +167,9 @@ export default function AuditPage() {
       const extScope = scopeMap.get(r.extension_id);
       if (!extScope) return false;
       if (scope.type === "global") return extScope.type === "global";
-      return extScope.type === "project" && extScope.path === scope.path;
+      return (
+        extScope.type === "project" && pathsEqual(extScope.path, scope.path)
+      );
     });
   }, [results, scope, scopeMap]);
 

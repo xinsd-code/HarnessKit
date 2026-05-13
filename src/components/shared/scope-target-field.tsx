@@ -2,6 +2,7 @@ import { clsx } from "clsx";
 import { Folder } from "lucide-react";
 import { useScope } from "@/hooks/use-scope";
 import type { ConfigScope } from "@/lib/types";
+import { pathsEqual } from "@/lib/types";
 import { isWeb, webSelectStyle } from "@/lib/web-select";
 import { useProjectStore } from "@/stores/project-store";
 
@@ -55,7 +56,7 @@ export function ScopeTargetField({
       onChange({ type: "global" });
       return;
     }
-    const proj = projects.find((p) => p.path === key);
+    const proj = projects.find((p) => pathsEqual(p.path, key));
     if (proj) onChange({ type: "project", name: proj.name, path: proj.path });
   };
 

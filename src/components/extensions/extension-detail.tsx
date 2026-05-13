@@ -2,10 +2,10 @@ import {
   AlertTriangle,
   Archive,
   Calendar,
+  Folder,
   FolderOpen,
   GitBranch,
   Globe,
-  Folder,
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -18,17 +18,18 @@ import { SkillFileSection } from "@/components/extensions/skill-file-section";
 import { AgentInstallIconRow } from "@/components/shared/agent-install-icon-row";
 import { ProjectInstallPanel } from "@/components/shared/project-install-panel";
 import { canInstallAtScope } from "@/lib/agent-capabilities";
-import { api } from "@/lib/invoke";
 import {
   buildInstallState,
   getInstallSourceInstance,
   resolveProjectSelection,
 } from "@/lib/install-surface";
+import { api } from "@/lib/invoke";
 import { isDesktop } from "@/lib/transport";
 import type { ConfigScope, ExtensionContent as ExtContent } from "@/lib/types";
 import {
   agentDisplayName,
   extensionGroupKey,
+  pathsEqual,
   scopeKey,
   scopeLabel,
   sortAgents,
@@ -140,10 +141,15 @@ export function ExtensionDetail({
     }
   }, [showDelete, group]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Deployment state must reset when the selected extension group changes.
   useEffect(() => {
     setDeployingAgents(new Set());
     setProjectDeployingAgents(new Set());
   }, [group?.groupKey]);
+
+  const activeInstancePath = activeInstanceId
+    ? instanceData.get(activeInstanceId)?.path
+    : null;
 
   useEffect(() => {
     if (!group) return;
@@ -154,8 +160,8 @@ export function ExtensionDetail({
     const availableProjects = projects.filter((project) => project.exists);
     const currentProjectValid =
       installProjectScope?.type === "project"
-        ? availableProjects.some(
-            (project) => project.path === installProjectScope.path,
+        ? availableProjects.some((project) =>
+            pathsEqual(project.path, installProjectScope.path),
           )
         : false;
     const selectedProject = resolveProjectSelection({
@@ -168,9 +174,22 @@ export function ExtensionDetail({
     const nextProjectPath =
       selectedProject?.type === "project" ? selectedProject.path : null;
 
-    if (currentProjectPath === nextProjectPath) return;
+    if (
+      (currentProjectPath == null && nextProjectPath == null) ||
+      (currentProjectPath != null &&
+        nextProjectPath != null &&
+        pathsEqual(currentProjectPath, nextProjectPath))
+    ) {
+      return;
+    }
     onInstallProjectScopeChange(selectedProject);
-  }, [extensions, group, installProjectScope, onInstallProjectScopeChange, projects]);
+  }, [
+    extensions,
+    group,
+    installProjectScope,
+    onInstallProjectScopeChange,
+    projects,
+  ]);
 
   if (!group) return null;
 
@@ -289,9 +308,7 @@ export function ExtensionDetail({
                       `已安装到 ${agentDisplayName(agent.name)}。将在新会话中生效`,
                     );
                   } catch {
-                    toast.error(
-                      `安装到 ${agentDisplayName(agent.name)} 失败`,
-                    );
+                    toast.error(`安装到 ${agentDisplayName(agent.name)} 失败`);
                   } finally {
                     setDeployingAgents((prev) => {
                       const next = new Set(prev);
@@ -323,13 +340,18 @@ export function ExtensionDetail({
               isInstalled ? " · 点击移除项目安装" : " · 安装到项目"
             }`,
             onClick: async () => {
-              setProjectDeployingAgents((prev) => new Set(prev).add(agent.name));
+              setProjectDeployingAgents((prev) =>
+                new Set(prev).add(agent.name),
+              );
               try {
                 if (isInstalled) {
                   const matches = projectStateInstances.filter(
                     (instance) =>
                       instance.scope.type === "project" &&
-                      instance.scope.path === installProjectScope.path &&
+                      pathsEqual(
+                        instance.scope.path,
+                        installProjectScope.path,
+                      ) &&
                       instance.agents.includes(agent.name),
                   );
                   if (matches.length === 0) {
@@ -465,10 +487,14 @@ export function ExtensionDetail({
             {group.enabled ? "Enabled" : "Disabled"}
           </button>
           {/* Backup to Hub button */}
-          {(group.kind === "skill" || group.kind === "mcp" || group.kind === "plugin") && (
+          {(group.kind === "skill" ||
+            group.kind === "mcp" ||
+            group.kind === "plugin") && (
             <button
               onClick={() => {
-                useHubStore.getState().backupToHub(group.instances[0]?.id ?? "")
+                useHubStore
+                  .getState()
+                  .backupToHub(group.instances[0]?.id ?? "")
                   .then(() => {})
                   .catch(() => {});
               }}
@@ -629,7 +655,9 @@ export function ExtensionDetail({
                     projects={projects}
                     selectedProjectPath={selectedProjectPath}
                     onProjectChange={(path) => {
-                      const project = projects.find((item) => item.path === path);
+                      const project = projects.find((item) =>
+                        pathsEqual(item.path, path),
+                      );
                       onInstallProjectScopeChange(
                         project
                           ? {
@@ -685,21 +713,15 @@ export function ExtensionDetail({
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Documentation
                 </h4>
-                {isDesktop() &&
-                  activeInstanceId &&
-                  instanceData.get(activeInstanceId)?.path && (
-                    <button
-                      onClick={() =>
-                        api.revealInFileManager(
-                          instanceData.get(activeInstanceId)!.path!,
-                        )
-                      }
-                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      <FolderOpen size={12} />
-                      Open in Finder
-                    </button>
-                  )}
+                {isDesktop() && activeInstancePath && (
+                  <button
+                    onClick={() => api.revealInFileManager(activeInstancePath)}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <FolderOpen size={12} />
+                    Open in Finder
+                  </button>
+                )}
               </div>
               {/* Agent tabs for switching instance content */}
               {group.instances.length > 1 && (
@@ -778,7 +800,9 @@ export function ExtensionDetail({
                 const deletingAllInstances =
                   group.kind === "cli" ||
                   (allInstanceIds.size > 0 &&
-                    [...allInstanceIds].every((id) => instanceIds.includes(id)));
+                    [...allInstanceIds].every((id) =>
+                      instanceIds.includes(id),
+                    ));
                 toast.success(
                   deletingAllInstances
                     ? "Extension deleted. Takes effect in new sessions"

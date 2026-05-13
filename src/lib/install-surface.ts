@@ -5,6 +5,7 @@ import type {
   InstallState,
   ResolveProjectSelectionOptions,
 } from "./types";
+import { pathsEqual } from "./types";
 
 function scopeMatches(
   extScope: ConfigScope,
@@ -13,7 +14,9 @@ function scopeMatches(
   if (targetScope.type === "global") {
     return extScope.type === "global";
   }
-  return extScope.type === "project" && extScope.path === targetScope.path;
+  return (
+    extScope.type === "project" && pathsEqual(extScope.path, targetScope.path)
+  );
 }
 
 export function resolveProjectSelection({
@@ -24,8 +27,8 @@ export function resolveProjectSelection({
   const availableProjects = projects.filter((project) => project.exists);
 
   if (contextScope?.type === "project") {
-    const currentProject = availableProjects.find(
-      (project) => project.path === contextScope.path,
+    const currentProject = availableProjects.find((project) =>
+      pathsEqual(project.path, contextScope.path),
     );
     if (currentProject) {
       return contextScope;
@@ -36,7 +39,7 @@ export function resolveProjectSelection({
     const hasInstalledInstance = installedInstances.some(
       (instance) =>
         instance.scope.type === "project" &&
-        instance.scope.path === project.path,
+        pathsEqual(instance.scope.path, project.path),
     );
     if (hasInstalledInstance) {
       return {
@@ -72,9 +75,11 @@ export function buildInstallState({
       ? matchingInstances.filter(
           (instance) =>
             instance.scope.type === "project" &&
-            instance.scope.path === projectScope.path,
+            pathsEqual(instance.scope.path, projectScope.path),
         )
-      : matchingInstances.filter((instance) => instance.scope.type === "project");
+      : matchingInstances.filter(
+          (instance) => instance.scope.type === "project",
+        );
   const globalInstalled = globalInstances.length > 0;
   const projectInstalled = projectInstances.length > 0;
 
@@ -111,7 +116,7 @@ export function getInstallSourceInstance(
       instances.find(
         (instance) =>
           instance.scope.type === "project" &&
-          instance.scope.path === targetScope.path,
+          pathsEqual(instance.scope.path, targetScope.path),
       ) ??
       instances.find((instance) => instance.scope.type === "global") ??
       instances[0] ??

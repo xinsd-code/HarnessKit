@@ -1,12 +1,22 @@
 import { create } from "zustand";
 import { api } from "@/lib/invoke";
-import type { Extension, ExtensionKind, ExtensionContent, ConfigScope } from "@/lib/types";
+import type {
+  ConfigScope,
+  Extension,
+  ExtensionContent,
+  ExtensionKind,
+} from "@/lib/types";
+import { normalizePathForComparison } from "@/lib/types";
 import { toast } from "./toast-store";
 
-function hubInstallKey(hubExtId: string, scope: ConfigScope, agent: string): string {
+function hubInstallKey(
+  hubExtId: string,
+  scope: ConfigScope,
+  agent: string,
+): string {
   return scope.type === "global"
     ? `${hubExtId}:global:${agent}`
-    : `${hubExtId}:project:${scope.path}:${agent}`;
+    : `${hubExtId}:project:${normalizePathForComparison(scope.path)}:${agent}`;
 }
 
 interface HubState {
@@ -26,13 +36,26 @@ interface HubState {
   setSearchQuery: (query: string) => void;
   setSelectedId: (id: string | null) => void;
   backupToHub: (id: string) => Promise<void>;
-  installFromHub: (id: string, agent: string, scope: ConfigScope, force: boolean) => Promise<void>;
+  installFromHub: (
+    id: string,
+    agent: string,
+    scope: ConfigScope,
+    force: boolean,
+  ) => Promise<void>;
   deleteFromHub: (id: string) => Promise<void>;
   importToHub: (path: string, kind: string) => Promise<void>;
   loadExtensionContent: (id: string) => Promise<void>;
   markInstalled: (hubExtId: string, scope: ConfigScope, agent: string) => void;
-  unmarkInstalled: (hubExtId: string, scope: ConfigScope, agent: string) => void;
-  isHubInstalled: (hubExtId: string, scope: ConfigScope, agent: string) => boolean;
+  unmarkInstalled: (
+    hubExtId: string,
+    scope: ConfigScope,
+    agent: string,
+  ) => void;
+  isHubInstalled: (
+    hubExtId: string,
+    scope: ConfigScope,
+    agent: string,
+  ) => boolean;
 }
 
 export const useHubStore = create<HubState>((set, get) => ({
@@ -157,4 +180,3 @@ export const useHubStore = create<HubState>((set, get) => ({
     return get().hubInstalledKeys.has(hubInstallKey(hubExtId, scope, agent));
   },
 }));
-

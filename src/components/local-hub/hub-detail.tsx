@@ -3,20 +3,21 @@ import { useEffect, useState } from "react";
 import { PermissionDetail } from "@/components/extensions/permission-detail";
 import { SkillFileSection } from "@/components/extensions/skill-file-section";
 import {
-  AgentInstallIconRow,
   type AgentInstallIconItem,
+  AgentInstallIconRow,
 } from "@/components/shared/agent-install-icon-row";
 import { ProjectInstallPanel } from "@/components/shared/project-install-panel";
 import { canInstallAtScope } from "@/lib/agent-capabilities";
-import { api } from "@/lib/invoke";
 import {
   buildInstallState,
   resolveProjectSelection,
 } from "@/lib/install-surface";
+import { api } from "@/lib/invoke";
 import type { ConfigScope, Extension, ExtensionKind } from "@/lib/types";
 import {
   agentDisplayName,
   extensionListGroupKey,
+  pathsEqual,
   sameLogicalAsset,
   sortAgents,
 } from "@/lib/types";
@@ -33,9 +34,10 @@ function scopeMatches(
   if (targetScope.type === "global") {
     return extScope.type === "global";
   }
-  return extScope.type === "project" && extScope.path === targetScope.path;
+  return (
+    extScope.type === "project" && pathsEqual(extScope.path, targetScope.path)
+  );
 }
-
 
 export function HubDetail() {
   const extensions = useHubStore((s) => s.extensions);
@@ -50,8 +52,6 @@ export function HubDetail() {
   const markInstalled = useHubStore((s) => s.markInstalled);
   const unmarkInstalled = useHubStore((s) => s.unmarkInstalled);
   const isHubInstalled = useHubStore((s) => s.isHubInstalled);
-  // Subscribe so the component re-renders when hub install state changes
-  void useHubStore((s) => s.hubInstalledKeys);
 
   const agents = useAgentStore((s) => s.agents);
   const agentOrder = useAgentStore((s) => s.agentOrder);
@@ -73,7 +73,8 @@ export function HubDetail() {
   } | null>(null);
   const [selectedProjectPath, setSelectedProjectPath] = useState("");
 
-  // Reset conflict state when switching to a different extension
+  // Reset conflict state when switching to a different extension.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: The reset is keyed by selectedId even though the value is not read inside the effect.
   useEffect(() => {
     setConflict(null);
     setConflictTarget(null);
@@ -83,7 +84,9 @@ export function HubDetail() {
     ? (() => {
         const exactMatch = extensions.find((e) => e.id === selectedId);
         if (exactMatch) return [exactMatch];
-        return extensions.filter((e) => extensionListGroupKey(e) === selectedId);
+        return extensions.filter(
+          (e) => extensionListGroupKey(e) === selectedId,
+        );
       })()
     : [];
   const ext = selectedHubExtensions[0] ?? null;
@@ -120,7 +123,9 @@ export function HubDetail() {
     });
     if (
       selectedProjectPath &&
-      availableProjects.some((project) => project.path === selectedProjectPath)
+      availableProjects.some((project) =>
+        pathsEqual(project.path, selectedProjectPath),
+      )
     ) {
       return;
     }
@@ -139,7 +144,9 @@ export function HubDetail() {
 
   const projectScope: ConfigScope | null = selectedProjectPath
     ? (() => {
-        const project = availableProjects.find((item) => item.path === selectedProjectPath);
+        const project = availableProjects.find((item) =>
+          pathsEqual(item.path, selectedProjectPath),
+        );
         return project
           ? { type: "project", name: project.name, path: project.path }
           : null;
@@ -152,9 +159,7 @@ export function HubDetail() {
   );
   const globalInstallAgents = ext.kind === "cli" ? [] : detectedAgents;
   const projectTargetKind: ExtensionKind | null =
-    ext.kind === "skill" || ext.kind === "mcp"
-      ? ext.kind
-      : null;
+    ext.kind === "skill" || ext.kind === "mcp" ? ext.kind : null;
   const projectInstallAgents =
     projectScope && projectTargetKind
       ? detectedAgents.filter((agent) =>
@@ -180,7 +185,9 @@ export function HubDetail() {
       const markedInstalled = isHubInstalled(ext.id, scope, agent);
       if (installed.length > 0 || markedInstalled) {
         if (installed.length > 0) {
-          await Promise.all(installed.map((instance) => api.deleteExtension(instance.id)));
+          await Promise.all(
+            installed.map((instance) => api.deleteExtension(instance.id)),
+          );
         }
         unmarkInstalled(ext.id, scope, agent);
         await rescanAndFetch();
@@ -193,7 +200,11 @@ export function HubDetail() {
       }
 
       // Check for conflict first
-      const conflictExt = await api.checkHubInstallConflict(ext.id, agent, scope);
+      const conflictExt = await api.checkHubInstallConflict(
+        ext.id,
+        agent,
+        scope,
+      );
       if (conflictExt) {
         setConflict(conflictExt);
         setConflictTarget({ agent, scope });
@@ -206,7 +217,11 @@ export function HubDetail() {
         const msg = e instanceof Error ? e.message : String(e);
         // If backend detects a conflict our frontend check missed, surface it
         if (msg.includes("already exists") || msg.includes("Use force=true")) {
-          const conflictExt = await api.checkHubInstallConflict(ext.id, agent, scope);
+          const conflictExt = await api.checkHubInstallConflict(
+            ext.id,
+            agent,
+            scope,
+          );
           if (conflictExt) {
             setConflict(conflictExt);
             setConflictTarget({ agent, scope });
@@ -231,7 +246,7 @@ export function HubDetail() {
         instances: matchingInstancesForAsset,
         surface: "extension-detail",
       });
-      const installed = installState.globalInstalled || isHubInstalled(ext.id, { type: "global" }, agent.name);
+      const installed = installState.globalInstalled;
       return {
         name: agent.name,
         installed,
@@ -253,7 +268,7 @@ export function HubDetail() {
             projectScope,
             surface: "extension-detail",
           });
-          const installed = installState.projectInstalled || isHubInstalled(ext.id, projectScope, agent.name);
+          const installed = installState.projectInstalled;
           return {
             name: agent.name,
             installed,
@@ -353,7 +368,9 @@ export function HubDetail() {
             selectedProjectPath={selectedProjectPath}
             onProjectChange={setSelectedProjectPath}
             agentItems={projectAgentItems}
-            selectedProjectName={projectScope?.type === "project" ? projectScope.name : null}
+            selectedProjectName={
+              projectScope?.type === "project" ? projectScope.name : null
+            }
             placeholder="Select an existing project"
             emptyProjectText="Select a project first"
             emptyAgentsText="No project-capable agents detected"
@@ -433,7 +450,11 @@ export function HubDetail() {
                 disabled={deleting}
                 className="flex-1 rounded-lg bg-destructive px-3 py-2 text-sm text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
               >
-                {deleting ? <Loader2 size={14} className="animate-spin mx-auto" /> : "Delete"}
+                {deleting ? (
+                  <Loader2 size={14} className="animate-spin mx-auto" />
+                ) : (
+                  "Delete"
+                )}
               </button>
             </div>
           </div>
@@ -460,7 +481,10 @@ export function HubDetail() {
               <button
                 onClick={() =>
                   conflictTarget
-                    ? handleForceInstall(conflictTarget.agent, conflictTarget.scope)
+                    ? handleForceInstall(
+                        conflictTarget.agent,
+                        conflictTarget.scope,
+                      )
                     : setConflict(null)
                 }
                 disabled={deploying !== null}

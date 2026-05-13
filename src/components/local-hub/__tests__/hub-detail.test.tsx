@@ -48,6 +48,9 @@ const stores = vi.hoisted(() => {
     setSelectedId: vi.fn(),
     deleteFromHub: vi.fn(),
     installFromHub: vi.fn(),
+    markInstalled: vi.fn(),
+    unmarkInstalled: vi.fn(),
+    isHubInstalled: vi.fn(() => false),
     extensionContent: new Map(),
     loadExtensionContent: vi.fn(),
   };
@@ -56,7 +59,15 @@ const stores = vi.hoisted(() => {
     rescanAndFetch: vi.fn(),
   };
   const agentState = {
-    agents: [{ name: "claude", detected: true, extension_count: 1, path: "", enabled: true }],
+    agents: [
+      {
+        name: "claude",
+        detected: true,
+        extension_count: 1,
+        path: "",
+        enabled: true,
+      },
+    ],
     agentOrder: ["claude"],
     fetch: vi.fn(),
   };
@@ -84,12 +95,24 @@ const stores = vi.hoisted(() => {
   return { hubState, extensionState, agentState, projectState, api };
 });
 
-vi.mock("@/components/extensions/delete-dialog", () => ({ DeleteDialog: () => null }));
-vi.mock("@/components/extensions/detail-cli-sections", () => ({ CliSections: () => null }));
-vi.mock("@/components/extensions/detail-header", () => ({ DetailHeader: () => null }));
-vi.mock("@/components/extensions/detail-paths", () => ({ DetailPaths: () => null }));
-vi.mock("@/components/extensions/permission-detail", () => ({ PermissionDetail: () => null }));
-vi.mock("@/components/extensions/skill-file-section", () => ({ SkillFileSection: () => null }));
+vi.mock("@/components/extensions/delete-dialog", () => ({
+  DeleteDialog: () => null,
+}));
+vi.mock("@/components/extensions/detail-cli-sections", () => ({
+  CliSections: () => null,
+}));
+vi.mock("@/components/extensions/detail-header", () => ({
+  DetailHeader: () => null,
+}));
+vi.mock("@/components/extensions/detail-paths", () => ({
+  DetailPaths: () => null,
+}));
+vi.mock("@/components/extensions/permission-detail", () => ({
+  PermissionDetail: () => null,
+}));
+vi.mock("@/components/extensions/skill-file-section", () => ({
+  SkillFileSection: () => null,
+}));
 vi.mock("@/components/shared/agent-install-icon-row", () => ({
   AgentInstallIconRow: (props: { items: AgentInstallIconItem[] }) => {
     capturedAgentItems.push(props.items);
@@ -112,8 +135,9 @@ vi.mock("@/stores/agent-store", () => ({
     selector(stores.agentState),
 }));
 vi.mock("@/stores/extension-store", () => ({
-  useExtensionStore: (selector: (state: typeof stores.extensionState) => unknown) =>
-    selector(stores.extensionState),
+  useExtensionStore: (
+    selector: (state: typeof stores.extensionState) => unknown,
+  ) => selector(stores.extensionState),
 }));
 vi.mock("@/stores/hub-store", () => ({
   useHubStore: (selector: (state: typeof stores.hubState) => unknown) =>
@@ -129,8 +153,18 @@ describe("HubDetail stale project handling", () => {
     capturedProjectPanelProps.length = 0;
     capturedAgentItems.length = 0;
     stores.extensionState.extensions = [];
+    stores.hubState.markInstalled.mockClear();
+    stores.hubState.unmarkInstalled.mockClear();
+    stores.hubState.isHubInstalled.mockReset();
+    stores.hubState.isHubInstalled.mockReturnValue(false);
     stores.agentState.agents = [
-      { name: "claude", detected: true, extension_count: 1, path: "", enabled: true },
+      {
+        name: "claude",
+        detected: true,
+        extension_count: 1,
+        path: "",
+        enabled: true,
+      },
     ];
     stores.agentState.agentOrder = ["claude"];
   });
@@ -139,7 +173,8 @@ describe("HubDetail stale project handling", () => {
     render(<HubDetail />);
 
     await waitFor(() => {
-      const props = capturedProjectPanelProps[capturedProjectPanelProps.length - 1];
+      const props =
+        capturedProjectPanelProps[capturedProjectPanelProps.length - 1];
       expect(props?.projects).toEqual([]);
       expect(props?.selectedProjectPath).toBe("");
       expect(props?.selectedProjectName ?? null).toBeNull();
@@ -148,15 +183,32 @@ describe("HubDetail stale project handling", () => {
 
   it("matches global installs by logical identity for the install-to-agent row", async () => {
     stores.agentState.agents = [
-      { name: "claude", detected: true, extension_count: 1, path: "", enabled: true },
-      { name: "codex", detected: true, extension_count: 0, path: "", enabled: true },
+      {
+        name: "claude",
+        detected: true,
+        extension_count: 1,
+        path: "",
+        enabled: true,
+      },
+      {
+        name: "codex",
+        detected: true,
+        extension_count: 0,
+        path: "",
+        enabled: true,
+      },
     ];
     stores.agentState.agentOrder = ["claude", "codex"];
     stores.extensionState.extensions = [
       {
         ...stores.hubState.extensions[0],
         id: "global-frontend-design",
-        source: { origin: "agent", url: null, version: null, commit_hash: null },
+        source: {
+          origin: "agent",
+          url: null,
+          version: null,
+          commit_hash: null,
+        },
         pack: null,
         agents: ["claude"],
         scope: { type: "global" as const },
@@ -172,6 +224,20 @@ describe("HubDetail stale project handling", () => {
         ["codex", false],
       ]);
       expect(items.some((item) => item.installed)).toBe(true);
+    });
+  });
+
+  it("does not show stale Local Hub install marks as installed", async () => {
+    stores.hubState.isHubInstalled.mockReturnValue(true);
+    stores.extensionState.extensions = [];
+
+    render(<HubDetail />);
+
+    await waitFor(() => {
+      const items = capturedAgentItems[capturedAgentItems.length - 1] ?? [];
+      expect(items.map((item) => [item.name, item.installed])).toEqual([
+        ["claude", false],
+      ]);
     });
   });
 });

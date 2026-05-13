@@ -2,6 +2,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useRef } from "react";
 import { Outlet, useLocation, useSearchParams } from "react-router-dom";
 import { ToastContainer } from "@/components/shared/toast-container";
+import { pathsEqual } from "@/lib/types";
 import { useProjectStore } from "@/stores/project-store";
 import { useScopeStore } from "@/stores/scope-store";
 import { Sidebar } from "./sidebar";
@@ -50,13 +51,20 @@ export function AppShell() {
           ? "all"
           : scope.path;
     const current = searchParams.get("scope");
-    if (current === expected) return;
+    if (
+      current === expected ||
+      (scope.type === "project" &&
+        current != null &&
+        expected != null &&
+        pathsEqual(current, expected))
+    ) {
+      return;
+    }
     const params = new URLSearchParams(searchParams);
     if (expected == null) params.delete("scope");
     else params.set("scope", expected);
     setSearchParams(params, { replace: true });
   }, [scope, scopeHydrated, searchParams, setSearchParams]);
-
 
   // Window dragging — anywhere outside <main> and interactive elements
   useEffect(() => {

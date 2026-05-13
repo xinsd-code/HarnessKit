@@ -1,9 +1,9 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Extension } from "@/lib/types";
 import { HubTable } from "@/components/local-hub/hub-table";
 import type { AgentInstallIconItem } from "@/components/shared/agent-install-icon-row";
 import { api } from "@/lib/invoke";
+import type { Extension } from "@/lib/types";
 
 const capturedAgentItems: AgentInstallIconItem[][] = [];
 
@@ -12,6 +12,9 @@ const stores = vi.hoisted(() => {
     selectedId: null as string | null,
     setSelectedId: vi.fn(),
     installFromHub: vi.fn(),
+    markInstalled: vi.fn(),
+    unmarkInstalled: vi.fn(),
+    isHubInstalled: vi.fn(() => false),
   };
   const extensionState = {
     extensions: [
@@ -48,7 +51,15 @@ const stores = vi.hoisted(() => {
     rescanAndFetch: vi.fn(),
   };
   const agentState = {
-    agents: [{ name: "claude", detected: true, extension_count: 1, path: "", enabled: true }],
+    agents: [
+      {
+        name: "claude",
+        detected: true,
+        extension_count: 1,
+        path: "",
+        enabled: true,
+      },
+    ],
     agentOrder: ["claude"],
   };
   return { hubState, extensionState, agentState };
@@ -61,7 +72,9 @@ vi.mock("@/components/shared/agent-install-icon-row", () => ({
   },
 }));
 vi.mock("@/components/shared/kind-badge", () => ({ KindBadge: () => null }));
-vi.mock("@/components/shared/permission-tags", () => ({ PermissionTags: () => null }));
+vi.mock("@/components/shared/permission-tags", () => ({
+  PermissionTags: () => null,
+}));
 vi.mock("@/components/shared/trust-badge", () => ({ TrustBadge: () => null }));
 vi.mock("@/lib/invoke", () => ({ api: { deleteExtension: vi.fn() } }));
 vi.mock("@/stores/agent-store", () => ({
@@ -69,14 +82,17 @@ vi.mock("@/stores/agent-store", () => ({
     selector(stores.agentState),
 }));
 vi.mock("@/stores/extension-store", () => ({
-  useExtensionStore: (selector: (state: typeof stores.extensionState) => unknown) =>
-    selector(stores.extensionState),
+  useExtensionStore: (
+    selector: (state: typeof stores.extensionState) => unknown,
+  ) => selector(stores.extensionState),
 }));
 vi.mock("@/stores/hub-store", () => ({
   useHubStore: (selector: (state: typeof stores.hubState) => unknown) =>
     selector(stores.hubState),
 }));
-vi.mock("@/stores/toast-store", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("@/stores/toast-store", () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
 
 describe("HubTable local hub install state", () => {
   beforeEach(() => {
@@ -85,6 +101,10 @@ describe("HubTable local hub install state", () => {
     stores.hubState.setSelectedId.mockClear();
     stores.hubState.installFromHub.mockReset();
     stores.hubState.installFromHub.mockResolvedValue(undefined);
+    stores.hubState.markInstalled.mockClear();
+    stores.hubState.unmarkInstalled.mockClear();
+    stores.hubState.isHubInstalled.mockReset();
+    stores.hubState.isHubInstalled.mockReturnValue(false);
     vi.mocked(api.deleteExtension).mockReset();
     stores.extensionState.rescanAndFetch.mockClear();
     stores.extensionState.extensions = [
@@ -119,7 +139,13 @@ describe("HubTable local hub install state", () => {
       },
     ];
     stores.agentState.agents = [
-      { name: "claude", detected: true, extension_count: 1, path: "", enabled: true },
+      {
+        name: "claude",
+        detected: true,
+        extension_count: 1,
+        path: "",
+        enabled: true,
+      },
     ];
     stores.agentState.agentOrder = ["claude"];
   });
@@ -180,8 +206,20 @@ describe("HubTable local hub install state", () => {
 
   it("matches Local Hub installs by logical identity for global Agent icons", () => {
     stores.agentState.agents = [
-      { name: "claude", detected: true, extension_count: 1, path: "", enabled: true },
-      { name: "codex", detected: true, extension_count: 1, path: "", enabled: true },
+      {
+        name: "claude",
+        detected: true,
+        extension_count: 1,
+        path: "",
+        enabled: true,
+      },
+      {
+        name: "codex",
+        detected: true,
+        extension_count: 1,
+        path: "",
+        enabled: true,
+      },
     ];
     stores.agentState.agentOrder = ["claude", "codex"];
     stores.extensionState.extensions = [
@@ -189,7 +227,12 @@ describe("HubTable local hub install state", () => {
         ...stores.extensionState.extensions[0],
         id: "global-agent-browser",
         name: "agent-browser",
-        source: { origin: "agent", url: null, version: null, commit_hash: null },
+        source: {
+          origin: "agent",
+          url: null,
+          version: null,
+          commit_hash: null,
+        },
         pack: null,
         agents: ["codex"],
         scope: { type: "global" as const },
@@ -233,6 +276,47 @@ describe("HubTable local hub install state", () => {
       ["claude", false],
       ["codex", true],
     ]);
+  });
+
+  it("does not keep an agent highlighted from stale Local Hub optimistic state", () => {
+    stores.hubState.isHubInstalled.mockReturnValue(true);
+    stores.extensionState.extensions = [];
+
+    render(
+      <HubTable
+        data={[
+          {
+            id: "hub-skill",
+            kind: "skill",
+            name: "frontend-design",
+            description: "desc",
+            source: {
+              origin: "git",
+              url: "https://github.com/acme/frontend-design.git",
+              version: null,
+              commit_hash: null,
+            },
+            agents: [],
+            tags: [],
+            pack: "acme/frontend-design",
+            permissions: [],
+            enabled: true,
+            trust_score: null,
+            installed_at: "2026-05-09T00:00:00.000Z",
+            updated_at: "2026-05-09T00:00:00.000Z",
+            source_path: null,
+            cli_parent_id: null,
+            cli_meta: null,
+            install_meta: null,
+            scope: { type: "global" },
+          },
+        ]}
+      />,
+    );
+
+    const items = capturedAgentItems[capturedAgentItems.length - 1] ?? [];
+    expect(items).toHaveLength(1);
+    expect(items[0].installed).toBe(false);
   });
 
   it("shows remove-global title and deletes only global instances when globally installed", async () => {

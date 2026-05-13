@@ -229,10 +229,36 @@ export type InstallSurface =
   | "extension-list";
 export type InstallListAction = "install" | "uninstall";
 
+export function normalizePathForComparison(path: string): string {
+  let normalized = path
+    .trim()
+    .replace(/^\\\\\?\\UNC\\/i, "\\\\")
+    .replace(/^\/\/\?\/UNC\//i, "//")
+    .replace(/^\\\\\?\\/i, "")
+    .replace(/^\/\/\?\//i, "")
+    .replace(/\\/g, "/")
+    .replace(/\/+$/, "");
+
+  if (/^[a-z]:\//i.test(normalized) || normalized.startsWith("//")) {
+    normalized = normalized.toLowerCase();
+  }
+  return normalized;
+}
+
+export function pathsEqual(a: string, b: string): boolean {
+  return normalizePathForComparison(a) === normalizePathForComparison(b);
+}
+
+export function pathSegments(path: string): string[] {
+  return normalizePathForComparison(path).split("/").filter(Boolean);
+}
+
 /** Stable identifier for a scope, suitable for use as a Map key or filter value.
- *  "global" for the global scope; the project path for project scopes. */
+ *  "global" for the global scope; the normalized project path for project scopes. */
 export function scopeKey(scope: ConfigScope): string {
-  return scope.type === "global" ? "global" : scope.path;
+  return scope.type === "global"
+    ? "global"
+    : normalizePathForComparison(scope.path);
 }
 
 /** Human-readable label for a scope (e.g. "Global" or "myapp"). */
