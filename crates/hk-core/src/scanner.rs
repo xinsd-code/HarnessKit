@@ -1456,10 +1456,7 @@ pub fn skill_locations(
     };
 
     for adapter in adapters {
-        if !adapter.detect() {
-            continue;
-        }
-        if want_global {
+        if adapter.detect() && want_global {
             for skill_dir in adapter.skill_dirs() {
                 probe(adapter.name(), &skill_dir);
             }
@@ -3125,6 +3122,35 @@ mod project_extension_tests {
                     && e.name == "proj-mcp"
                     && matches!(e.scope, ConfigScope::Project { .. })),
             "project MCP should be project-scoped"
+        );
+    }
+
+    #[test]
+    fn skill_locations_finds_project_skills_when_detect_is_false() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("no-claude-home");
+        fs::create_dir_all(&home).unwrap();
+
+        let project = tmp.path().join("myproject");
+        fs::create_dir_all(project.join(".claude/skills/git-commit")).unwrap();
+        fs::write(
+            project.join(".claude/skills/git-commit/SKILL.md"),
+            "---\nname: git-commit\ndescription: commit helper\n---\nbody",
+        )
+        .unwrap();
+
+        let adapter = ClaudeAdapter::with_home(home);
+        assert!(!adapter.detect());
+
+        let adapters: Vec<Box<dyn AgentAdapter>> = vec![Box::new(adapter)];
+        let projects = vec![(
+            "myproject".to_string(),
+            project.to_string_lossy().to_string(),
+        )];
+        let locs = skill_locations("git-commit", &adapters, &projects, None);
+        assert!(
+            locs.iter().any(|(agent, _)| agent == "claude"),
+            "project skill should be found even when detect() is false"
         );
     }
 
