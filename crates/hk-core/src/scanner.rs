@@ -1,10 +1,26 @@
 use crate::adapter::AgentAdapter;
 use crate::models::*;
+use crate::sanitize::strip_windows_extended_path_prefix;
 use chrono::{DateTime, Utc};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
 use std::sync::LazyLock;
+
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+fn display_path(path: &Path) -> String {
+    strip_windows_extended_path_prefix(&path.to_string_lossy())
+}
+
+fn display_path_str(path: &str) -> String {
+    strip_windows_extended_path_prefix(path)
+}
 
 struct KnownCli {
     binary_name: &'static str,
@@ -72,6 +88,16 @@ static KNOWN_CLIS: &[KnownCli] = &[
         repo_url: None,
     },
 ];
+
+fn command_output(program: &str, args: &[&str]) -> std::io::Result<Output> {
+    let mut command = Command::new(program);
+    command.args(args);
+    #[cfg(target_os = "windows")]
+    {
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command.output()
+}
 
 /// FNV-1a 64-bit hash — deterministic across Rust versions (unlike DefaultHasher).
 /// NOTE: FNV-1a is not collision-resistant. With a very large number of extensions,
@@ -208,9 +234,9 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
             updated_at: file_modified_time(&path),
 
             source_path: Some(if is_disabled {
-                path.join("SKILL.md").to_string_lossy().to_string()
+                display_path(&path.join("SKILL.md"))
             } else {
-                skill_file.to_string_lossy().to_string()
+                display_path(&skill_file)
             }),
             cli_parent_id: None,
             cli_meta: None,
@@ -576,9 +602,7 @@ pub(crate) fn run_which(name: &str) -> Option<String> {
     #[cfg(not(target_os = "windows"))]
     const WHICH_CMD: &str = "which";
 
-    std::process::Command::new(WHICH_CMD)
-        .arg(name)
-        .output()
+    command_output(WHICH_CMD, &[name])
         .ok()
         .filter(|o| o.status.success())
         .and_then(|o| {
@@ -645,10 +669,7 @@ fn get_binary_version(name: &str) -> Option<String> {
     }
     static VERSION_RE: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"(\d+\.\d+(?:\.\d+)?)").unwrap());
-    let output = std::process::Command::new(name)
-        .arg("--version")
-        .output()
-        .ok()?;
+    let output = command_output(name, &["--version"]).ok()?;
     let text = String::from_utf8_lossy(&output.stdout);
     let text = if text.trim().is_empty() {
         String::from_utf8_lossy(&output.stderr)
@@ -990,7 +1011,7 @@ pub fn scan_project_extensions(
     }
     let scope = ConfigScope::Project {
         name: project_name.to_string(),
-        path: project_path.to_string_lossy().to_string(),
+        path: display_path(project_path),
     };
     let mut all = Vec::new();
 
@@ -1010,7 +1031,7 @@ pub fn scan_project_extensions(
     if let Some(rel) = adapter.project_mcp_config_relpath() {
         let mcp_path = project_path.join(&rel);
         if mcp_path.is_file() {
-            let mcp_path_str = mcp_path.to_string_lossy().to_string();
+            let mcp_path_str = display_path(&mcp_path);
             let config_created = file_created_time(&mcp_path);
             let config_modified = file_modified_time(&mcp_path);
             for server in adapter.read_mcp_servers_from(&mcp_path) {
@@ -1078,7 +1099,7 @@ pub fn scan_project_extensions(
     if let Some(rel) = adapter.project_hook_config_relpath() {
         let hook_path = project_path.join(&rel);
         if hook_path.is_file() {
-            let hook_path_str = hook_path.to_string_lossy().to_string();
+            let hook_path_str = display_path(&hook_path);
             let config_created = file_created_time(&hook_path);
             let config_modified = file_modified_time(&hook_path);
             for hook in adapter.read_hooks_from(&hook_path) {
@@ -1128,27 +1149,29 @@ pub fn scan_project_extensions(
     all
 }
 
-/// Scan all extensions from all detected agents.
-/// `projects` is a list of `(project_name, project_path)` pairs — for each project,
-/// every detected adapter is asked for its project-scoped extensions on top of the
-/// usual global scan.
+/// Scan all extensions from all adapters.
+/// `projects` is a list of `(project_name, project_path)` pairs — each adapter
+/// is scanned for its project-scoped extensions for every registered project,
+/// even when its global home directory is not detected.
 pub fn scan_all(
     adapters: &[Box<dyn AgentAdapter>],
     projects: &[(String, String)],
 ) -> Vec<Extension> {
     let mut all = Vec::new();
     for adapter in adapters {
-        if !adapter.detect() {
-            continue;
+        if adapter.detect() {
+            for skill_dir in adapter.skill_dirs() {
+                all.extend(scan_skill_dir(&skill_dir, adapter.name()));
+            }
+            all.extend(scan_mcp_servers(adapter.as_ref()));
+            all.extend(scan_hooks(adapter.as_ref()));
+            all.extend(scan_plugins(adapter.as_ref()));
         }
-        for skill_dir in adapter.skill_dirs() {
-            all.extend(scan_skill_dir(&skill_dir, adapter.name()));
-        }
-        all.extend(scan_mcp_servers(adapter.as_ref()));
-        all.extend(scan_hooks(adapter.as_ref()));
-        all.extend(scan_plugins(adapter.as_ref()));
 
-        // Project-scoped extensions for every known project
+        // Project-scoped extensions belong to the registered project, not to
+        // the existence of the agent's global home directory. This matters on
+        // Windows when the desktop app can see project config files but the
+        // user has not installed that agent globally at the default path.
         for (project_name, project_path) in projects {
             let path = Path::new(project_path);
             all.extend(scan_project_extensions(adapter.as_ref(), project_name, path));
@@ -1247,7 +1270,7 @@ pub fn find_skill_by_id(
                     project_root.join(&rel),
                     ConfigScope::Project {
                         name: project_name.clone(),
-                        path: project_path.clone(),
+                        path: display_path_str(project_path),
                     },
                 ));
             }
@@ -1315,7 +1338,7 @@ pub fn find_skill_by_id(
                     project_root.join(&rel),
                     ConfigScope::Project {
                         name: project_name.clone(),
-                        path: project_path.clone(),
+                        path: display_path_str(project_path),
                     },
                 ));
             }
@@ -1426,17 +1449,14 @@ pub fn skill_locations(
     };
 
     let want_global = matches!(scope_filter, None | Some(ConfigScope::Global));
-    let want_project_path: Option<&str> = match scope_filter {
-        Some(ConfigScope::Project { path, .. }) => Some(path.as_str()),
-        Some(ConfigScope::Global) => Some(""), // never matches → skip projects
-        None => None,                          // walk every project
+    let want_project_path: Option<String> = match scope_filter {
+        Some(ConfigScope::Project { path, .. }) => Some(display_path_str(path)),
+        Some(ConfigScope::Global) => Some(String::new()), // never matches → skip projects
+        None => None,                                      // walk every project
     };
 
     for adapter in adapters {
-        if !adapter.detect() {
-            continue;
-        }
-        if want_global {
+        if adapter.detect() && want_global {
             for skill_dir in adapter.skill_dirs() {
                 probe(adapter.name(), &skill_dir);
             }
@@ -1445,8 +1465,8 @@ pub fn skill_locations(
             continue;
         }
         for (_project_name, project_path) in projects {
-            if let Some(want_path) = want_project_path
-                && want_path != project_path
+            if let Some(want_path) = want_project_path.as_deref()
+                && want_path != display_path_str(project_path)
             {
                 continue;
             }
@@ -1511,7 +1531,7 @@ fn discover_projects_recursive(
             .to_string();
         projects.push(DiscoveredProject {
             name,
-            path: dir.to_string_lossy().to_string(),
+            path: display_path(dir),
         });
         // Don't recurse into project subdirectories
         return;
@@ -2038,7 +2058,7 @@ pub fn scan_agent_configs(
 
         let scope = ConfigScope::Project {
             name: project_name.clone(),
-            path: project_path.clone(),
+            path: display_path_str(project_path),
         };
 
         for (category, patterns) in &project_groups {
@@ -2065,7 +2085,7 @@ pub fn scan_agent_configs(
 
         for skill_dir in adapter.project_skill_dirs() {
             for path in resolve_pattern(project_root, &skill_dir) {
-                let path_str = path.to_string_lossy().to_string();
+                let path_str = display_path(&path);
                 if seen_project_config_paths.contains(&path_str) {
                     continue;
                 }
@@ -2089,7 +2109,7 @@ pub fn scan_agent_configs(
         .into_iter()
         .flatten()
         {
-            let path_str = path.to_string_lossy().to_string();
+            let path_str = display_path(&path);
             if seen_project_config_paths.contains(&path_str) {
                 continue;
             }
@@ -2136,7 +2156,7 @@ fn stat_config_entry(
     });
 
     Some(AgentConfigFile {
-        path: path.to_string_lossy().to_string(),
+        path: display_path(path),
         agent: agent.to_string(),
         category,
         scope,
@@ -2289,7 +2309,7 @@ fn scan_hub_skills(hub_path: &Path) -> Vec<Extension> {
             trust_score: None,
             installed_at: file_created_time(&scan_root),
             updated_at: file_modified_time(&scan_root),
-            source_path: Some(scan_root.to_string_lossy().to_string()),
+            source_path: Some(display_path(&scan_root)),
             cli_parent_id: None,
             cli_meta: None,
             install_meta: None,
@@ -2314,7 +2334,7 @@ fn scan_hub_mcp(hub_path: &Path) -> Vec<Extension> {
 
     for entry in entries.flatten() {
         let path = entry.path();
-        let (config_path, display_path) = if path.is_dir() {
+        let (config_path, display_root) = if path.is_dir() {
             let config = path.join("mcp.json");
             if !config.exists() {
                 continue;
@@ -2360,7 +2380,7 @@ fn scan_hub_mcp(hub_path: &Path) -> Vec<Extension> {
                 trust_score: None,
                 installed_at: config_created,
                 updated_at: config_modified,
-                source_path: Some(display_path.to_string_lossy().to_string()),
+                source_path: Some(display_path(&display_root)),
                 cli_parent_id: None,
                 cli_meta: None,
                 install_meta: None,
@@ -2417,7 +2437,7 @@ fn scan_hub_plugins(hub_path: &Path) -> Vec<Extension> {
             trust_score: None,
             installed_at: file_created_time(&path),
             updated_at: file_modified_time(&path),
-            source_path: Some(path.to_string_lossy().to_string()),
+            source_path: Some(display_path(&path)),
             cli_parent_id: None,
             cli_meta: None,
             install_meta: None,
@@ -2481,7 +2501,7 @@ fn scan_hub_clis(hub_path: &Path) -> Vec<Extension> {
             trust_score: None,
             installed_at: file_created_time(&path),
             updated_at: file_modified_time(&path),
-            source_path: Some(path.to_string_lossy().to_string()),
+            source_path: Some(display_path(&path)),
             cli_parent_id: None,
             cli_meta,
             install_meta: None,
@@ -3026,6 +3046,164 @@ mod project_extension_tests {
         );
         assert!(exts.is_empty());
     }
+
+    #[test]
+    fn scan_all_includes_project_extensions_even_when_global_agent_dir_is_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home-without-claude");
+        fs::create_dir_all(&home).unwrap();
+
+        let project = tmp.path().join("project");
+        fs::create_dir_all(project.join(".claude/skills/proj-skill")).unwrap();
+        fs::write(
+            project.join(".claude/skills/proj-skill/SKILL.md"),
+            "---\nname: proj-skill\ndescription: project skill\n---\nbody",
+        )
+        .unwrap();
+        fs::write(
+            project.join(".mcp.json"),
+            r#"{"mcpServers":{"proj-mcp":{"command":"node","args":["server.js"]}}}"#,
+        )
+        .unwrap();
+        fs::write(
+            project.join(".claude/settings.json"),
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":["echo proj-hook"]}]}}"#,
+        )
+        .unwrap();
+        let expected_hook_path = project
+            .join(".claude/settings.json")
+            .to_string_lossy()
+            .to_string();
+
+        let adapter = ClaudeAdapter::with_home(home);
+        assert!(!adapter.detect(), "global ~/.claude marker should be absent");
+
+        let adapters: Vec<Box<dyn AgentAdapter>> = vec![Box::new(adapter)];
+        let projects = vec![(
+            "project".to_string(),
+            project.to_string_lossy().to_string(),
+        )];
+        let extensions = scan_all(&adapters, &projects);
+
+        assert!(
+            extensions
+                .iter()
+                .any(|e| e.kind == ExtensionKind::Skill && e.name == "proj-skill"),
+            "project skill should be scanned even without a global Claude dir"
+        );
+        assert!(
+            extensions
+                .iter()
+                .any(|e| e.kind == ExtensionKind::Mcp && e.name == "proj-mcp"),
+            "project MCP should be scanned even without a global Claude dir"
+        );
+        assert!(
+            extensions
+                .iter()
+                .any(|e| {
+                    e.kind == ExtensionKind::Hook
+                        && matches!(e.scope, ConfigScope::Project { .. })
+                        && e.source_path.as_deref() == Some(expected_hook_path.as_str())
+                }),
+            "project hook should be discovered from the project settings file"
+        );
+        assert!(
+            extensions
+                .iter()
+                .any(|e| e.kind == ExtensionKind::Skill
+                    && e.name == "proj-skill"
+                    && matches!(e.scope, ConfigScope::Project { .. })),
+            "project skill should be project-scoped"
+        );
+        assert!(
+            extensions
+                .iter()
+                .any(|e| e.kind == ExtensionKind::Mcp
+                    && e.name == "proj-mcp"
+                    && matches!(e.scope, ConfigScope::Project { .. })),
+            "project MCP should be project-scoped"
+        );
+    }
+
+    #[test]
+    fn skill_locations_finds_project_skills_when_detect_is_false() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("no-claude-home");
+        fs::create_dir_all(&home).unwrap();
+
+        let project = tmp.path().join("myproject");
+        fs::create_dir_all(project.join(".claude/skills/git-commit")).unwrap();
+        fs::write(
+            project.join(".claude/skills/git-commit/SKILL.md"),
+            "---\nname: git-commit\ndescription: commit helper\n---\nbody",
+        )
+        .unwrap();
+
+        let adapter = ClaudeAdapter::with_home(home);
+        assert!(!adapter.detect());
+
+        let adapters: Vec<Box<dyn AgentAdapter>> = vec![Box::new(adapter)];
+        let projects = vec![(
+            "myproject".to_string(),
+            project.to_string_lossy().to_string(),
+        )];
+        let locs = skill_locations("git-commit", &adapters, &projects, None);
+        assert!(
+            locs.iter().any(|(agent, _)| agent == "claude"),
+            "project skill should be found even when detect() is false"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    #[ignore = "requires Windows path semantics and is intended for Windows release validation"]
+    fn windows_custom_agent_path_global_extensions_scan() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let claude_dir = home.join(".claude");
+        let expected_hook_path = claude_dir.join("settings.json");
+        fs::create_dir_all(claude_dir.join("skills/global-skill")).unwrap();
+        fs::write(
+            claude_dir.join("skills/global-skill/SKILL.md"),
+            "---\nname: global-skill\ndescription: global skill\nrequires:\n  bins:\n    - lark-cli\n---\nbody",
+        )
+        .unwrap();
+        fs::write(
+            home.join(".claude.json"),
+            r#"{"mcpServers":{"global-mcp":{"command":"node","args":["server.js"]}}}"#,
+        )
+        .unwrap();
+        fs::write(
+            claude_dir.join("settings.json"),
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":["echo global-hook"]}]}}"#,
+        )
+        .unwrap();
+
+        let adapter = ClaudeAdapter::with_home(home.to_path_buf());
+        assert!(adapter.detect());
+        let adapters: Vec<Box<dyn AgentAdapter>> = vec![Box::new(adapter)];
+        let extensions = scan_all(&adapters, &[]);
+
+        assert!(
+            extensions
+                .iter()
+                .any(|e| e.kind == ExtensionKind::Skill && e.name == "global-skill")
+        );
+        assert!(
+            extensions
+                .iter()
+                .any(|e| e.kind == ExtensionKind::Mcp && e.name == "global-mcp")
+        );
+        assert!(
+            extensions
+                .iter()
+                .any(|e| {
+                    e.kind == ExtensionKind::Hook
+                        && matches!(e.scope, ConfigScope::Global)
+                        && e.source_path.as_deref() == Some(expected_hook_path.to_string_lossy().as_ref())
+                })
+        );
+    }
 }
 
 #[cfg(test)]
@@ -3033,6 +3211,18 @@ mod config_tests {
     use super::*;
     use crate::adapter::claude::ClaudeAdapter;
     use std::fs;
+
+    #[test]
+    fn test_display_path_strips_windows_extended_prefix() {
+        assert_eq!(
+            display_path_str(r"\\?\D:\workspace\myproject"),
+            r"D:\workspace\myproject"
+        );
+        assert_eq!(
+            display_path_str(r"\\?\UNC\server\share\myproject"),
+            r"\\server\share\myproject"
+        );
+    }
 
     #[test]
     fn test_scan_agent_configs_global_files() {

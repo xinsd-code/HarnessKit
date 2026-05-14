@@ -5,7 +5,7 @@ pub(super) fn is_path_within_allowed_dirs(
     path: &std::path::Path,
     state: &super::AppState,
 ) -> Result<bool, HkError> {
-    let canonical = path.canonicalize()?;
+    let canonical = super::normalize(&path.canonicalize()?);
     let store = state.store.lock();
     let projects = store.list_projects().unwrap_or_default();
     let custom_paths = store.list_all_custom_config_paths().unwrap_or_default();
@@ -16,31 +16,31 @@ pub(super) fn is_path_within_allowed_dirs(
     let allowed = adapters.iter().any(|a| {
         a.base_dir()
             .canonicalize()
-            .is_ok_and(|d| canonical.starts_with(&d))
+            .is_ok_and(|d| canonical.starts_with(super::normalize(&d)))
             || a.skill_dirs()
                 .iter()
-                .any(|sd| sd.canonicalize().is_ok_and(|d| canonical.starts_with(&d)))
+                .any(|sd| sd.canonicalize().is_ok_and(|d| canonical.starts_with(super::normalize(&d))))
             || a.plugin_dirs()
                 .iter()
-                .any(|pd| pd.canonicalize().is_ok_and(|d| canonical.starts_with(&d)))
+                .any(|pd| pd.canonicalize().is_ok_and(|d| canonical.starts_with(super::normalize(&d))))
             || a.mcp_config_path()
                 .canonicalize()
-                .is_ok_and(|d| canonical == d)
+                .is_ok_and(|d| canonical == super::normalize(&d))
             || a.global_settings_files()
                 .iter()
-                .any(|f| f.canonicalize().is_ok_and(|d| canonical == d))
+                .any(|f| f.canonicalize().is_ok_and(|d| canonical == super::normalize(&d)))
     }) || projects.iter().any(|p| {
         std::path::Path::new(&p.path)
             .canonicalize()
-            .is_ok_and(|d| canonical.starts_with(&d))
+            .is_ok_and(|d| canonical.starts_with(super::normalize(&d)))
     }) || custom_paths.iter().any(|p| {
         std::path::Path::new(p)
             .canonicalize()
-            .is_ok_and(|d| canonical.starts_with(&d))
+            .is_ok_and(|d| canonical.starts_with(super::normalize(&d)))
     }) || dirs::home_dir()
         .map(|h| h.join(".harnesskit"))
         .and_then(|d| d.canonicalize().ok())
-        .is_some_and(|d| canonical.starts_with(&d));
+        .is_some_and(|d| canonical.starts_with(super::normalize(&d)));
     Ok(allowed)
 }
 

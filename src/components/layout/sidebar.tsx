@@ -71,7 +71,7 @@ function SidebarLink({
 
 export function Sidebar() {
   return (
-    <aside className="flex h-full w-48 shrink-0 flex-col px-3 pb-5 select-none">
+    <aside className="app-sidebar flex h-full w-48 shrink-0 flex-col px-3 pb-5 select-none">
       {/* Top spacer for traffic lights */}
       <div className="h-12 shrink-0" />
 

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Project } from "@/lib/types";
+import { pathsEqual } from "@/lib/types";
 import { toast } from "./toast-store";
 
 const LS_KEY = "HK_SCOPE_LAST_USED";
@@ -25,7 +26,7 @@ function parseUrlScope(
     return projects.length > 0 ? { type: "all" } : null;
   }
   if (urlScope === "global") return { type: "global" };
-  const proj = projects.find((p) => p.path === urlScope);
+  const proj = projects.find((p) => pathsEqual(p.path, urlScope));
   if (proj) return { type: "project", name: proj.name, path: proj.path };
   return null;
 }
@@ -43,7 +44,9 @@ export function resolveDeepLinkScope(
 /** Structural equality for ScopeValues (project paths must match). */
 export function scopesEqual(a: ScopeValue, b: ScopeValue): boolean {
   if (a.type !== b.type) return false;
-  if (a.type === "project" && b.type === "project") return a.path === b.path;
+  if (a.type === "project" && b.type === "project") {
+    return pathsEqual(a.path, b.path);
+  }
   return true;
 }
 
@@ -57,7 +60,7 @@ function readLocalStorage(projects: Project[]): ScopeValue | null {
       return projects.length > 0 ? parsed : null;
     }
     if (parsed.type === "project") {
-      const proj = projects.find((p) => p.path === parsed.path);
+      const proj = projects.find((p) => pathsEqual(p.path, parsed.path));
       return proj
         ? { type: "project", name: proj.name, path: proj.path }
         : null;

@@ -17,6 +17,7 @@ import {
   type ConfigScope,
   type ExtensionCounts,
   type ExtensionKind,
+  pathsEqual,
   scopeLabel,
 } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
@@ -60,7 +61,9 @@ function dedupeConfigFiles(files: AgentDetailType["config_files"]) {
   });
 }
 
-function shouldDisplayConfigFile(file: AgentDetailType["config_files"][number]) {
+function shouldDisplayConfigFile(
+  file: AgentDetailType["config_files"][number],
+) {
   return file.exists && !file.is_dir;
 }
 
@@ -102,7 +105,7 @@ function AgentDetailContent({
     if (scope.type === "all") return true;
     if (scope.type === "global") return s.type === "global";
     // scope.type === "project"
-    return s.type === "project" && s.path === scope.path;
+    return s.type === "project" && pathsEqual(s.path, scope.path);
   };
 
   const scopedCounts = useMemo<ExtensionCounts>(() => {
@@ -120,7 +123,7 @@ function AgentDetailContent({
         if (scope.type === "global") return instance.scope.type === "global";
         return (
           (instance.scope.type === "project" &&
-            instance.scope.path === scope.path) ||
+            pathsEqual(instance.scope.path, scope.path)) ||
           instance.scope.type === "global"
         );
       });

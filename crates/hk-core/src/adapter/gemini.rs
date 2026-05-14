@@ -65,8 +65,7 @@ impl GeminiAdapter {
             home: dirs::home_dir().unwrap_or_default(),
         }
     }
-    #[cfg(test)]
-    pub fn with_home(home: PathBuf) -> Self {
+    pub(crate) fn with_home(home: PathBuf) -> Self {
         Self { home }
     }
     fn parse_json(path: &Path) -> Option<serde_json::Value> {

@@ -225,23 +225,23 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, Hk
     let mut results = Vec::new();
     for a in &runtime_adapters {
         let detected = a.detect();
-        let mut config_files = if detected {
-            scanner::scan_agent_configs(a.as_ref(), &projects)
-        } else {
-            vec![]
-        };
+        // Always scan project-scoped config files regardless of whether the
+        // agent's global home directory is detected. On Windows the global
+        // ~/.claude dir may not exist at the default path while project-level
+        // .claude/ directories are still present and should be shown.
+        let mut config_files = scanner::scan_agent_configs(a.as_ref(), &projects);
 
         // Merge user-defined custom config paths (skip if path already found by auto-scan)
         let existing_paths: std::collections::HashSet<String> = config_files
             .iter()
             .filter_map(|f| std::path::Path::new(&f.path).canonicalize().ok())
-            .map(|p| p.to_string_lossy().to_string())
+            .map(|p| super::normalize(&p).to_string_lossy().to_string())
             .collect();
         if let Ok(custom_paths) = store.list_custom_config_paths(a.name()) {
             for (id, path, label, category_str, scope_json) in custom_paths {
                 let canonical = std::path::Path::new(&path)
                     .canonicalize()
-                    .map(|p| p.to_string_lossy().to_string())
+                    .map(|p| super::normalize(&p).to_string_lossy().to_string())
                     .unwrap_or_else(|_| path.clone());
                 if existing_paths.contains(&canonical) {
                     continue;

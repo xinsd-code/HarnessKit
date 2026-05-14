@@ -29,8 +29,9 @@ import { api } from "@/lib/invoke";
 import {
   type ConfigScope,
   type MarketplaceItem,
-  scopeKey,
+  pathsEqual,
   type SkillAuditInfo,
+  scopeKey,
   sortAgents,
 } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
@@ -447,17 +448,20 @@ export default function MarketplacePage() {
   const settingsAgents = sortAgents(agents, agentOrder);
   const globalInstallScope: ConfigScope = { type: "global" };
   const projectInstallAgents =
-    selectedItem?.kind === "skill" && marketplaceProjectScope?.type === "project"
+    selectedItem?.kind === "skill" &&
+    marketplaceProjectScope?.type === "project"
       ? settingsAgents.filter((agent) =>
           canInstallAtScope(agent.name, "skill", marketplaceProjectScope),
         )
       : [];
   const selectedProject =
     marketplaceProjectScope?.type === "project"
-      ? projects.find((project) => project.path === marketplaceProjectScope.path) ?? {
+      ? (projects.find((project) =>
+          pathsEqual(project.path, marketplaceProjectScope.path),
+        ) ?? {
           name: marketplaceProjectScope.name,
           path: marketplaceProjectScope.path,
-        }
+        })
       : null;
   const selectedProjectPath =
     marketplaceProjectScope?.type === "project"
@@ -852,7 +856,8 @@ export default function MarketplacePage() {
                         const isFlashing = justInstalled.has(key);
                         const isInstallingThis = installing === key;
                         const isInstallingAny =
-                          installing?.startsWith(`${selectedItem.id}:`) ?? false;
+                          installing?.startsWith(`${selectedItem.id}:`) ??
+                          false;
                         const disabled = isInstallingAny || !capabilityOk;
                         return (
                           <button
@@ -934,8 +939,8 @@ export default function MarketplacePage() {
                         <select
                           value={selectedProjectPath}
                           onChange={(e) => {
-                            const project = projects.find(
-                              (item) => item.path === e.target.value,
+                            const project = projects.find((item) =>
+                              pathsEqual(item.path, e.target.value),
                             );
                             setMarketplaceProjectScope(
                               project
@@ -971,7 +976,10 @@ export default function MarketplacePage() {
                             No project-capable agents detected
                           </div>
                         ) : (
-                          <div className="flex flex-wrap gap-1.5" aria-live="polite">
+                          <div
+                            className="flex flex-wrap gap-1.5"
+                            aria-live="polite"
+                          >
                             {projectInstallAgents.map((agent) => {
                               const key = marketplaceInstallKey(
                                 selectedItem.id,
@@ -1011,7 +1019,9 @@ export default function MarketplacePage() {
                                     isInstalled
                                       ? `${AGENT_ICON_TONES[agent.name] ?? "border-border bg-muted/40"} shadow-sm`
                                       : "border-border bg-muted/30 hover:scale-[1.03] hover:border-border/60",
-                                    isInstallingAny && !isInstalled && "opacity-60",
+                                    isInstallingAny &&
+                                      !isInstalled &&
+                                      "opacity-60",
                                   )}
                                 >
                                   <div
@@ -1026,7 +1036,10 @@ export default function MarketplacePage() {
                                         className="animate-spin text-muted-foreground"
                                       />
                                     ) : (
-                                      <AgentMascot name={agent.name} size={20} />
+                                      <AgentMascot
+                                        name={agent.name}
+                                        size={20}
+                                      />
                                     )}
                                   </div>
                                 </button>

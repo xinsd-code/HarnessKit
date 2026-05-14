@@ -5,8 +5,9 @@ import { useSearchParams } from "react-router-dom";
 import { AgentDetail } from "@/components/agents/agent-detail";
 import { AgentList } from "@/components/agents/agent-list";
 import { AgentScopeTree } from "@/components/agents/agent-scope-tree";
-import type { AgentDetail as AgentDetailType, Project } from "@/lib/types";
 import { useScope } from "@/hooks/use-scope";
+import type { AgentDetail as AgentDetailType, Project } from "@/lib/types";
+import { pathSegments, pathsEqual } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 import { useProjectStore } from "@/stores/project-store";
 import {
@@ -15,19 +16,22 @@ import {
   useScopeStore,
 } from "@/stores/scope-store";
 
-function hasProjectConfig(agent: AgentDetailType, projectPath?: string): boolean {
+function hasProjectConfig(
+  agent: AgentDetailType,
+  projectPath?: string,
+): boolean {
   return agent.config_files.some(
     (file) =>
       file.exists &&
       file.scope.type === "project" &&
-      (projectPath == null || file.scope.path === projectPath),
+      (projectPath == null || pathsEqual(file.scope.path, projectPath)),
   );
 }
 
 function groupProjects(projects: Project[]) {
   const groups = new Map<string, Project[]>();
   for (const project of projects) {
-    const segments = project.path.split("/").filter(Boolean);
+    const segments = pathSegments(project.path);
     const label =
       segments.length >= 2 ? segments[segments.length - 2] : "Projects";
     const current = groups.get(label) ?? [];
@@ -92,7 +96,10 @@ export default function ProjectsPage() {
     const agent = searchParams.get("agent");
     if (loading || !agent) return;
     const file = searchParams.get("file");
-    const targetScope = resolveDeepLinkScope(searchParams.get("scope"), projects);
+    const targetScope = resolveDeepLinkScope(
+      searchParams.get("scope"),
+      projects,
+    );
     if (!scopesEqual(targetScope, scope)) {
       setScope(targetScope);
       prevScopeRef.current = targetScope;

@@ -16,7 +16,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AgentCard } from "@/components/shared/agent-card";
 import type { DashboardStats } from "@/lib/types";
-import { logicalAssetKey, sortAgents } from "@/lib/types";
+import { logicalAssetKey, pathsEqual, sortAgents } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useAuditStore } from "@/stores/audit-store";
 import {
@@ -320,7 +320,8 @@ export default function OverviewPage() {
     const withExtensionsCount = projects.filter((project) => {
       const scopedExtensions = visibleExtensions.filter(
         (ext) =>
-          ext.scope.type === "project" && ext.scope.path === project.path,
+          ext.scope.type === "project" &&
+          pathsEqual(ext.scope.path, project.path),
       );
       return buildGroups(scopedExtensions).length > 0;
     }).length;

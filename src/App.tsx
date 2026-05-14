@@ -27,6 +27,14 @@ import { useWebUpdateStore } from "./stores/web-update-store";
 /** Minimum interval (ms) between consecutive scan_and_sync calls */
 const SCAN_DEBOUNCE_MS = 5_000;
 
+function detectDesktopPlatform() {
+  const platform = navigator.platform.toLowerCase();
+  const ua = navigator.userAgent.toLowerCase();
+  if (platform.startsWith("win") || ua.includes("windows")) return "windows";
+  if (platform.includes("mac") || ua.includes("mac os")) return "macos";
+  return "other";
+}
+
 export default function App() {
   const themeName = useUIStore((s) => s.themeName);
   const mode = useUIStore((s) => s.mode);
@@ -116,6 +124,10 @@ export default function App() {
     }
     if (!isDesktop()) {
       root.setAttribute("data-web", "true");
+      root.removeAttribute("data-desktop-platform");
+    } else {
+      root.removeAttribute("data-web");
+      root.setAttribute("data-desktop-platform", detectDesktopPlatform());
     }
     // Force macOS vibrancy to match — "light" | "dark" | null (system)
     if (isDesktop()) {

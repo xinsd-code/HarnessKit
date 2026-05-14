@@ -1,6 +1,7 @@
 use axum::extract::State;
 use axum::Json;
 use hk_core::models::{DiscoveredProject, Project};
+use hk_core::sanitize::strip_windows_extended_path_prefix;
 use hk_core::scanner;
 use serde::Deserialize;
 
@@ -37,7 +38,7 @@ pub async fn add_project(
             .canonicalize()
             .map_err(|e| hk_core::HkError::CommandFailed(format!("Invalid path: {}", e)))?;
         let project_path = super::normalize(&project_path);
-        let path = project_path.to_string_lossy().to_string();
+        let path = strip_windows_extended_path_prefix(&project_path.to_string_lossy());
 
         // Validate the path contains project markers for any supported agent
         let has_agent_config = project_path.join(".claude").is_dir()

@@ -4,6 +4,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use std::path::{Path, PathBuf};
 
 use crate::models::*;
+use crate::sanitize::strip_windows_extended_path_prefix;
 
 /// Latest schema version supported by this binary.
 const LATEST_SCHEMA_VERSION: i64 = 5;
@@ -430,6 +431,7 @@ impl Store {
         category: &str,
         scope_json: Option<&str>,
     ) -> Result<i64, HkError> {
+        let path = strip_windows_extended_path_prefix(path);
         self.conn.execute(
             "INSERT OR IGNORE INTO custom_config_paths (agent, path, label, category, scope_json) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![agent, path, label, category, scope_json],
@@ -449,6 +451,7 @@ impl Store {
         label: &str,
         category: &str,
     ) -> Result<(), HkError> {
+        let path = strip_windows_extended_path_prefix(path);
         self.conn.execute(
             "UPDATE custom_config_paths SET path = ?2, label = ?3, category = ?4 WHERE id = ?1",
             params![id, path, label, category],
@@ -471,7 +474,14 @@ impl Store {
         )?;
         let rows = stmt
             .query_map(params![agent], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+                let path: String = row.get(1)?;
+                Ok((
+                    row.get(0)?,
+                    strip_windows_extended_path_prefix(&path),
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
             })?
             .filter_map(|r| r.map_err(|e| eprintln!("[hk] row error: {e}")).ok())
             .collect();
@@ -480,7 +490,10 @@ impl Store {
 
     pub fn list_all_custom_config_paths(&self) -> Result<Vec<String>, HkError> {
         let mut stmt = self.conn.prepare("SELECT path FROM custom_config_paths")?;
-        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let rows = stmt.query_map([], |row| {
+            let path: String = row.get(0)?;
+            Ok(strip_windows_extended_path_prefix(&path))
+        })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
@@ -1152,12 +1165,13 @@ impl Store {
     // --- Project methods ---
 
     pub fn insert_project(&self, project: &Project) -> Result<(), HkError> {
+        let path = strip_windows_extended_path_prefix(&project.path);
         self.conn.execute(
             "INSERT OR IGNORE INTO projects (id, name, path, created_at) VALUES (?1, ?2, ?3, ?4)",
             params![
                 project.id,
                 project.name,
-                project.path,
+                path,
                 project.created_at.to_rfc3339(),
             ],
         )?;
@@ -1209,10 +1223,11 @@ impl Store {
             .prepare("SELECT id, name, path, created_at FROM projects ORDER BY created_at DESC")?;
         let rows = stmt.query_map([], |row| {
             let created_at_str: String = row.get(3)?;
+            let path: String = row.get(2)?;
             Ok(Project {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                path: row.get(2)?,
+                path: strip_windows_extended_path_prefix(&path),
                 created_at: DateTime::parse_from_rfc3339(&created_at_str)
                     .unwrap_or_default()
                     .with_timezone(&Utc),
@@ -1256,6 +1271,13 @@ impl Store {
         let scope_json: Option<String> = row.get::<_, Option<String>>(26).ok().flatten();
         let scope = scope_json
             .and_then(|s| serde_json::from_str::<ConfigScope>(&s).ok())
+            .map(|scope| match scope {
+                ConfigScope::Project { name, path } => ConfigScope::Project {
+                    name,
+                    path: strip_windows_extended_path_prefix(&path),
+                },
+                ConfigScope::Global => ConfigScope::Global,
+            })
             .unwrap_or(ConfigScope::Global);
 
         Ok(Extension {
@@ -1560,6 +1582,22 @@ mod tests {
         assert_eq!(projects.len(), 1);
         assert_eq!(projects[0].name, "my-project");
         assert_eq!(projects[0].path, "/tmp/my-project");
+    }
+
+    #[test]
+    fn test_list_projects_strips_windows_extended_prefix() {
+        let (store, _dir) = test_store();
+        let project = Project {
+            id: "proj-win".into(),
+            name: "win-project".into(),
+            path: r"\\?\D:\workspace\win-project".into(),
+            created_at: Utc::now(),
+            exists: true,
+        };
+        store.insert_project(&project).unwrap();
+
+        let projects = store.list_projects().unwrap();
+        assert_eq!(projects[0].path, r"D:\workspace\win-project");
     }
 
     #[test]

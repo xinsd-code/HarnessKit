@@ -3,7 +3,107 @@ use super::helpers::{FileEntry, is_path_within_allowed_dirs, list_dir_entries};
 use hk_core::adapter;
 use hk_core::service::ExtensionContent;
 use hk_core::{HkError, manager, models::*, scanner, service};
+use std::path::Path;
+use std::process::Command;
 use tauri::{Emitter, State};
+
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DesktopPlatform {
+    Macos,
+    Windows,
+    Linux,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct LaunchSpec {
+    program: &'static str,
+    args: Vec<String>,
+    hide_console: bool,
+}
+
+fn current_platform() -> DesktopPlatform {
+    #[cfg(target_os = "macos")]
+    {
+        DesktopPlatform::Macos
+    }
+    #[cfg(target_os = "windows")]
+    {
+        DesktopPlatform::Windows
+    }
+    #[cfg(target_os = "linux")]
+    {
+        DesktopPlatform::Linux
+    }
+}
+
+fn open_in_system_spec(platform: DesktopPlatform, path: &str) -> LaunchSpec {
+    match platform {
+        DesktopPlatform::Macos => LaunchSpec {
+            program: "open",
+            args: vec![path.to_string()],
+            hide_console: false,
+        },
+        DesktopPlatform::Windows => LaunchSpec {
+            program: "explorer",
+            args: vec![path.to_string()],
+            hide_console: true,
+        },
+        DesktopPlatform::Linux => LaunchSpec {
+            program: "xdg-open",
+            args: vec![path.to_string()],
+            hide_console: false,
+        },
+    }
+}
+
+fn reveal_in_file_manager_spec(
+    platform: DesktopPlatform,
+    path: &str,
+    file_path: &Path,
+) -> LaunchSpec {
+    match platform {
+        DesktopPlatform::Macos => LaunchSpec {
+            program: "open",
+            args: vec!["-R".to_string(), path.to_string()],
+            hide_console: false,
+        },
+        DesktopPlatform::Windows => LaunchSpec {
+            program: "explorer",
+            args: vec![format!("/select,{}", path)],
+            hide_console: true,
+        },
+        DesktopPlatform::Linux => LaunchSpec {
+            program: "xdg-open",
+            args: vec![
+                file_path
+                    .parent()
+                    .unwrap_or(file_path)
+                    .to_string_lossy()
+                    .to_string(),
+            ],
+            hide_console: false,
+        },
+    }
+}
+
+fn spawn_launch_spec(spec: LaunchSpec, action: &str) -> Result<(), HkError> {
+    let mut command = Command::new(spec.program);
+    command.args(&spec.args);
+    #[cfg(target_os = "windows")]
+    if spec.hide_console {
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+        .spawn()
+        .map_err(|e| HkError::CommandFailed(format!("Failed to {action}: {e}")))?;
+    Ok(())
+}
 
 #[tauri::command]
 pub fn list_extensions(
@@ -94,28 +194,7 @@ pub fn open_in_system(state: State<AppState>, path: String) -> Result<(), HkErro
             )));
         }
     }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(&path)
-            .spawn()
-            .map_err(|e| HkError::CommandFailed(format!("Failed to open: {}", e)))?;
-    }
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("explorer")
-            .arg(&path)
-            .spawn()
-            .map_err(|e| HkError::CommandFailed(format!("Failed to open: {}", e)))?;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(&path)
-            .spawn()
-            .map_err(|e| HkError::CommandFailed(format!("Failed to open: {}", e)))?;
-    }
-    Ok(())
+    spawn_launch_spec(open_in_system_spec(current_platform(), &path), "open")
 }
 
 /// Reveal a file or directory in the system file manager (Finder / Explorer).
@@ -130,30 +209,10 @@ pub fn reveal_in_file_manager(state: State<AppState>, path: String) -> Result<()
             "Path is not within a known agent or project directory".into(),
         ));
     }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg("-R")
-            .arg(&path)
-            .spawn()
-            .map_err(|e| HkError::CommandFailed(format!("Failed to reveal: {}", e)))?;
-    }
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("explorer")
-            .arg(format!("/select,{}", path))
-            .spawn()
-            .map_err(|e| HkError::CommandFailed(format!("Failed to reveal: {}", e)))?;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let parent = file_path.parent().unwrap_or(file_path);
-        std::process::Command::new("xdg-open")
-            .arg(parent)
-            .spawn()
-            .map_err(|e| HkError::CommandFailed(format!("Failed to reveal: {}", e)))?;
-    }
-    Ok(())
+    spawn_launch_spec(
+        reveal_in_file_manager_spec(current_platform(), &path, file_path),
+        "reveal",
+    )
 }
 
 /// For a given skill name, find all physical paths where it exists across all agents.
@@ -296,6 +355,43 @@ pub async fn scan_and_sync(app: tauri::AppHandle, state: State<'_, AppState>) ->
     }
 
     Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn open_in_system_spec_uses_hidden_explorer_on_windows() {
+        let spec = open_in_system_spec(DesktopPlatform::Windows, r"C:\temp\skill");
+        assert_eq!(spec.program, "explorer");
+        assert_eq!(spec.args, vec![r"C:\temp\skill".to_string()]);
+        assert!(spec.hide_console);
+    }
+
+    #[test]
+    fn reveal_in_file_manager_spec_uses_hidden_explorer_select_on_windows() {
+        let spec = reveal_in_file_manager_spec(
+            DesktopPlatform::Windows,
+            r"C:\temp\skill\SKILL.md",
+            Path::new(r"C:\temp\skill\SKILL.md"),
+        );
+        assert_eq!(spec.program, "explorer");
+        assert_eq!(spec.args, vec![r"/select,C:\temp\skill\SKILL.md".to_string()]);
+        assert!(spec.hide_console);
+    }
+
+    #[test]
+    fn reveal_in_file_manager_spec_opens_parent_on_linux() {
+        let spec = reveal_in_file_manager_spec(
+            DesktopPlatform::Linux,
+            "/tmp/skill/SKILL.md",
+            Path::new("/tmp/skill/SKILL.md"),
+        );
+        assert_eq!(spec.program, "xdg-open");
+        assert_eq!(spec.args, vec!["/tmp/skill".to_string()]);
+        assert!(!spec.hide_console);
+    }
 }
 
 #[tauri::command]

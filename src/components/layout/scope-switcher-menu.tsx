@@ -2,6 +2,7 @@ import { Check, Folder, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useScope } from "@/hooks/use-scope";
+import { pathsEqual } from "@/lib/types";
 import { useProjectStore } from "@/stores/project-store";
 import type { ScopeValue } from "@/stores/scope-store";
 
@@ -48,7 +49,8 @@ export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
   const isCurrent = (item: MenuItem): boolean => {
     if (scope.type === "all" && item.key === "all") return true;
     if (scope.type === "global" && item.key === "global") return true;
-    if (scope.type === "project" && item.key === scope.path) return true;
+    if (scope.type === "project" && pathsEqual(item.key, scope.path))
+      return true;
     return false;
   };
 
@@ -85,6 +87,7 @@ export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
     return idx >= 0 ? idx : 0;
   });
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Listener intentionally follows the current menu rows and active index.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowDown") {
@@ -103,10 +106,6 @@ export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-    // handleSelect / handleAddProject are stable enough for this scope —
-    // including activeIndex + navigableItems is sufficient to pick up
-    // changes that affect dispatch.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeIndex, navigableItems]);
 
   const activeKey = navigableItems[activeIndex]?.key;

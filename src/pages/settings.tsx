@@ -14,14 +14,14 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { getAgentIconPath } from "@/lib/agent-icons";
 import {
   AGENT_BASE_CONFIGS,
+  type AgentBaseConfigProfile,
   buildHomeRelativePath,
   buildProjectRelativePath,
   deriveAgentBasePath,
-  type AgentBaseConfigProfile,
 } from "@/lib/agent-base-config";
+import { getAgentIconPath } from "@/lib/agent-icons";
 import { openDirectoryPicker, openFilePicker } from "@/lib/dialog";
 import { api } from "@/lib/invoke";
 import { isDesktop } from "@/lib/transport";
@@ -29,6 +29,7 @@ import {
   type AgentInfo,
   agentDisplayName,
   type DiscoveredProject,
+  normalizePathForComparison,
 } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useProjectStore } from "@/stores/project-store";
@@ -143,13 +144,7 @@ function AgentLogo({
   );
 }
 
-function PresetIcon({
-  src,
-  label,
-}: {
-  src: string;
-  label: string;
-}) {
+function PresetIcon({ src, label }: { src: string; label: string }) {
   const [iconError, setIconError] = useState(false);
   const initials = label
     .split(/\s+/)
@@ -176,11 +171,7 @@ function PresetIcon({
   );
 }
 
-function CustomIconPreview({
-  src,
-}: {
-  src: string;
-}) {
+function CustomIconPreview({ src }: { src: string }) {
   const [iconError, setIconError] = useState(false);
   if (iconError) {
     return (
@@ -365,7 +356,9 @@ export default function SettingsPage() {
       preset.id.toLowerCase() !== "openclaw",
   );
 
-  const existingPaths = new Set(projects.map((p) => p.path));
+  const existingPaths = new Set(
+    projects.map((p) => normalizePathForComparison(p.path)),
+  );
 
   const handleAddPath = async (path: string) => {
     if (!path) return;
@@ -468,7 +461,9 @@ export default function SettingsPage() {
       return;
     }
 
-    const preset = AGENT_BASE_CONFIGS.find((item) => item.id === selectedPresetId);
+    const preset = AGENT_BASE_CONFIGS.find(
+      (item) => item.id === selectedPresetId,
+    );
     if (!preset) return;
 
     const name = preset.id.trim().toLowerCase();
@@ -767,7 +762,8 @@ export default function SettingsPage() {
                       const isEnabled = info?.enabled ?? true;
                       const canDelete =
                         !!info &&
-                        (FORCE_DELETABLE_AGENTS.has(info.name) || !info.builtin);
+                        (FORCE_DELETABLE_AGENTS.has(info.name) ||
+                          !info.builtin);
                       return (
                         <div
                           key={agent}
@@ -972,7 +968,9 @@ export default function SettingsPage() {
                         <>
                           <div className="space-y-1 max-h-48 overflow-y-auto overscroll-contain">
                             {discoveredProjects.map((dp) => {
-                              const already = existingPaths.has(dp.path);
+                              const already = existingPaths.has(
+                                normalizePathForComparison(dp.path),
+                              );
                               return (
                                 <label
                                   key={dp.path}
@@ -1169,10 +1167,10 @@ export default function SettingsPage() {
                     All bundled agent presets have already been added.
                   </div>
                 ) : (
-                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                            {availablePresets.map((preset) => {
-                              const selected = selectedPresetId === preset.id;
-                              return (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                    {availablePresets.map((preset) => {
+                      const selected = selectedPresetId === preset.id;
+                      return (
                         <button
                           key={preset.id}
                           type="button"
@@ -1184,7 +1182,7 @@ export default function SettingsPage() {
                               : "border-border hover:border-primary/40 hover:bg-accent/60",
                           )}
                           title={preset.label}
-                          >
+                        >
                           {preset.iconPath ? (
                             <PresetIcon
                               src={preset.iconPath}

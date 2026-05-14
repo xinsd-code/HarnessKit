@@ -282,12 +282,61 @@ pub fn adapter_for_name(name: &str) -> Option<Box<dyn AgentAdapter>> {
 
 /// Runtime adapters = built-in adapters + supported preset agents that the
 /// user has explicitly added in Settings.
+#[cfg(target_os = "windows")]
+fn home_from_custom_base(custom_path: &str, expected_dir_name: &str) -> Option<PathBuf> {
+    let base = PathBuf::from(custom_path);
+    if base
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case(expected_dir_name))
+    {
+        return base.parent().map(PathBuf::from);
+    }
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn builtin_adapter_with_windows_custom_path(
+    name: &str,
+    custom_path: Option<&str>,
+) -> Option<Box<dyn AgentAdapter>> {
+    let path = custom_path?;
+    match name {
+        "claude" => home_from_custom_base(path, ".claude")
+            .map(|home| Box::new(claude::ClaudeAdapter::with_home(home)) as Box<dyn AgentAdapter>),
+        "codex" => home_from_custom_base(path, ".codex")
+            .map(|home| Box::new(codex::CodexAdapter::with_home(home)) as Box<dyn AgentAdapter>),
+        "gemini" => home_from_custom_base(path, ".gemini")
+            .map(|home| Box::new(gemini::GeminiAdapter::with_home(home)) as Box<dyn AgentAdapter>),
+        "cursor" => home_from_custom_base(path, ".cursor")
+            .map(|home| Box::new(cursor::CursorAdapter::with_home(home)) as Box<dyn AgentAdapter>),
+        "antigravity" => home_from_custom_base(path, ".antigravity").map(|home| {
+            Box::new(antigravity::AntigravityAdapter::with_home(home)) as Box<dyn AgentAdapter>
+        }),
+        _ => None,
+    }
+}
+
 pub fn runtime_adapters_for_settings(
     settings: &[(String, Option<String>, bool, Option<i32>, Option<String>)],
 ) -> Vec<Box<dyn AgentAdapter>> {
     let mut adapters = all_adapters();
     let builtin_names: std::collections::HashSet<String> =
         adapters.iter().map(|a| a.name().to_string()).collect();
+
+    #[cfg(target_os = "windows")]
+    {
+        for (name, custom_path, _, _, _) in settings {
+            let Some(custom_adapter) =
+                builtin_adapter_with_windows_custom_path(name, custom_path.as_deref())
+            else {
+                continue;
+            };
+            if let Some(slot) = adapters.iter_mut().find(|adapter| adapter.name() == name) {
+                *slot = custom_adapter;
+            }
+        }
+    }
 
     for (name, _, _, _, _) in settings {
         if builtin_names.contains(name) {
@@ -433,5 +482,72 @@ mod tests {
             let want = expected.get(a.name()).expect("adapter not in expected map");
             assert_eq!(&actual, want, "{} project skill path mismatch", a.name());
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn runtime_adapters_for_settings_honors_windows_builtin_custom_paths() {
+        let settings = vec![
+            (
+                "claude".to_string(),
+                Some(r"C:\Users\zoe\.claude".to_string()),
+                true,
+                None,
+                None,
+            ),
+            (
+                "codex".to_string(),
+                Some(r"C:\Users\zoe\.codex".to_string()),
+                true,
+                None,
+                None,
+            ),
+        ];
+
+        let adapters = runtime_adapters_for_settings(&settings);
+        assert_eq!(
+            adapters.len(),
+            5,
+            "built-in adapters should be replaced in place, not appended"
+        );
+        assert_eq!(
+            adapters.iter().filter(|a| a.name() == "claude").count(),
+            1
+        );
+        assert_eq!(adapters.iter().filter(|a| a.name() == "codex").count(), 1);
+        let by_name: std::collections::HashMap<_, _> =
+            adapters.iter().map(|a| (a.name().to_string(), a)).collect();
+
+        assert_eq!(
+            by_name["claude"].base_dir(),
+            std::path::PathBuf::from(r"C:\Users\zoe\.claude")
+        );
+        assert_eq!(
+            by_name["codex"].base_dir(),
+            std::path::PathBuf::from(r"C:\Users\zoe\.codex")
+        );
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn runtime_adapters_for_settings_ignores_builtin_custom_paths_off_windows() {
+        let settings = vec![(
+            "claude".to_string(),
+            Some("/tmp/not-the-real-home/.claude".to_string()),
+            true,
+            None,
+            None,
+        )];
+        let adapters = runtime_adapters_for_settings(&settings);
+        let claude = adapters
+            .iter()
+            .find(|a| a.name() == "claude")
+            .expect("claude adapter should exist");
+
+        assert_ne!(
+            claude.base_dir(),
+            std::path::PathBuf::from("/tmp/not-the-real-home/.claude"),
+            "non-Windows behavior should keep using default adapter paths"
+        );
     }
 }

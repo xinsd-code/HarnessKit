@@ -4,6 +4,8 @@ import {
   agentDisplayName,
   extensionGroupKey,
   formatRelativeTime,
+  normalizePathForComparison,
+  pathsEqual,
   severityColor,
   sortAgentNames,
   trustColor,
@@ -213,6 +215,20 @@ describe("extensionGroupKey", () => {
     };
     expect(extensionGroupKey(fooInAlpha)).not.toBe(
       extensionGroupKey(fooInBeta),
+    );
+  });
+});
+
+describe("path comparison", () => {
+  it("normalizes Windows extended prefixes and separators", () => {
+    expect(normalizePathForComparison("//?/D:\\workspace\\alpha")).toBe(
+      "d:/workspace/alpha",
+    );
+    expect(normalizePathForComparison("\\\\?\\D:\\workspace\\alpha\\")).toBe(
+      "d:/workspace/alpha",
+    );
+    expect(pathsEqual("//?/D:\\workspace\\alpha", "d:/workspace/alpha")).toBe(
+      true,
     );
   });
 });

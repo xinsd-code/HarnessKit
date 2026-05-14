@@ -4,6 +4,7 @@ import {
   extensionGroupKey,
   extensionListGroupKey,
   logicalExtensionName,
+  normalizePathForComparison,
   sortAgentNames,
   usesLooseLogicalAssetIdentity,
 } from "@/lib/types";
@@ -100,8 +101,7 @@ function buildGroupedExtension(
       null,
     ),
     installed_at: dedupedInstances.reduce(
-      (earliest, e) =>
-        e.installed_at < earliest ? e.installed_at : earliest,
+      (earliest, e) => (e.installed_at < earliest ? e.installed_at : earliest),
       first.installed_at,
     ),
     updated_at: dedupedInstances.reduce(
@@ -133,7 +133,10 @@ export function buildGroups(extensions: Extension[]): GroupedExtension[] {
   const map = new Map<string, Extension[]>();
   for (const ext of uniqueExtensions) {
     let key = extensionListGroupKey(ext);
-    if (!usesLooseLogicalAssetIdentity(ext) && deriveExtensionUrl(ext) == null) {
+    if (
+      !usesLooseLogicalAssetIdentity(ext) &&
+      deriveExtensionUrl(ext) == null
+    ) {
       const sk = `${ext.kind}\0${logicalExtensionName(ext)}`;
       const siblings = urlSiblings.get(sk);
       if (siblings?.size === 1) {
@@ -219,11 +222,15 @@ export function isCliChildSkillGroup(
 ): boolean {
   if (group.kind !== "skill") return false;
   const { cliIds, cliPacks, hasLarkCli } = buildCliLookup(groups);
-  return group.instances.some(
-    (instance) =>
-      (instance.cli_parent_id != null && cliIds.has(instance.cli_parent_id)) ||
-      (instance.pack != null && cliPacks.has(instance.pack)),
-  ) || (hasLarkCli && isLarkCliSkillGroup(group));
+  return (
+    group.instances.some(
+      (instance) =>
+        (instance.cli_parent_id != null &&
+          cliIds.has(instance.cli_parent_id)) ||
+        (instance.pack != null && cliPacks.has(instance.pack)),
+    ) ||
+    (hasLarkCli && isLarkCliSkillGroup(group))
+  );
 }
 
 export function filterSkillTabGroups(
@@ -300,14 +307,13 @@ export function getCachedFiltered(
   ignoreScope = false,
 ): GroupedExtension[] {
   // Memoize: skip recomputation if inputs haven't changed
-  const scopeKeyForCache =
-    ignoreScope
+  const scopeKeyForCache = ignoreScope
+    ? "all"
+    : scope.type === "all"
       ? "all"
-      : scope.type === "all"
-        ? "all"
-        : scope.type === "global"
-          ? "global"
-          : `project:${scope.path}`;
+      : scope.type === "global"
+        ? "global"
+        : `project:${normalizePathForComparison(scope.path)}`;
   const key = `${groups.length}|${kindFilter}|${agentFilter}|${packFilter}|${tagFilter}|${searchQuery}|${scopeKeyForCache}`;
   if (key === _cachedFilterKey && groups === _cachedFilterGroupsRef) {
     return _cachedFiltered;
@@ -329,14 +335,19 @@ export function getCachedFiltered(
     result = result.filter((g) => g.tags.includes(tagFilter));
   }
   if (!ignoreScope && scope.type !== "all") {
-    const targetKey = scope.type === "global" ? "global" : scope.path;
+    const targetKey =
+      scope.type === "global"
+        ? "global"
+        : normalizePathForComparison(scope.path);
     if (scope.type === "project" && agentFilter) {
       // Project + agent filter: include project instances AND global instances
       // belonging to the filtered agent.
       result = result.filter((g) =>
         g.instances.some((i) => {
           const instKey =
-            i.scope.type === "global" ? "global" : i.scope.path;
+            i.scope.type === "global"
+              ? "global"
+              : normalizePathForComparison(i.scope.path);
           return (
             instKey === targetKey ||
             (i.scope.type === "global" && i.agents.includes(agentFilter))
@@ -347,11 +358,13 @@ export function getCachedFiltered(
       result = [...result].sort((a, b) => {
         const aProj = a.instances.some(
           (i) =>
-            i.scope.type === "project" && i.scope.path === targetKey,
+            i.scope.type === "project" &&
+            normalizePathForComparison(i.scope.path) === targetKey,
         );
         const bProj = b.instances.some(
           (i) =>
-            i.scope.type === "project" && i.scope.path === targetKey,
+            i.scope.type === "project" &&
+            normalizePathForComparison(i.scope.path) === targetKey,
         );
         if (aProj && !bProj) return -1;
         if (!aProj && bProj) return 1;
@@ -361,7 +374,9 @@ export function getCachedFiltered(
       result = result.filter((g) =>
         g.instances.some((i) => {
           const instKey =
-            i.scope.type === "global" ? "global" : i.scope.path;
+            i.scope.type === "global"
+              ? "global"
+              : normalizePathForComparison(i.scope.path);
           return instKey === targetKey;
         }),
       );

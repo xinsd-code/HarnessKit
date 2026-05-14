@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { Project } from "@/lib/types";
+import { pathSegments, pathsEqual } from "@/lib/types";
 import type { ScopeValue } from "@/stores/scope-store";
 
 interface ProjectGroup {
@@ -20,7 +21,7 @@ function groupProjects(projects: Project[]): ProjectGroup[] {
   const grouped = new Map<string, Project[]>();
 
   for (const project of projects) {
-    const segments = project.path.split("/").filter(Boolean);
+    const segments = pathSegments(project.path);
     const label =
       segments.length >= 2 ? segments[segments.length - 2] : "Projects";
     const current = grouped.get(label) ?? [];
@@ -38,7 +39,7 @@ function groupProjects(projects: Project[]): ProjectGroup[] {
 }
 
 function isProjectScopeActive(scope: ScopeValue, path: string): boolean {
-  return scope.type === "project" && scope.path === path;
+  return scope.type === "project" && pathsEqual(scope.path, path);
 }
 
 export function AgentScopeTree({

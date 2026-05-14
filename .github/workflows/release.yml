@@ -41,6 +41,16 @@ jobs:
           if [ -z "$BODY" ]; then
             BODY="Bug fixes and improvements."
           fi
+          DOWNLOADS=$(cat <<'DOWNLOADS_EOF'
+          ## Downloads
+          - **Windows desktop:** Use `HarnessKit-windows-x64-installer.exe` first. `HarnessKit-windows-x64.msi` is the alternate enterprise-friendly package.
+          - **macOS desktop:** Temporary ad-hoc signed dmg files are published when Apple signing/notarization secrets are missing. Gatekeeper may require manual approval.
+          - **CLI assets:** `hk-cli-*` packages are temporarily disabled for this release workflow.
+          DOWNLOADS_EOF
+          )
+          BODY="$BODY
+
+          $DOWNLOADS"
           {
             echo "body<<CHANGELOG_EOF"
             echo "$BODY"
@@ -92,20 +102,34 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Install Tauri CLI
-        run: cargo install tauri-cli --locked
+        run: rustup run stable cargo install tauri-cli --locked
 
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Determine macOS signing mode
+        id: macos_signing
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_CERTIFICATE_PASSWORD" ] && [ -n "$APPLE_SIGNING_IDENTITY" ] && [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            echo "mode=signed" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=unsigned" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Import Apple certificate
+        if: steps.macos_signing.outputs.mode == 'signed'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
-          if [ -z "$APPLE_CERTIFICATE" ]; then
-            echo "No certificate provided, skipping"
-            exit 0
-          fi
           echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
           security create-keychain -p actions build.keychain
           security default-keychain -s build.keychain
@@ -115,7 +139,8 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
           rm certificate.p12
 
-      - name: Build desktop app
+      - name: Build signed desktop app
+        if: steps.macos_signing.outputs.mode == 'signed'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -127,23 +152,46 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
-          # Required so tauri-action populates `latest.json`'s `notes` field;
-          # without it the in-app updater shows an empty changelog.
           releaseBody: ${{ needs.create-release.outputs.changelog }}
           tauriScript: cargo tauri
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} --config crates/hk-desktop/tauri.macos.conf.json
 
-      - name: Build CLI (with embedded web frontend)
+      - name: Build ad-hoc signed macOS dmg
+        if: steps.macos_signing.outputs.mode == 'unsigned'
+        shell: bash
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
         run: |
           npm run build
-          cargo build --release --target ${{ matrix.target }} -p hk-cli
+          rustup run stable cargo tauri build --target ${{ matrix.target }} --config crates/hk-desktop/tauri.macos.conf.json --bundles dmg
 
-      - name: Upload CLI to release
+      - name: Upload ad-hoc signed macOS dmg
+        if: steps.macos_signing.outputs.mode == 'unsigned'
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp "target/${{ matrix.target }}/release/hk" "hk-macos-${{ matrix.arch }}"
-          gh release upload "${{ github.ref_name }}" "hk-macos-${{ matrix.arch }}" --clobber
+          dmg=$(find "target/${{ matrix.target }}/release/bundle/dmg" -name "*.dmg" -print -quit)
+          if [ -z "$dmg" ]; then
+            echo "Missing ad-hoc signed macOS dmg output" >&2
+            exit 1
+          fi
+          cp "$dmg" "HarnessKit-macos-${{ matrix.arch }}-adhoc.dmg"
+          gh release upload "${{ github.ref_name }}" "HarnessKit-macos-${{ matrix.arch }}-adhoc.dmg" --clobber
+
+      - name: Build CLI (with embedded web frontend)
+        if: ${{ false }}
+        run: |
+          npm run build
+          rustup run stable cargo build --release --target ${{ matrix.target }} -p hk-cli
+
+      - name: Upload CLI to release
+        if: ${{ false }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp "target/${{ matrix.target }}/release/hk" "hk-cli-macos-${{ matrix.arch }}"
+          gh release upload "${{ github.ref_name }}" "hk-cli-macos-${{ matrix.arch }}" --clobber
 
   release-desktop-windows:
     needs: create-release
@@ -170,21 +218,34 @@ jobs:
           key: x86_64-pc-windows-msvc
 
       - name: Install Tauri CLI
-        run: cargo install tauri-cli --locked
+        run: rustup run stable cargo install tauri-cli --locked
 
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build desktop app
-        uses: tauri-apps/tauri-action@v0
+      - name: Build Windows desktop installers
+        shell: bash
+        run: |
+          npm run build
+          rustup run stable cargo tauri build --target x86_64-pc-windows-msvc --config crates/hk-desktop/tauri.windows.conf.json --bundles nsis,msi
+
+      - name: Validate and upload Windows desktop assets
+        shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          releaseId: ${{ needs.create-release.outputs.release_id }}
-          releaseBody: ${{ needs.create-release.outputs.changelog }}
-          tauriScript: cargo tauri
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $bundleRoot = "target/x86_64-pc-windows-msvc/release/bundle"
+          $nsis = Get-ChildItem "$bundleRoot/nsis/*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $msi = Get-ChildItem "$bundleRoot/msi/*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $nsis) { throw "Missing NSIS installer output" }
+          if (-not $msi) { throw "Missing MSI output" }
+          Copy-Item $nsis.FullName "HarnessKit-windows-x64-installer.exe"
+          Copy-Item $msi.FullName "HarnessKit-windows-x64.msi"
+          gh release upload "${{ github.ref_name }}" "HarnessKit-windows-x64-installer.exe" --clobber
+          gh release upload "${{ github.ref_name }}" "HarnessKit-windows-x64.msi" --clobber
 
   release-cli-linux:
+    if: ${{ false }}
     needs: create-release
     runs-on: ubuntu-22.04
     permissions:
@@ -216,16 +277,17 @@ jobs:
       - name: Build CLI (with embedded web frontend)
         run: |
           npm run build
-          cargo build --release -p hk-cli --target x86_64-unknown-linux-musl
+          rustup run stable cargo build --release -p hk-cli --target x86_64-unknown-linux-musl
 
       - name: Upload CLI to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp target/x86_64-unknown-linux-musl/release/hk hk-linux-x64
-          gh release upload "${{ github.ref_name }}" hk-linux-x64 --clobber
+          cp target/x86_64-unknown-linux-musl/release/hk hk-cli-linux-x64
+          gh release upload "${{ github.ref_name }}" hk-cli-linux-x64 --clobber
 
   release-cli-windows:
+    if: ${{ false }}
     needs: create-release
     runs-on: windows-latest
     permissions:
@@ -250,12 +312,12 @@ jobs:
       - name: Build CLI (with embedded web frontend)
         run: |
           npm run build
-          cargo build --release -p hk-cli
+          rustup run stable cargo build --release -p hk-cli
 
       - name: Upload CLI to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          cp target/release/hk.exe hk-windows-x64.exe
-          gh release upload "${{ github.ref_name }}" hk-windows-x64.exe --clobber
+          cp target/release/hk.exe hk-cli-windows-x64.exe
+          gh release upload "${{ github.ref_name }}" hk-cli-windows-x64.exe --clobber

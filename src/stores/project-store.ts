@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api } from "@/lib/invoke";
 import type { Project } from "@/lib/types";
+import { pathsEqual } from "@/lib/types";
 import { useExtensionStore } from "./extension-store";
 import { useScopeStore } from "./scope-store";
 import { toast } from "./toast-store";
@@ -52,7 +53,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     set((s) => ({ projects: s.projects.filter((p) => p.id !== id) }));
     if (project) {
       const scope = useScopeStore.getState().current;
-      if (scope.type === "project" && scope.path === project.path) {
+      if (scope.type === "project" && pathsEqual(scope.path, project.path)) {
         useScopeStore.getState().setScope({ type: "global" });
         toast.warning(
           `Project '${project.name}' was removed, switched to Global`,
